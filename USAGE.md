@@ -1,8 +1,13 @@
-# USAGE.md - Demonic C Usage Guide
+# Demonic C — Usage Guide
 
-## Quick Start
+This guide covers the DMC command-line interface, the core language reference, the standard runtime library, and cross-platform build notes. For a high-level project overview, see [README.md](README.md).
 
-### Building the Compiler
+---
+
+## Quick start
+
+### Building the compiler
+
 ```bash
 # Build everything
 make
@@ -11,7 +16,8 @@ make
 ./dmc-native --version
 ```
 
-### Writing Your First Program
+### Writing your first program
+
 ```dmc
 // hello.dmc
 fn main() -> int {
@@ -29,7 +35,9 @@ clang hello.c -o hello -lws2_32
 ./hello
 ```
 
-## Command Line Interface
+---
+
+## Command-line interface
 
 ```
 dmc-native <source.dmc> [options]
@@ -42,21 +50,25 @@ Options:
 ```
 
 ### Examples
+
 ```bash
 # Compile to stdout
 ./dmc-native program.dmc
 
-# Compile to specific file
+# Compile to a specific file
 ./dmc-native program.dmc -o output.c
 
 # Add import directories
 ./dmc-native program.dmc -I ./includes -I /usr/local/dmc/include
 ```
 
-## Language Reference
+---
+
+## Language reference
 
 ### Types
-| Type | C Equivalent | Description |
+
+| Type | C equivalent | Description |
 |------|-------------|-------------|
 | `int` | `long long` | 64-bit signed integer |
 | `f32` | `float` | 32-bit floating point |
@@ -64,10 +76,11 @@ Options:
 | `bool` | `bool` | Boolean (0/1) |
 | `string` | `const char*` | Null-terminated string |
 | `void` | `void` | No return value |
-| `*T` | `T*` | Pointer to T |
+| `*T` | `T*` | Pointer to `T` |
 | `[T;N]` | `T[N]` | Fixed-size array |
 
 ### Variables
+
 ```dmc
 // Immutable binding
 let x: int = 42;
@@ -80,7 +93,8 @@ y = "changed";
 let z = 3.14;  // inferred as f64
 ```
 
-### Control Flow
+### Control flow
+
 ```dmc
 // If-else
 if (condition) {
@@ -120,6 +134,7 @@ switch (value) {
 ```
 
 ### Functions
+
 ```dmc
 fn add(a: int, b: int) -> int {
     return a + b;
@@ -136,6 +151,7 @@ fn get_answer() -> int {
 ```
 
 ### Structures
+
 ```dmc
 struct Point {
     x: int;
@@ -150,6 +166,7 @@ fn main() -> int {
 ```
 
 ### Enums
+
 ```dmc
 enum Status {
     OK,
@@ -164,7 +181,12 @@ fn main() -> int {
 }
 ```
 
-### Collections (Runtime Library)
+---
+
+## Standard runtime library
+
+### Collections
+
 ```dmc
 // Vectors
 let v = vec_new();
@@ -183,12 +205,13 @@ map_set(m, "key", 42);
 let val = map_get(m, "key");  // 42
 ```
 
-### Memory Operations
+### Memory operations
+
 ```dmc
 // Allocate
 let h = mem_alloc(1024);
 
-// Write/Read bytes
+// Write/read bytes
 mem_write(h, 0, 65);  // 'A'
 let byte = mem_read(h, 0);
 
@@ -204,6 +227,7 @@ arena_free(arena);
 ```
 
 ### File I/O
+
 ```dmc
 let f = file_open("data.bin", "wb");
 if (f < 0) { proc_exit(1); }
@@ -217,7 +241,8 @@ let content = file_read(f2);
 file_close(f2);
 ```
 
-### Network Programming
+### Network programming
+
 ```dmc
 let sock = tcp_connect("127.0.0.1", 8080);
 if (sock < 0) { proc_exit(1); }
@@ -227,7 +252,8 @@ let response = tcp_recv(sock, 8192);
 tcp_close(sock);
 ```
 
-### Inline Assembly
+### Inline assembly
+
 ```dmc
 // Single instruction
 asm("nop");
@@ -239,9 +265,10 @@ asm {
 }
 ```
 
-### Process Control
+### Process control
+
 ```dmc
-// Access command line args
+// Access command-line args
 let arg = arg_text(1);  // argv[1]
 
 // Exit with code
@@ -251,7 +278,8 @@ proc_exit(0);
 let result = syscall(__NR_write, 1, "hello\n", 6);
 ```
 
-### Mathematical Functions
+### Mathematical functions
+
 ```dmc
 let pi = math_pi();
 let e = math_e();
@@ -261,25 +289,28 @@ let root = math_sqrt(16.0);
 let abs = math_abs(-42);
 ```
 
-### Text Functions
+### Text functions
+
 ```dmc
 let len = text_len("hello");
 let cat = text_concat("hello", " world");
 let sub = text_sub("hello", 1, 3);  // "ell"
-let cmp = text_cmp("a", "b");  // -1
-let num = text_from_int(42);  // "42"
+let cmp = text_cmp("a", "b");       // -1
+let num = text_from_int(42);        // "42"
 let val = text_to_int("123");
 ```
 
-## Modules/Imports
+---
+
+## Modules and imports
 
 ```dmc
-// Import built-in module
+// Import a built-in module
 import "math";
 import "text";
 import "mem";
 
-// Import local module
+// Import a local module
 import "my_module";
 ```
 
@@ -292,55 +323,62 @@ fn helper() -> int {
 }
 ```
 
-## Cross-Platform Notes
+---
+
+## Cross-platform notes
 
 ### Windows
 - Link with `-lws2_32`
 - Port I/O requires administrator privileges
-- Uses Winsock2 for networking
+- Networking uses Winsock2
 
 ### Linux
 - Link with `-lm`
-- Port I/O requires `iopl(3)` or CAP_SYS_RAWIO
-- Uses standard POSIX APIs
+- Port I/O requires `iopl(3)` or `CAP_SYS_RAWIO`
+- Networking uses standard POSIX APIs
 
-## Advanced Usage
+---
 
-### Self-Hosting the Compiler
+## Advanced usage
+
+### Self-hosting the compiler
+
 ```bash
-# Stage 1: Native compiler builds DMC emitter
+# Stage 1: native compiler builds the DMC emitter
 ./dmc-native tests/emit.dmc -o _stage_emit.c
 clang -std=c11 -w _stage_emit.c -o _stage_emit.exe -lws2_32
 
-# Stage 2: DMC emitter compiles self-hosting lexer
+# Stage 2: DMC emitter compiles the self-hosting lexer
 cd tests && ./_stage_emit.exe selflex.dmc selflex_stage_out.c
 clang -std=c11 -w selflex_stage_out.c -o selflex_stage.exe -lws2_32
-cd tests && ./selflex_stage.exe  # Exit code 37 = success
+cd tests && ./selflex_stage.exe   # Exit code 37 = success
 ```
 
-### Writing Compiler Tools in DMC
-The test suite demonstrates writing:
+### Writing compiler tools in DMC
+
+The test suite includes reference implementations of:
+
 - Lexers (`bootstrap_lexer.dmc`)
 - Parsers (`bootstrap_parser.dmc`)
 - Code emitters (`emit.dmc`)
 
-These can be used as starting points for building:
-- Domain-specific languages
-- Code generators
-- Static analyzers
-- Transpilers
+These are useful starting points for building domain-specific languages, code generators, static analyzers, or transpilers of your own.
 
-## Debugging Tips
+---
 
-1. **Check generated C code**: `./dmc-native program.dmc -o program.c`
-2. **Enable C compiler warnings**: Use `-Wall -Wextra` when compiling generated C
-3. **Runtime errors**: Check `dmc_last_error()` after failed operations
-4. **Memory issues**: Use arena allocators for complex lifetime management
+## Debugging tips
 
-## Performance Considerations
+1. **Inspect generated C**: `./dmc-native program.dmc -o program.c` and read the output directly.
+2. **Enable C compiler warnings**: pass `-Wall -Wextra` when compiling the generated C.
+3. **Runtime errors**: check `dmc_last_error()` after any operation that can fail.
+4. **Memory issues**: prefer arena allocators for workloads with many small, related-lifetime allocations.
 
-- Use arena allocation for many small allocations
-- Prefer stack allocation (`let`) over heap (`mem_alloc`)
-- Use vectors/maps from runtime for dynamic collections
-- Inline assembly for critical hot paths
-- The generated C code is optimized by LLVM/Clang
+---
+
+## Performance considerations
+
+- Use arena allocation for many small allocations rather than repeated `mem_alloc`/`mem_free` calls.
+- Prefer stack allocation (`let`) over heap allocation where lifetime allows.
+- Use the runtime's vectors/maps for dynamic collections instead of hand-rolled structures.
+- Reach for inline assembly only on genuinely hot paths.
+- The generated C code is compiled by LLVM/Clang, so most standard C-level optimizations apply automatically.

@@ -4,7 +4,7 @@
   "description": "JSON parsing and serialization",
   "author": "Demonic C Contributors",
   "license": "MIT",
-  "repository": "https://github.com/demonic-lang/json",
+  "repository": "https://github.com/Demonic-C/json",
   "keywords": ["json", "data", "serialization"],
   "versions": ["2.0.1", "2.0.0", "1.0.0"]
 }
