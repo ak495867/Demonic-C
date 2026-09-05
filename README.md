@@ -8,14 +8,10 @@
   <strong>A self-hosting systems programming language that compiles to C with native performance and direct hardware access.</strong>
 </p>
 
-[![Release](https://img.shields.io/github/v/release/ak495867/Demonic-C?style=for-the-badge)](https://github.com/ak495867/Demonic-C/releases)
-[![License](https://img.shields.io/github/license/ak495867/Demonic-C?style=for-the-badge)](https://github.com/ak495867/Demonic-C/blob/main/LICENSE.md)
-[![GitHub stars](https://img.shields.io/github/stars/ak495867/Demonic-C?style=for-the-badge)](https://github.com/ak495867/Demonic-C/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/ak495867/Demonic-C?style=for-the-badge)](https://github.com/ak495867/Demonic-C/network/members)
-[![GitHub issues](https://img.shields.io/github/issues/ak495867/Demonic-C?style=for-the-badge)](https://github.com/ak495867/Demonic-C/issues)
-[![GitHub repo size](https://img.shields.io/github/repo-size/ak495867/Demonic-C?style=for-the-badge)](https://github.com/ak495867/Demonic-C)
+
 [![GitHub last commit](https://img.shields.io/github/last-commit/ak495867/Demonic-C?style=for-the-badge)](https://github.com/ak495867/Demonic-C/commits/main)
 [![C++](https://img.shields.io/badge/C%2B%2B-Compiler-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)](https://isocpp.org/)
+[![GitHub issues](https://img.shields.io/github/issues/ak495867/Demonic-C?style=for-the-badge)](https://github.com/ak495867/Demonic-C/issues)
 [![C](https://img.shields.io/badge/C-Runtime-A8B9CC?style=for-the-badge&logo=c&logoColor=white)](https://en.wikipedia.org/wiki/C_(programming_language))
 [![Self-Hosting](https://img.shields.io/badge/Compiler-Self--Hosting-8A2BE2?style=for-the-badge)](https://github.com/ak495867/Demonic-C)
 [![Clang/LLVM](https://img.shields.io/badge/Built_with-Clang%2FLLVM-262D3A?style=for-the-badge&logo=llvm&logoColor=white)](https://clang.llvm.org/)
