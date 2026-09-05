@@ -1,0 +1,8 @@
+fn main() -> int {
+    let a: int = math_abs(-42);
+    let b: int = math_min(5, 3);
+    let d: int = math_clamp(10, 0, 7);
+    let s: string = text_from_int(42);
+    let cmp: int = text_cmp("abc", "abc");
+    return a + b + d + text_len(s) + cmp;
+}

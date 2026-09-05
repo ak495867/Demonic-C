@@ -1,0 +1,2 @@
+fn connect(url: string) -> int { return db_connect(url); }
+fn query(connection: int, sql: string) -> string { return db_query(connection, sql); }

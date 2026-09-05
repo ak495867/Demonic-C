@@ -1,0 +1,2 @@
+fn compile(pattern: string) -> int { return regex_new(pattern); }
+fn match(pattern: int, value: string) -> int { return regex_match(pattern, value); }

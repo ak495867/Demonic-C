@@ -1,0 +1,27 @@
+#[test]
+fn test_math() -> int    {
+    
+    
+    
+    return 0;
+    
+    
+    
+}
+
+
+
+
+#[bench]
+fn bench_math() -> int    {
+    
+    
+    
+    return 0;
+    
+    
+    
+}
+
+
+

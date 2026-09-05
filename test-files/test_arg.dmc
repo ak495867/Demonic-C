@@ -1,0 +1,10 @@
+fn main() -> int {
+    let a: string = arg_text(1);
+    let n: int = text_len(a);
+    println(n);
+    println(a);
+    if (text_cmp(a, "hello") == 0) {
+        return 7;
+    }
+    return 3;
+}

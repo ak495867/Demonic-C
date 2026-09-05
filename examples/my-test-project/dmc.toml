@@ -1,0 +1,12 @@
+[package]
+name = "my-test-project"
+version = "0.1.0"
+description = "A Demonic C project"
+
+[build]
+output = "bin/my-test-project"
+type = "executable"
+
+[dependencies]
+# json = "^2.0"
+# http = "^1.0"

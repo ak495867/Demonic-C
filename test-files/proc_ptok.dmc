@@ -1,0 +1,18 @@
+struct Tok {
+    kind: int;
+}
+
+fn fill(out: *Tok, limit: int) -> int {
+    var i: int = 0;
+    while (i < limit) {
+        out[i] = Tok{kind: i + 1};
+        i = i + 1;
+    }
+    return limit;
+}
+
+fn main() -> int {
+    var ts: [Tok; 4] = [Tok{kind: 0}, Tok{kind: 0}, Tok{kind: 0}, Tok{kind: 0}];
+    let n = fill(&ts[0], 4);
+    return ts[3].kind;
+}

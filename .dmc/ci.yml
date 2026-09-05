@@ -1,0 +1,17 @@
+on:
+  push: main
+  pull_request: true
+jobs:
+  test:
+    runs: linux
+    steps:
+      - dmc test
+      - dmc lint test-files/todo_test.dmc
+      - dmc doc
+  build:
+    needs: test
+    runs: linux
+    steps:
+      - dmc build --release
+      - dmc bundle
+    artifacts: dist/dmc-project.tar.gz

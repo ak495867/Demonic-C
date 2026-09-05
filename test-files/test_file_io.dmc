@@ -1,0 +1,14 @@
+fn main() -> int {
+    let h = file_open("_dmc_test_file_io.txt", "w");
+    if (h < 0) { return 10; }
+    file_write(h, "hello_dmc");
+    file_close(h);
+    let h2 = file_open("_dmc_test_file_io.txt", "r");
+    if (h2 < 0) { return 20; }
+    let content = file_read(h2);
+    file_close(h2);
+    if (text_cmp(content, "hello_dmc") == 0) {
+        return 5;
+    }
+    return 99;
+}

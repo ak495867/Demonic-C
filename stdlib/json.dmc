@@ -1,0 +1,2 @@
+fn json_parse_text(value: string) -> string { return json_parse(value); }
+fn json_stringify_text(value: string) -> string { return json_stringify(value); }

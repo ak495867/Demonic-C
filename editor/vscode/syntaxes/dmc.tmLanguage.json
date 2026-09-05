@@ -1,0 +1,4 @@
+{
+  "scopeName": "source.dmc",
+  "patterns": [{"match": "\\b(fn|let|var|struct|enum|import|return|if|else|for|while|do|until)\\b", "name": "keyword.control.dmc"}, {"match": "\\b(int|bool|string|f32|f64|void)\\b", "name": "storage.type.dmc"}, {"match": "\"[^\"]*\"", "name": "string.quoted.dmc"}, {"match": "\\b[0-9]+(?:\\.[0-9]+)?\\b", "name": "constant.numeric.dmc"}]
+}

@@ -1,0 +1,8 @@
+import "mod_greet";
+import "mod_chain";
+
+fn main() -> int {
+    let a = greet("chain");
+    let b = quad(3);
+    return b + text_len(a);
+}

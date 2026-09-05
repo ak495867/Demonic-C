@@ -1,0 +1,33 @@
+#[test]
+fn test_json() -> int {
+    let value: string = json_get(json_parse("{\"name\":\"Alice\"}"), "name");
+    if (text_cmp(value, "Alice") == 0) { return 0; }
+    return 1;
+}
+
+#[test]
+fn test_datetime_regex() -> int {
+    let now: int = datetime_now();
+    let formatted: string = datetime_format(now, "%Y");
+    let pattern: int = regex_new("^[0-9]{4}$");
+    let matched: int = regex_match(pattern, formatted);
+    regex_free(pattern);
+    if (matched == 1) { return 0; }
+    return 1;
+}
+
+#[test]
+fn test_database() -> int {
+    let connection: int = db_connect("sqlite://:memory:");
+    if (connection < 0) { return 1; }
+    let result: string = db_query(connection, "SELECT 1");
+    db_close(connection);
+    if (text_cmp(result, "1") == 0) { return 0; }
+    return 1;
+}
+
+#[test]
+fn test_http_error() -> int {
+    if (http_status("http://127.0.0.1:1") < 0) { return 0; }
+    return 1;
+}

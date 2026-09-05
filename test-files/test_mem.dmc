@@ -1,0 +1,7 @@
+fn main() -> int {
+    let m: int = mem_alloc(4);
+    mem_write(m, 0, 99);
+    let r: int = mem_read(m, 0);
+    mem_free(m);
+    return r;
+}

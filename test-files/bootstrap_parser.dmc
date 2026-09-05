@@ -1,0 +1,106 @@
+import "lex";
+
+fn ident(ts: *Tok, count: int, i: int) -> int {
+    if (i < count && ts[i].kind == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+fn skip_to_brace(ts: *Tok, count: int, open_idx: int) -> int {
+    var depth: int = 0;
+    var j: int = open_idx;
+    while (j < count) {
+        if (text_cmp(ts[j].text, "{") == 0) {
+            depth = depth + 1;
+        }
+        if (text_cmp(ts[j].text, "}") == 0) {
+            depth = depth - 1;
+            if (depth == 0) {
+                return j + 1;
+            }
+        }
+        j = j + 1;
+    }
+    return j;
+}
+
+fn parse(ts: *Tok, count: int, out: *Tok, cap: int) -> int {
+    var i: int = 0;
+    var n: int = 0;
+    while (i < count) {
+        var t: string = ts[i].text;
+        if (text_cmp(t, "import") == 0) {
+            out[n] = Tok{kind: 1, text: ts[i + 1].text, line: ts[i].line};
+            n = n + 1;
+            i = i + 3;
+            continue;
+        }
+        if (text_cmp(t, "struct") == 0) {
+            out[n] = Tok{kind: 2, text: ts[i + 1].text, line: ts[i].line};
+            n = n + 1;
+            i = skip_to_brace(ts, count, i + 2);
+            continue;
+        }
+        if (text_cmp(t, "enum") == 0) {
+            out[n] = Tok{kind: 3, text: ts[i + 1].text, line: ts[i].line};
+            n = n + 1;
+            i = skip_to_brace(ts, count, i + 2);
+            continue;
+        }
+        if (text_cmp(t, "fn") == 0) {
+            out[n] = Tok{kind: 4, text: ts[i + 1].text, line: ts[i].line};
+            n = n + 1;
+            var j: int = i + 2;
+            while (j < count && text_cmp(ts[j].text, "{") != 0) {
+                j = j + 1;
+            }
+            i = skip_to_brace(ts, count, j + 1);
+            continue;
+        }
+        i = i + 1;
+    }
+    return n;
+}
+
+fn main() -> int {
+    let src = "import \"io\"; struct P { x: int; } enum C { A, B } fn main() -> int { return 1; }";
+    var ts: [Tok; 256] = [
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+    ];
+    let count = lex(src, &ts[0], 256);
+    var ds: [Tok; 16] = [
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+        Tok{kind: 0, text: "", line: 0}, Tok{kind: 0, text: "", line: 0},
+    ];
+    let count2 = lex(src, &ts[0], 256);
+    let n = parse(ts, count2, &ds[0], 16);
+    println(n);
+    println(ds[0].kind);
+    println(ds[1].kind);
+    println(ds[2].kind);
+    println(ds[3].kind);
+    println(ds[3].text);
+    return n;
+}

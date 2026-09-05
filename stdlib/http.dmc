@@ -1,0 +1,2 @@
+fn http_get_text(url: string) -> string { return http_get(url); }
+fn http_get_status(url: string) -> int { return http_status(url); }

@@ -1,0 +1,4 @@
+fn main() -> int {
+    println("Hello from my-test-project!");
+    return 0;
+}

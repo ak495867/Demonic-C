@@ -1,0 +1,7 @@
+import "mod_greet";
+
+fn main() -> int {
+    let greeting = greet("world");
+    println(greeting);
+    return triple(2) + text_len(greeting);
+}

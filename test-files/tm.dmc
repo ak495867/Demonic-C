@@ -1,0 +1,11 @@
+struct Decl {
+    kind: int;
+    start: int;
+    end: int;
+}
+fn main() -> int {
+    var ds: [Decl; 8] = [Decl{kind: 0, start: 0, end: 0}];
+    println(ds[0].kind);
+    println(ds[0].start);
+    return 0;
+}

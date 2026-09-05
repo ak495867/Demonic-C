@@ -1,0 +1,24 @@
+import "parser";
+
+fn main() -> int {
+    var fh: int = file_open("pt2.dmc", "rb");
+    if (fh < 0) {
+        return 99;
+    }
+    let src = file_read(fh);
+    file_close(fh);
+    var ts: [Tok; 1024] = [Tok{kind: 0, text: "", line: 0}];
+    let count = lex(src, &ts[0], 1024);
+    var ds: [Decl; 32] = [Decl{kind: 0, name: "", start: 0, end: 0}];
+    let n = parse_top(ts, count, &ds[0], 32);
+    println(n);
+    var i2: int = 0;
+    while (i2 < n) {
+        println(ds[i2].kind);
+        println(ds[i2].name);
+        println(ds[i2].start);
+        println(ds[i2].end);
+        i2 = i2 + 1;
+    }
+    return n;
+}

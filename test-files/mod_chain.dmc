@@ -1,0 +1,5 @@
+import "mod_math";
+
+fn quad(x: int) -> int {
+    return square(square(x));
+}

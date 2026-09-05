@@ -1,0 +1,4 @@
+fn main() -> int {
+    let n = proc_arg_count(3);
+    return n;
+}

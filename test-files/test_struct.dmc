@@ -1,0 +1,7 @@
+struct Hunter { name: string; health: int; }
+
+fn main() -> int {
+    var h: Hunter = Hunter { name: "Dante", health: 100 };
+    h.health = h.health - 25;
+    return h.health;
+}

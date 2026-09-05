@@ -1,0 +1,15 @@
+struct Tok {
+    kind: int;
+    text: string;
+    line: int;
+}
+
+fn mk(kind: int, text: string, line: int) -> Tok {
+    return Tok{kind: kind, text: text, line: line};
+}
+
+fn main() -> int {
+    var ts: [Tok; 4] = [mk(1, "let", 1), mk(2, "x", 1), mk(3, "=", 2), mk(4, "42", 2)];
+    ts[3] = mk(4, "43", 3);
+    return ts[0].kind + ts[3].line;
+}

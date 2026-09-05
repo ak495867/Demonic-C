@@ -1,0 +1,128 @@
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+struct Point {
+    x: int;
+    y: int;
+}
+
+fn dist2(p: Point) -> int {
+    return p.x * p.x + p.y * p.y;
+}
+
+fn fib(n: int) -> int {
+    if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn sum_to(n: int) -> int {
+    var total: int = 0;
+    var i: int = 1;
+    while (i <= n) {
+        total = total + i;
+        i = i + 1;
+    }
+    return total;
+}
+
+fn sum_for(n: int) -> int {
+    var total: int = 0;
+    for (var i: int = 1; i <= n; i = i + 1) {
+        total = total + i;
+    }
+    return total;
+}
+
+fn day_name(d: int) -> int {
+    switch (d) {
+        case 1:
+            return 10;
+        case 2:
+            return 20;
+        default:
+            return 30;
+    }
+}
+
+fn asm_zero() -> int {
+    asm {
+        "xorl %eax, %eax"
+    }
+    return 0;
+}
+
+fn runtime_ok() -> int {
+    var h: int = mem_alloc(16);
+    if (h <= 0) {
+        return 0;
+    }
+    var sum: int = 0;
+    var i: int = 0;
+    while (i < 8) {
+        mem_write(h, i, i + 1);
+        i = i + 1;
+    }
+    while (i < 16) {
+        mem_write(h, i, 0);
+        i = i + 1;
+    }
+    let s: string = text_concat(text_from_int(mem_read(h, 3)), text_from_int(mem_read(h, 4)));
+    if (text_len(s) == 2) {
+        sum = 1;
+    }
+    mem_free(h);
+    return sum;
+}
+
+fn incr(p: *int) -> int {
+    *p = *p + 1;
+    return *p;
+}
+
+fn greet(n: string) -> int {
+    let s: string = n;
+    println(s);
+    return 1;
+}
+
+fn arr_sum(a: [int; 4]) -> int {
+    var t: int = 0;
+    t = t + a[0];
+    t = t + a[1];
+    t = t + a[2];
+    t = t + a[3];
+    return t;
+}
+
+fn main() -> int {
+    let f: int = fib(10);
+    println(f);
+    let s: int = sum_to(10);
+    println(s);
+    var p: Point = Point{x: 3, y: 4};
+    let d: int = dist2(p);
+    println(d);
+    let c: Color = Color_Green;
+    println(c);
+    var n: int = 41;
+    let r: int = incr(&n);
+    println(r);
+    var a: [int; 4] = [1, 2, 3, 4];
+    let asum: int = arr_sum(a);
+    println(asum);
+    let msg: string = "hi";
+    let g: int = greet(msg);
+    println(g);
+    let sf: int = sum_for(10);
+    println(sf);
+    println(day_name(2));
+    println(day_name(5));
+    println(asm_zero());
+    println(runtime_ok());
+    return f + s + g + sf + day_name(2) + runtime_ok();
+}

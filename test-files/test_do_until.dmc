@@ -1,0 +1,7 @@
+fn main() -> int {
+    var i: int = 0;
+    do { i = i + 1; } while (i < 5);
+    var j: int = 0;
+    until (j >= 3) { j = j + 1; }
+    return i + j;
+}

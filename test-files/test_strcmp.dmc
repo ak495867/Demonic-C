@@ -1,0 +1,20 @@
+import "text";
+
+fn main() -> int {
+    let a = "hello";
+    let b = string_copy("hello");
+    let c = string_copy("world");
+    var r: int = 0;
+    if (a == b) {
+        r = r + 1;
+    }
+    if (a != c) {
+        r = r + 10;
+    }
+    if (a == c) {
+        r = r + 100;
+    } else {
+        r = r + 1000;
+    }
+    return r;
+}

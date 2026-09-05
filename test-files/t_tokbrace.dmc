@@ -1,0 +1,17 @@
+struct Tok {
+    text: string;
+}
+fn skip(ts: *Tok, count: int) -> int {
+    var j: int = 0;
+    while (j < count) {
+        if (ts[j].text == "{") {
+            j = j + 1;
+            continue;
+        }
+        j = j + 1;
+    }
+    return j;
+}
+fn main() -> int {
+    return 0;
+}

@@ -1,0 +1,6 @@
+fn main() -> int {
+    var x: int = 10;
+    var px = &x;
+    *px = *px + 5;
+    return *px;
+}

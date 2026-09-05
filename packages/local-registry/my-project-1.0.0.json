@@ -1,0 +1,9 @@
+{
+  "name": "my-project",
+  "version": "1.0.0",
+  "description": "Demonic C package",
+  "license": "MIT",
+  "json": "^2.0",
+  "http": "^1.0",
+  "crypto": "^0.9"
+}

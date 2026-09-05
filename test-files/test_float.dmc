@@ -1,0 +1,8 @@
+fn main() -> int {
+    let pi: f64 = math_pi();
+    let r: f64 = math_sqrt(4.0);
+    let s: f64 = math_sin(pi / 2.0);
+    let ri: int = text_to_int(text_from_float(r));
+    let si: int = text_to_int(text_from_float(s));
+    return ri * 10 + si;
+}

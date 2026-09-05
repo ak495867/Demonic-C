@@ -1,0 +1,48 @@
+struct Decl {
+    kind: int;
+    name: string;
+    start: int;
+    end: int;
+}
+fn skip_to_brace(ts: *Tok, count: int, open_idx: int) -> int {
+    var depth: int = 0;
+    var j: int = open_idx;
+    while (j < count) {
+        if (ts[j].kind == 4 && ts[j].text == "{") {
+            depth = depth + 1;
+        }
+        if (ts[j].kind == 4 && ts[j].text == "}") {
+            depth = depth - 1;
+            if (depth == 0) {
+                return j + 1;
+            }
+        }
+        j = j + 1;
+    }
+    return j;
+}
+fn find_brace(ts: *Tok, count: int, from: int) -> int {
+    var j: int = from;
+    while (j < count && !(ts[j].kind == 4 && ts[j].text == "{")) {
+        j = j + 1;
+    }
+    return j;
+}
+fn parse_top(ts: *Tok, count: int, decls: *Decl, cap: int) -> int {
+    var i: int = 0;
+    var n: int = 0;
+    while (i < count) {
+        var t: string = ts[i].text;
+        if (t == "import") {
+            if (n < cap) {
+                decls[n] = Decl{kind: 1, name: ts[i + 1].text, start: i, end: i + 3};
+                n = n + 1;
+            }
+            i = i + 3;
+            continue;
+        }
+        i = i + 1;
+    }
+    return n;
+}
+fn main() -> int { return 0; }

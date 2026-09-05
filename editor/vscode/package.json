@@ -1,0 +1,14 @@
+{
+  "name": "demonic-c-language",
+  "displayName": "Demonic C",
+  "description": "Language support for Demonic C",
+  "version": "0.1.0",
+  "publisher": "demonic-lang",
+  "engines": {"vscode": ">=1.80.0"},
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [{"id": "dmc", "aliases": ["Demonic C", "dmc"], "extensions": [".dmc"]}],
+    "grammars": [{"language": "dmc", "scopeName": "source.dmc", "path": "./syntaxes/dmc.tmLanguage.json"}],
+    "commands": [{"command": "dmc.test", "title": "Demonic C: Test"}, {"command": "dmc.build", "title": "Demonic C: Build"}]
+  }
+}

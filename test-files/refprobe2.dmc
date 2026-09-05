@@ -1,0 +1,15 @@
+import "parser";
+
+fn main() -> int {
+    let src = "if (c == \"{\") { }";
+    var ts: [Tok; 64] = [Tok{kind: 0, text: "", line: 0}];
+    let n = lex(src, &ts[0], 64);
+    var i: int = 0;
+    while (i < n) {
+        var k: int = ts[i].kind;
+        println(ts[i].text);
+        println(k);
+        i = i + 1;
+    }
+    return n % 256;
+}

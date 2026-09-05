@@ -1,0 +1,17 @@
+enum Rank { Human, Legendary, Demon }
+
+fn rank_value(r: Rank) -> int {
+    switch (r) {
+        case Rank::Human:
+            return 1;
+        case Rank::Legendary:
+            return 2;
+        default:
+            return 3;
+    }
+}
+
+fn main() -> int {
+    let r: Rank = Rank::Legendary;
+    return rank_value(r);
+}

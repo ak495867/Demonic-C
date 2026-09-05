@@ -1,0 +1,12 @@
+import "parser";
+
+fn main() -> int {
+    let src = "import \"io\"; struct P { x: int; } enum C { A, B } fn main() -> int { return 1; }";
+    var ts: [Tok; 256] = [Tok{kind: 0, text: "", line: 0}];
+    let count = lex(src, &ts[0], 256);
+    println(count);
+    var ds: [Decl; 8] = [Decl{kind: 0, name: "", start: 0, end: 0}];
+    let n = parse_top(ts, count, &ds[0], 8);
+    println(n);
+    return n;
+}

@@ -1,0 +1,14 @@
+import "parser";
+
+fn main() -> int {
+    let src = "struct Foo { x: int; } fn bar() -> int { return 1; }";
+    var ts: [Tok; 64] = [Tok{kind: 0, text: "", line: 0}];
+    let count = lex(src, &ts[0], 64);
+    println(count);
+    var i: int = 0;
+    while (i < count) {
+        println(ts[i].text);
+        i = i + 1;
+    }
+    return count;
+}

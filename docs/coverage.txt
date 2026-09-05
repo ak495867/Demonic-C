@@ -1,0 +1,4 @@
+files=2
+source_lines=60
+executable_lines=32
+line_inventory_percent=53.33

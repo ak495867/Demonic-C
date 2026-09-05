@@ -1,0 +1,11 @@
+fn is_punc(x: int, y: int) -> int {
+    return x == y;
+}
+fn main() -> int {
+    var a: int = 1;
+    var b: int = 2;
+    if (!is_punc(a, b)) {
+        return 5;
+    }
+    return 0;
+}

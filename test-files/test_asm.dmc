@@ -1,0 +1,6 @@
+fn main() -> int {
+    asm {
+        "movl $0, %eax"
+    }
+    return 0;
+}

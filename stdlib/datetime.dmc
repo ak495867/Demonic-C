@@ -1,0 +1,2 @@
+fn now() -> int { return datetime_now(); }
+fn format(value: int, pattern: string) -> string { return datetime_format(value, pattern); }

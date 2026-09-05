@@ -1,0 +1,8 @@
+fn main() -> int {
+    var x: int = 7;
+    let h: int = mem_map(&x, 8);
+    mem_write(h, 0, 123);
+    let back: int = mem_read(h, 0);
+    mem_unmap(h);
+    return back;
+}

@@ -1,0 +1,7 @@
+fn greet(name: string) -> string {
+    return text_concat("hello, ", name);
+}
+
+fn triple(x: int) -> int {
+    return x * 3;
+}
