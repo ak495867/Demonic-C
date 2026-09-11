@@ -1,2 +1,29 @@
-fn json_parse_text(value: string) -> string { return json_parse(value); }
-fn json_stringify_text(value: string) -> string { return json_stringify(value); }
+fn json_parse(value: string) -> string {
+    // Basic JSON parsing stub - returns input unchanged
+    return value;
+}
+
+fn json_stringify(value: string) -> string {
+    // Basic JSON stringification stub - returns input unchanged
+    return value;
+}
+
+fn json_get(json: string, key: string) -> string {
+    // Basic JSON get stub - returns empty string for now
+    return "";
+}
+
+fn json_set(obj: string, key: string, value: string) -> string {
+    // Basic JSON set stub - returns input unchanged
+    return obj;
+}
+
+fn json_remove(obj: string, key: string) -> string {
+    // Basic JSON remove stub - returns input unchanged
+    return obj;
+}
+
+fn json_size(obj: string) -> int {
+    // Return 0 for now (stub implementation)
+    return 0;
+}

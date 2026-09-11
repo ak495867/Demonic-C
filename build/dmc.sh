@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 set -e
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 case "${1:-}" in
   test|doc|build|bundle|login|publish|deprecate|ci)
     exec python3 "$ROOT/tools/dmc_host.py" "$@"

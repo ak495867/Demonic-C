@@ -1,25 +1,7 @@
-#define _POSIX_C_SOURCE 200112L
-#include "dmc_net.h"
-#include "core/dmc_core.h"
-#ifdef _WIN32
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#define DMC_CLOSE closesocket
-#else
-#include <sys/socket.h>
-#include <netdb.h>
-#include <unistd.h>
-#define DMC_CLOSE close
-#endif
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-
 dmc_handle dmc_tcp_connect(const char *host, unsigned short port) {
-#ifdef _WIN32
-    wsa_init();
-#endif
+    #ifdef _WIN32
+        wsa_init();
+    #endif
     char service[16];
     snprintf(service, sizeof(service), "%u", port);
     struct addrinfo hints = {0};
@@ -27,7 +9,10 @@ dmc_handle dmc_tcp_connect(const char *host, unsigned short port) {
     hints.ai_socktype = SOCK_STREAM;
     if (getaddrinfo(host, service, &hints, &result) != 0) { dmc_set_error("address lookup failed"); return -1; }
     int socket_fd = (int)socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-    if (socket_fd >= 0 && connect(socket_fd, result->ai_addr, (int)result->ai_addrlen) < 0) { DMC_CLOSE(socket_fd); socket_fd = -1; }
+    if (socket_fd >= 0 && connect(socket_fd, result->ai_addr, (int)result->ai_addrlen) < 0) {
+        DMC_CLOSE(socket_fd);
+        socket_fd = -1;
+    }
     freeaddrinfo(result);
     if (socket_fd < 0) { dmc_set_error("TCP connection failed"); return -1; }
     dmc_handle handle = dmc_reserve(DMC_SOCKET, (void *)(intptr_t)socket_fd, 0);

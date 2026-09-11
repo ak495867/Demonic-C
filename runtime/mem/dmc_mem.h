@@ -2,6 +2,7 @@
 #define DMC_MEM_H
 
 #include <stddef.h>
+#include "core/dmc_core.h"
 
 dmc_handle dmc_mem_alloc(size_t size);
 int dmc_mem_size(dmc_handle handle, size_t *size);

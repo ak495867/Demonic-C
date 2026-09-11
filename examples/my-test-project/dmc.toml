@@ -8,5 +8,5 @@ output = "bin/my-test-project"
 type = "executable"
 
 [dependencies]
-# json = "^2.0"
-# http = "^1.0"
+json = "^2.0"
+http = "^1.0"
