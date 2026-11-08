@@ -1,0 +1,16 @@
+import "crypto";
+import "fs";
+import "os";
+
+#[test]
+fn test_stdlib_import() -> int {
+    let b64 = to_base64("Antigravity");
+    if (text_cmp(from_base64(b64), "Antigravity") != 0) { return 1; }
+    let h = hash_sha256("Antigravity");
+    if (text_len(h) != 64) { return 2; }
+    
+    let cur = os_current_dir();
+    if (text_len(cur) == 0) { return 3; }
+    
+    return 0;
+}

@@ -415,6 +415,10 @@ private:
             candidates.push_back(importer_dir / (name + ".dmc"));
             candidates.push_back(importer_dir / "src" / name);
             candidates.push_back(importer_dir / "src" / (name + ".dmc"));
+            candidates.push_back(importer_dir / "stdlib" / name);
+            candidates.push_back(importer_dir / "stdlib" / (name + ".dmc"));
+            candidates.push_back(importer_dir.parent_path() / "stdlib" / name);
+            candidates.push_back(importer_dir.parent_path() / "stdlib" / (name + ".dmc"));
         }
         for (auto& dir : include_dirs_) {
             candidates.push_back(std::filesystem::path(dir) / name);
@@ -422,6 +426,8 @@ private:
         }
         candidates.push_back(std::filesystem::path(name));
         candidates.push_back(std::filesystem::path(name + ".dmc"));
+        candidates.push_back(std::filesystem::path("stdlib") / name);
+        candidates.push_back(std::filesystem::path("stdlib") / (name + ".dmc"));
         for (auto& candidate : candidates) {
             std::error_code error;
             if (std::filesystem::is_regular_file(candidate, error)) return candidate.string();
@@ -2660,8 +2666,10 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
     std::string c_compiler = cc ? cc : "clang";
 #ifdef _WIN32
     if (!cc) {
-        if (std::system("clang --version > nul 2>&1") != 0 && std::system("gcc --version > nul 2>&1") == 0) {
+        if (std::system("gcc --version > nul 2>&1") == 0) {
             c_compiler = "gcc";
+        } else if (std::system("clang --version > nul 2>&1") == 0) {
+            c_compiler = "clang";
         }
     }
 #else
@@ -2767,8 +2775,10 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     std::string c_compiler = cc ? cc : "clang";
 #ifdef _WIN32
     if (!cc) {
-        if (std::system("clang --version > nul 2>&1") != 0 && std::system("gcc --version > nul 2>&1") == 0) {
+        if (std::system("gcc --version > nul 2>&1") == 0) {
             c_compiler = "gcc";
+        } else if (std::system("clang --version > nul 2>&1") == 0) {
+            c_compiler = "clang";
         }
     }
 #else
@@ -2911,8 +2921,10 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
     std::string c_compiler = cc ? cc : "clang";
 #ifdef _WIN32
     if (!cc) {
-        if (std::system("clang --version > nul 2>&1") != 0 && std::system("gcc --version > nul 2>&1") == 0) {
+        if (std::system("gcc --version > nul 2>&1") == 0) {
             c_compiler = "gcc";
+        } else if (std::system("clang --version > nul 2>&1") == 0) {
+            c_compiler = "clang";
         }
     }
 #else

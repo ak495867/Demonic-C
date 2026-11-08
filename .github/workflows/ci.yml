@@ -98,9 +98,10 @@ jobs:
         run: |
           ${{ matrix.binary }} test-files/emit.dmc -o test-files/_stage_emit.c
           gcc -std=c11 -w test-files/_stage_emit.c -o test-files/_stage_emit
-          (cd test-files && ./_stage_emit selflex.dmc selflex_stage_out.c)
-          gcc -std=c11 -w test-files/selflex_stage_out.c -o test-files/selflex_stage
-          (cd test-files && ./selflex_stage) || [ $? -eq 37 ]
+          cd test-files
+          ./_stage_emit selflex.dmc selflex_stage_out.c
+          gcc -std=c11 -w selflex_stage_out.c -o selflex_stage
+          ./selflex_stage || test $? -eq 37
 
       - name: Verify Bootstrap Stage (Windows)
         if: runner.os == 'Windows'
