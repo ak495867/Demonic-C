@@ -1,4 +1,59 @@
 {
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Demonic C",
   "scopeName": "source.dmc",
-  "patterns": [{"match": "\\b(fn|let|var|struct|enum|import|return|if|else|for|while|do|until)\\b", "name": "keyword.control.dmc"}, {"match": "\\b(int|bool|string|f32|f64|void)\\b", "name": "storage.type.dmc"}, {"match": "\"[^\"]*\"", "name": "string.quoted.dmc"}, {"match": "\\b[0-9]+(?:\\.[0-9]+)?\\b", "name": "constant.numeric.dmc"}]
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.dmc",
+      "match": "//.*$"
+    },
+    {
+      "name": "comment.block.dmc",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    {
+      "name": "string.quoted.double.dmc",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.dmc",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "keyword.control.dmc",
+      "match": "\\b(fn|let|var|return|defer|if|else|while|for|in|match|do|until|break|continue|import|export)\\b"
+    },
+    {
+      "name": "keyword.declaration.dmc",
+      "match": "\\b(struct|enum)\\b"
+    },
+    {
+      "name": "storage.type.dmc",
+      "match": "\\b(int|i32|i64|u8|u32|u64|float|f32|f64|bool|string|void)\\b"
+    },
+    {
+      "name": "constant.language.dmc",
+      "match": "\\b(true|false|null)\\b"
+    },
+    {
+      "name": "support.function.builtin.dmc",
+      "match": "\\b(print|println|eprintln|assert|panic|len|sizeof|mem_alloc|mem_free|file_open|file_read|file_write|file_close|tcp_connect|tcp_send|tcp_recv|tcp_close|fs_read|fs_write|os_env|sha256)\\b"
+    },
+    {
+      "name": "entity.name.function.dmc",
+      "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+    },
+    {
+      "name": "constant.numeric.dmc",
+      "match": "\\b[0-9]+(?:\\.[0-9]+)?\\b"
+    },
+    {
+      "name": "keyword.operator.attribute.dmc",
+      "match": "#\\[[a-zA-Z0-9_]+\\]"
+    }
+  ]
 }

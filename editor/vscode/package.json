@@ -1,14 +1,33 @@
 {
-  "name": "demonic-c-language",
-  "displayName": "Demonic C",
-  "description": "Language support for Demonic C",
-  "version": "0.1.0",
-  "publisher": "demonic-lang",
-  "engines": {"vscode": ">=1.80.0"},
-  "categories": ["Programming Languages"],
+  "name": "demonic-c",
+  "displayName": "Demonic C Language Support",
+  "description": "Rich language support, syntax highlighting, and LSP integration for the Demonic C systems programming language.",
+  "version": "1.0.0",
+  "publisher": "ak495867",
+  "engines": {
+    "vscode": ">=1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Formatters"
+  ],
+  "icon": "../../assets/logo.png",
   "contributes": {
-    "languages": [{"id": "dmc", "aliases": ["Demonic C", "dmc"], "extensions": [".dmc"]}],
-    "grammars": [{"language": "dmc", "scopeName": "source.dmc", "path": "./syntaxes/dmc.tmLanguage.json"}],
-    "commands": [{"command": "dmc.test", "title": "Demonic C: Test"}, {"command": "dmc.build", "title": "Demonic C: Build"}]
+    "languages": [
+      {
+        "id": "dmc",
+        "aliases": ["Demonic C", "dmc"],
+        "extensions": [".dmc"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "dmc",
+        "scopeName": "source.dmc",
+        "path": "./syntaxes/dmc.tmLanguage.json"
+      }
+    ]
   }
 }

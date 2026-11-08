@@ -16,15 +16,15 @@ jobs:
         include:
           - os: ubuntu-latest
             shell: bash
-            binary: bin/dmc
+            binary: ./bin/dmc
             smoke_flags: ""
           - os: macos-latest
             shell: bash
-            binary: bin/dmc
+            binary: ./bin/dmc
             smoke_flags: ""
           - os: windows-latest
             shell: pwsh
-            binary: bin/dmc.exe
+            binary: .\bin\dmc.exe
             smoke_flags: "-lws2_32"
 
     defaults:

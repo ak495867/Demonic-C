@@ -123,6 +123,7 @@ static std::string ctype(const std::string& type) {
     if (type == "void") return "void";
     if (type == "f32") return "float";
     if (type == "f64") return "double";
+    if (type == "vec" || type == "map" || type == "queue") return "int";
     if (!type.empty() && type.front() == '*') return ctype(type.substr(1)) + "*";
     if (!type.empty() && type.front() == '[') {
         auto sep = type.find(';');
@@ -161,9 +162,10 @@ public:
         if (!diagnostics_.empty()) {
             out << "int _dmc_diagnostic_count = " << diagnostics_.size() << ";\n";
         }
+        out << "#define _GNU_SOURCE\n";
         out << "#define _POSIX_C_SOURCE 200112L\n";
         out << "#ifdef _WIN32\n";
-        out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <io.h>\n";
+        out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <io.h>\n#include <direct.h>\n";
         out << "#define NSCLOSE closesocket\n";
         out << "#else\n";
         out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n";
@@ -583,7 +585,8 @@ private:
         out << "int vec_push(long long h, long long x) { _dmc_vec *v = _dmc_vecs[h]; if (!v) return -1; if (v->len == v->cap) { long long nc = v->cap ? v->cap * 2 : 4; v->data = (long long*)realloc(v->data, (size_t)nc * sizeof(long long)); v->cap = nc; } v->data[v->len++] = x; return 0; }\n";
         out << "int vec_get(long long h, long long i) { _dmc_vec *v = _dmc_vecs[h]; if (!v || i < 0 || i >= v->len) return -1; return (int)v->data[i]; }\n";
         out << "int vec_set(long long h, long long i, long long x) { _dmc_vec *v = _dmc_vecs[h]; if (!v || i < 0 || i >= v->len) return -1; v->data[i] = x; return 0; }\n";
-        out << "int vec_free(long long h) { _dmc_vec *v = _dmc_vecs[h]; if (!v) return -1; free(v->data); free(v); _dmc_vecs[h] = NULL; return 0; }\n\n";
+        out << "int vec_free(long long h) { _dmc_vec *v = _dmc_vecs[h]; if (!v) return -1; free(v->data); free(v); _dmc_vecs[h] = NULL; return 0; }\n";
+        out << "int vec_pop(long long h) { _dmc_vec *v = _dmc_vecs[h]; if (!v || v->len <= 0) return -1; return (int)v->data[--v->len]; }\n\n";
         out << "int queue_new(void) { _dmc_queue *q = (_dmc_queue*)calloc(1, sizeof(_dmc_queue)); if (!q) return -1; int h = _dmc_queue_next++; if (_dmc_resize_queue(h) != 0) return -1; _dmc_queues[h] = q; return h; }\n";
         out << "int queue_len(long long h) { if (h < 0 || h >= _dmc_queue_cap || !_dmc_queues[h]) return -1; return (int)_dmc_queues[h]->len; }\n";
         out << "int queue_push(long long h, long long x) { _dmc_queue *q = _dmc_queues[h]; if (!q) return -1; if (q->len == q->cap) { long long nc = q->cap ? q->cap * 2 : 4; q->data = (long long*)realloc(q->data, (size_t)nc * sizeof(long long)); q->cap = nc; } q->data[q->tail] = x; q->tail = (q->tail + 1) % q->cap; ++q->len; return 0; }\n";
@@ -725,6 +728,211 @@ int db_close(long long connection) { (void)connection; return 0; }
         out << "const char *string_slice(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen || len <= 0) return string_copy(\"\"); if (start + len > slen) len = slen - start; char *b = (char*)malloc((size_t)len + 1); if (len) memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n\n";
         out << "long long proc_arg_count(long long argc) { return argc; }\n";
         out << "const char *proc_exit(long long code) { exit((int)code); return \"\"; }\n\n";
+
+        out << R"DMC_SYSTEM(
+const char *fs_read(const char *path) {
+    if (!path) return "";
+    FILE *f = fopen(path, "rb");
+    if (!f) return "";
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz < 0) { fclose(f); return ""; }
+    char *buf = (char*)malloc((size_t)sz + 1);
+    if (!buf) { fclose(f); return ""; }
+    size_t n = fread(buf, 1, (size_t)sz, f);
+    buf[n] = 0;
+    fclose(f);
+    return buf;
+}
+long long fs_write(const char *path, const char *content) {
+    if (!path || !content) return -1;
+    FILE *f = fopen(path, "wb");
+    if (!f) return -1;
+    size_t len = strlen(content);
+    size_t n = fwrite(content, 1, len, f);
+    fclose(f);
+    return n == len ? 0 : -1;
+}
+long long fs_append(const char *path, const char *content) {
+    if (!path || !content) return -1;
+    FILE *f = fopen(path, "ab");
+    if (!f) return -1;
+    size_t len = strlen(content);
+    size_t n = fwrite(content, 1, len, f);
+    fclose(f);
+    return n == len ? 0 : -1;
+}
+long long fs_exists(const char *path) {
+    if (!path) return 0;
+    FILE *f = fopen(path, "rb");
+    if (f) { fclose(f); return 1; }
+    return 0;
+}
+long long fs_remove(const char *path) {
+    if (!path) return -1;
+    return remove(path) == 0 ? 0 : -1;
+}
+long long fs_size(const char *path) {
+    if (!path) return -1;
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fclose(f);
+    return sz >= 0 ? (long long)sz : -1;
+}
+const char *os_env(const char *key) {
+    if (!key) return "";
+    const char *v = getenv(key);
+    return v ? v : "";
+}
+long long os_set_env(const char *key, const char *val) {
+    if (!key) return -1;
+#ifdef _WIN32
+    return _putenv_s(key, val ? val : "") == 0 ? 0 : -1;
+#else
+    return setenv(key, val ? val : "", 1) == 0 ? 0 : -1;
+#endif
+}
+const char *os_cwd(void) {
+    static char buf[4096];
+#ifdef _WIN32
+    if (_getcwd(buf, sizeof(buf))) return buf;
+#else
+    if (getcwd(buf, sizeof(buf))) return buf;
+#endif
+    return "";
+}
+const char *os_platform(void) {
+#if defined(_WIN32) || defined(_WIN64)
+    return "windows";
+#elif defined(__APPLE__) || defined(__MACH__)
+    return "macos";
+#elif defined(__linux__)
+    return "linux";
+#else
+    return "unknown";
+#endif
+}
+const char *os_arch(void) {
+#if defined(__x86_64__) || defined(_M_X64)
+    return "x86_64";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    return "arm64";
+#elif defined(__arm__) || defined(_M_ARM)
+    return "arm";
+#elif defined(__i386__) || defined(_M_IX86)
+    return "x86";
+#else
+    return "unknown";
+#endif
+}
+static const unsigned char _dmc_b64_tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const char *base64_encode(const char *s) {
+    if (!s) return "";
+    size_t len = strlen(s);
+    size_t out_len = 4 * ((len + 2) / 3);
+    char *out = (char*)malloc(out_len + 1);
+    if (!out) return "";
+    size_t i = 0, j = 0;
+    while (i < len) {
+        unsigned int octet_a = (unsigned char)s[i++];
+        unsigned int octet_b = i < len ? (unsigned char)s[i++] : 0;
+        unsigned int octet_c = i < len ? (unsigned char)s[i++] : 0;
+        unsigned int triple = (octet_a << 16) + (octet_b << 8) + octet_c;
+        out[j++] = _dmc_b64_tbl[(triple >> 18) & 0x3F];
+        out[j++] = _dmc_b64_tbl[(triple >> 12) & 0x3F];
+        out[j++] = (i > len + 1) ? '=' : _dmc_b64_tbl[(triple >> 6) & 0x3F];
+        out[j++] = (i > len) ? '=' : _dmc_b64_tbl[triple & 0x3F];
+    }
+    out[j] = 0;
+    return out;
+}
+const char *base64_decode(const char *s) {
+    if (!s) return "";
+    size_t len = strlen(s);
+    if (len % 4 != 0) return "";
+    char *out = (char*)malloc(len / 4 * 3 + 1);
+    if (!out) return "";
+    size_t i = 0, j = 0;
+    while (i < len) {
+        int v[4];
+        for (int k = 0; k < 4; ++k) {
+            char c = s[i++];
+            if (c >= 'A' && c <= 'Z') v[k] = c - 'A';
+            else if (c >= 'a' && c <= 'z') v[k] = c - 'a' + 26;
+            else if (c >= '0' && c <= '9') v[k] = c - '0' + 52;
+            else if (c == '+') v[k] = 62;
+            else if (c == '/') v[k] = 63;
+            else v[k] = 0;
+        }
+        unsigned int triple = (v[0] << 18) | (v[1] << 12) | (v[2] << 6) | v[3];
+        if (j < len / 4 * 3) out[j++] = (triple >> 16) & 0xFF;
+        if (s[i-2] != '=' && j < len / 4 * 3) out[j++] = (triple >> 8) & 0xFF;
+        if (s[i-1] != '=' && j < len / 4 * 3) out[j++] = triple & 0xFF;
+    }
+    out[j] = 0;
+    return out;
+}
+static unsigned int _dmc_rotr(unsigned int x, unsigned int n) { return (x >> n) | (x << (32 - n)); }
+const char *sha256(const char *str) {
+    if (!str) return "";
+    static const unsigned int K[64] = {
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    };
+    unsigned int H[8] = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    };
+    size_t initial_len = strlen(str);
+    size_t new_len = initial_len + 1;
+    while (new_len % 64 != 56) new_len++;
+    unsigned char *msg = (unsigned char*)calloc(new_len + 8, 1);
+    if (!msg) return "";
+    memcpy(msg, str, initial_len);
+    msg[initial_len] = 0x80;
+    unsigned long long bits_len = (unsigned long long)initial_len * 8;
+    for (int i = 0; i < 8; i++) msg[new_len + 7 - i] = (unsigned char)(bits_len >> (i * 8));
+    for (size_t chunk = 0; chunk < new_len + 8; chunk += 64) {
+        unsigned int w[64];
+        for (int i = 0; i < 16; i++) {
+            w[i] = ((unsigned int)msg[chunk + i*4] << 24) | ((unsigned int)msg[chunk + i*4 + 1] << 16) | ((unsigned int)msg[chunk + i*4 + 2] << 8) | ((unsigned int)msg[chunk + i*4 + 3]);
+        }
+        for (int i = 16; i < 64; i++) {
+            unsigned int s0 = _dmc_rotr(w[i-15], 7) ^ _dmc_rotr(w[i-15], 18) ^ (w[i-15] >> 3);
+            unsigned int s1 = _dmc_rotr(w[i-2], 17) ^ _dmc_rotr(w[i-2], 19) ^ (w[i-2] >> 10);
+            w[i] = w[i-16] + s0 + w[i-7] + s1;
+        }
+        unsigned int a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+        for (int i = 0; i < 64; i++) {
+            unsigned int S1 = _dmc_rotr(e, 6) ^ _dmc_rotr(e, 11) ^ _dmc_rotr(e, 25);
+            unsigned int ch = (e & f) ^ ((~e) & g);
+            unsigned int temp1 = h + S1 + ch + K[i] + w[i];
+            unsigned int S0 = _dmc_rotr(a, 2) ^ _dmc_rotr(a, 13) ^ _dmc_rotr(a, 22);
+            unsigned int maj = (a & b) ^ (a & c) ^ (b & c);
+            unsigned int temp2 = S0 + maj;
+            h = g; g = f; f = e; e = d + temp1;
+            d = c; c = b; b = a; a = temp1 + temp2;
+        }
+        H[0] += a; H[1] += b; H[2] += c; H[3] += d;
+        H[4] += e; H[5] += f; H[6] += g; H[7] += h;
+    }
+    free(msg);
+    char *res = (char*)malloc(65);
+    if (!res) return "";
+    for (int i = 0; i < 8; i++) snprintf(res + i * 8, 9, "%08x", H[i]);
+    res[64] = 0;
+    return res;
+}
+)DMC_SYSTEM";
         out << "static unsigned char *_dmc_arenas[1024];\n";
         out << "static size_t _dmc_arena_sz[1024];\n";
         out << "static long long _dmc_arena_top[1024];\n";
@@ -736,12 +944,10 @@ int db_close(long long connection) { (void)connection; return 0; }
         out << "long long arena_top(long long h) { return _dmc_arenas[h] ? _dmc_arena_top[h] : -1; }\n";
         out << "long long arena_free(long long h) { if (!_dmc_arenas[h]) return -1; free(_dmc_arenas[h]); _dmc_arenas[h] = NULL; _dmc_arena_top[h] = 0; _dmc_arena_sz[h] = 0; return 0; }\n\n";
         out << "#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))\n";
-        out << "#if defined(__linux__)\n";
-        out << "#include <sys/io.h>\n";
-        out << "#endif\n";
         out << "static int _dmc_io_allowed = 0;\n";
         out << "long long port_init(void) {\n";
         out << "#ifdef __linux__\n";
+        out << "  extern int iopl(int);\n";
         out << "  if (iopl(3) == 0) { _dmc_io_allowed = 1; return 1; }\n";
         out << "  _dmc_io_allowed = 0; return 0;\n";
         out << "#else\n";
@@ -1236,7 +1442,91 @@ int db_close(long long connection) { (void)connection; return 0; }
             } else if (peek() == ".") {
                 take();
                 std::string field = take();
-                val = "(" + val + ")." + field;
+                if (peek() == "(") {
+                    take();
+                    std::string margs;
+                    if (peek() != ")") {
+                        margs = expression_list(")");
+                    }
+                    expect(")");
+                    
+                    std::string vt = infer_type(val);
+                    std::string typed_fn = vt + "_" + field;
+
+                    if (vt == "string" || (!val.empty() && val.front() == '"')) {
+                        if (field == "len") val = "text_len(" + val + ")";
+                        else if (field == "slice") val = "string_slice(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "sub") val = "text_sub(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "cmp") val = "text_cmp(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (is_user_function(typed_fn)) val = typed_fn + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (is_user_function(field)) val = field + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else val = "((" + val + ")." + field + ")(" + margs + ")";
+                    } else if (vt == "vec" || val.find("vec") != std::string::npos) {
+                        if (field == "push") val = "vec_push(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "pop") val = "vec_pop(" + val + ")";
+                        else if (field == "len") val = "vec_len(" + val + ")";
+                        else if (field == "get") val = "vec_get(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "set") val = "vec_set(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "free") val = "vec_free(" + val + ")";
+                        else if (is_user_function(typed_fn)) val = typed_fn + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (is_user_function(field)) val = field + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else val = "((" + val + ")." + field + ")(" + margs + ")";
+                    } else if (vt == "map" || val.find("map") != std::string::npos) {
+                        if (field == "set") val = "map_set(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "get") val = "map_get(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "has") val = "map_has(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "len") val = "map_len(" + val + ")";
+                        else if (field == "free") val = "map_free(" + val + ")";
+                        else if (is_user_function(typed_fn)) val = typed_fn + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (is_user_function(field)) val = field + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else val = "((" + val + ")." + field + ")(" + margs + ")";
+                    } else if (vt == "queue" || val.find("queue") != std::string::npos) {
+                        if (field == "push") val = "queue_push(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "pop") val = "queue_pop(" + val + ")";
+                        else if (field == "peek") val = "queue_peek(" + val + ")";
+                        else if (field == "len") val = "queue_len(" + val + ")";
+                        else if (field == "free") val = "queue_free(" + val + ")";
+                        else if (is_user_function(typed_fn)) val = typed_fn + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (is_user_function(field)) val = field + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else val = "((" + val + ")." + field + ")(" + margs + ")";
+                    } else if (is_user_function(typed_fn)) {
+                        const Function* ufn = find_function(typed_fn);
+                        std::string first_arg = val;
+                        if (ufn && !ufn->params.empty() && ufn->params[0].type.front() == '*' && (vt.empty() || vt.front() != '*')) {
+                            first_arg = "(&" + val + ")";
+                        }
+                        std::string call_args = first_arg + (margs.empty() ? "" : ", " + margs);
+                        val = typed_fn + "(" + call_args + ")";
+                    } else if (is_user_function(field)) {
+                        const Function* ufn = find_function(field);
+                        std::string first_arg = val;
+                        if (ufn && !ufn->params.empty() && ufn->params[0].type.front() == '*' && (vt.empty() || vt.front() != '*')) {
+                            first_arg = "(&" + val + ")";
+                        }
+                        std::string call_args = first_arg + (margs.empty() ? "" : ", " + margs);
+                        val = field + "(" + call_args + ")";
+                    } else if (field == "push") {
+                        val = "vec_push(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                    } else if (field == "pop") {
+                        val = "vec_pop(" + val + ")";
+                    } else if (field == "peek") {
+                        val = "queue_peek(" + val + ")";
+                    } else if (field == "has") {
+                        val = "map_has(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                    } else if (field == "len") {
+                        val = "vec_len(" + val + ")";
+                    } else if (field == "get") {
+                        val = "vec_get(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                    } else if (field == "set") {
+                        val = "vec_set(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                    } else if (field == "free") {
+                        val = "vec_free(" + val + ")";
+                    } else {
+                        val = "((" + val + ")." + field + ")(" + margs + ")";
+                    }
+                } else {
+                    val = "(" + val + ")." + field;
+                }
             } else {
                 take();
                 if (peek() == "..") {
@@ -1339,6 +1629,7 @@ int db_close(long long connection) { (void)connection; return 0; }
             std::string fval = expression("}");
             result += "." + fname + " = " + fval;
             if (peek() == ",") take();
+            else if (peek() == ";") take();
         }
         expect("}");
         return result + "}";
@@ -1458,7 +1749,7 @@ int db_close(long long connection) { (void)connection; return 0; }
                 }
             }
         }
-        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text"}) {
+        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode"}) {
             if (arg.rfind(std::string(fn) + "(", 0) == 0) return true;
         }
         auto open = arg.find('(');
@@ -1483,11 +1774,32 @@ int db_close(long long connection) { (void)connection; return 0; }
         if (!val.empty() && val.front() == '"') return "string";
         if (is_enum_value(val)) return enum_type_of(val);
         if (val.rfind("(&", 0) == 0) return "*int";
-        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text"}) {
+        if (!val.empty() && val.front() == '(') {
+            auto close_p = val.find(')');
+            if (close_p != std::string::npos) {
+                std::string cand = val.substr(1, close_p - 1);
+                for (const auto& s : structs_) {
+                    if (s.name == cand) return cand;
+                }
+            }
+        }
+        if (val.rfind("vec_new(", 0) == 0) return "vec";
+        if (val.rfind("map_new(", 0) == 0) return "map";
+        if (val.rfind("queue_new(", 0) == 0) return "queue";
+        if (val.rfind("vec_new", 0) == 0) return "vec";
+        if (val.rfind("map_new", 0) == 0) return "map";
+        if (val.rfind("queue_new", 0) == 0) return "queue";
+        for (const auto& s : structs_) {
+            std::string prefix = "(" + s.name + "){";
+            if (val.find(prefix) != std::string::npos || val.rfind(s.name + " {", 0) == 0 || val.rfind(s.name + "{", 0) == 0) {
+                return s.name;
+            }
+        }
+        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode"}) {
             if (val.rfind(std::string(fn) + "(", 0) == 0) return "string";
         }
         auto open = val.find('(');
-        if (open != std::string::npos) {
+        if (open != std::string::npos && open > 0) {
             std::string callee = val.substr(0, open);
             const Function* fn = find_function(callee);
             if (fn) return fn->ret_type;
@@ -1514,8 +1826,17 @@ int db_close(long long connection) { (void)connection; return 0; }
                 }
             }
         }
-        if (!val.empty() && std::isalpha(static_cast<unsigned char>(val[0]))) {
-            std::string t = lookup_type(val);
+        std::string clean = val;
+        while (clean.size() >= 2 && clean.front() == '(' && clean.back() == ')') {
+            clean = clean.substr(1, clean.size() - 2);
+        }
+        if (!clean.empty() && clean.front() == '&') {
+            std::string inner = clean.substr(1);
+            std::string t = lookup_type(inner);
+            if (!t.empty()) return "*" + t;
+        }
+        if (!clean.empty() && (std::isalpha(static_cast<unsigned char>(clean[0])) || clean[0] == '_')) {
+            std::string t = lookup_type(clean);
             if (!t.empty()) return t;
         }
         return "int";
@@ -1565,7 +1886,7 @@ int db_close(long long connection) { (void)connection; return 0; }
             "print", "println", "mem_alloc", "mem_free", "mem_size", "mem_write", "mem_read",
             "mem_map", "mem_unmap", "file_open", "file_read", "file_write", "file_close",
             "tcp_connect", "tcp_send", "tcp_recv", "tcp_close",
-            "vec_new", "vec_len", "vec_push", "vec_get", "vec_set", "vec_free",
+            "vec_new", "vec_len", "vec_push", "vec_pop", "vec_get", "vec_set", "vec_free",
             "queue_new", "queue_len", "queue_push", "queue_pop", "queue_peek", "queue_free",
             "map_new", "map_set", "map_get", "map_has", "map_len", "map_free",
             "math_abs", "math_min", "math_max", "math_clamp",
@@ -1573,6 +1894,9 @@ int db_close(long long connection) { (void)connection; return 0; }
             "text_len", "text_concat", "text_sub", "text_char_at", "text_cmp",
             "text_from_int", "text_from_float", "text_to_int", "text_to_float",
             "string_copy", "string_slice",
+            "fs_read", "fs_write", "fs_append", "fs_exists", "fs_remove", "fs_size",
+            "os_env", "os_set_env", "os_cwd", "os_platform", "os_arch",
+            "sha256", "base64_encode", "base64_decode",
             "proc_arg_count", "proc_exit", "syscall", "interrupt"
         };
         for (auto& f : fns) if (f == name) return true;
@@ -2394,12 +2718,14 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     std::vector<std::string> args(argv + 1, argv + argc);
     bool release = false;
     bool statik = false;
+    bool sanitize = false;
     std::filesystem::path source = "";
     std::string explicit_output = "";
     for (size_t i = 0; i < args.size(); ++i) {
         const auto& arg = args[i];
         if (arg == "--release") release = true;
         else if (arg == "--static") statik = true;
+        else if (arg == "--sanitize") sanitize = true;
         else if (arg == "-o") {
             if (i + 1 < args.size()) explicit_output = args[++i];
         }
@@ -2450,6 +2776,7 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
 #endif
     std::string flags = release ? " -O2" : " -O0 -g";
     if (statik) flags += " -static";
+    if (sanitize) flags += " -fsanitize=address,undefined -fno-omit-frame-pointer -g";
 #ifdef _WIN32
     command = "\"" + c_compiler + flags + " \"" + gen_c + "\" -o \"" + output + "\" -lws2_32 -lm\"";
 #else
@@ -2463,29 +2790,96 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
 
 static void print_diagnostic(const std::string& filepath, const std::string& source, const Diagnostic& d, const std::string& severity);
 
-static int cmd_run(const std::string& source_path, const std::vector<std::string>& program_args, const char* argv0) {
+static std::string dmc_cache_dir() {
+    const char* home = std::getenv("USERPROFILE");
+#ifndef _WIN32
+    if (!home) home = std::getenv("HOME");
+#endif
+    std::filesystem::path p = home ? std::filesystem::path(home) / ".dmc" / "cache" : std::filesystem::current_path() / ".dmc" / "cache";
+    std::filesystem::create_directories(p);
+    return p.string();
+}
+
+static uint64_t compute_fnv1a_hash(const std::string& data) {
+    uint64_t hash = 14695981039346656037ULL;
+    for (unsigned char c : data) {
+        hash ^= c;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+static int cmd_run(const std::string& source_path, std::vector<std::string> program_args, const char* argv0, bool force_no_cache = false, bool force_sanitize = false) {
     (void)argv0;
     if (!std::filesystem::exists(source_path)) {
         std::cerr << "dmc: source file not found: " << source_path << "\n";
         return 1;
     }
-    uint64_t ts = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
-    std::string tmp_stem = "_dmc_run_" + std::to_string(ts);
-    std::string gen_c = tmp_stem + ".c";
-    std::string gen_bin = tmp_stem;
-#ifdef _WIN32
-    gen_bin += ".exe";
-#endif
 
+    bool sanitize = force_sanitize;
+    bool no_cache = force_no_cache;
+    std::vector<std::string> clean_args;
+    for (const auto& a : program_args) {
+        if (a == "--sanitize") sanitize = true;
+        else if (a == "--no-cache") no_cache = true;
+        else clean_args.push_back(a);
+    }
+    program_args = clean_args;
+
+    std::string source_content;
     try {
-        std::ifstream input(source_path);
-        if (!input) {
+        std::ifstream in(source_path);
+        if (!in) {
             std::cerr << "dmc: cannot open source file: " << source_path << "\n";
             return 1;
         }
-        std::ostringstream source;
-        source << input.rdbuf();
-        Parser parser(lex(source.str()), source_path);
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        source_content = ss.str();
+    } catch (...) {
+        std::cerr << "dmc: cannot read source file: " << source_path << "\n";
+        return 1;
+    }
+
+    std::string stem = std::filesystem::path(source_path).stem().string();
+    std::string hash_input = source_path + ":" + (sanitize ? "san:" : "nosan:") + source_content;
+    uint64_t hash_val = compute_fnv1a_hash(hash_input);
+    std::stringstream hss;
+    hss << std::hex << hash_val;
+    std::string hash_hex = hss.str();
+
+    std::string exe_name = stem + "_" + hash_hex;
+#ifdef _WIN32
+    exe_name += ".exe";
+#endif
+    std::filesystem::path cached_bin = std::filesystem::path(dmc_cache_dir()) / exe_name;
+
+    // Check build cache
+    if (!no_cache && std::filesystem::exists(cached_bin)) {
+        std::string run_cmd;
+#ifdef _WIN32
+        run_cmd = "\"\"" + cached_bin.string() + "\"";
+        for (const auto& arg : program_args) run_cmd += " \"" + arg + "\"";
+        run_cmd += "\"";
+#else
+        run_cmd = "\"" + cached_bin.string() + "\"";
+        for (const auto& arg : program_args) run_cmd += " \"" + arg + "\"";
+#endif
+        int run_res = std::system(run_cmd.c_str());
+#ifdef _WIN32
+        return run_res;
+#else
+        return (run_res >> 8) & 0xff;
+#endif
+    }
+
+    // Cache miss: transpile and compile directly into cached_bin
+    uint64_t ts = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+    std::string tmp_stem = "_dmc_run_" + std::to_string(ts);
+    std::string gen_c = tmp_stem + ".c";
+
+    try {
+        Parser parser(lex(source_content), source_path);
         parser.add_include_dir(".");
         parser.add_include_dir("stdlib");
         std::filesystem::path sp(source_path);
@@ -2494,10 +2888,10 @@ static int cmd_run(const std::string& source_path, const std::vector<std::string
         }
         std::string generated = parser.emit();
         for (const auto& d : parser.diagnostics()) {
-            print_diagnostic(source_path, source.str(), d, "error");
+            print_diagnostic(source_path, source_content, d, "error");
         }
         for (const auto& w : parser.type_warnings()) {
-            print_diagnostic(source_path, source.str(), w, "warning");
+            print_diagnostic(source_path, source_content, w, "warning");
         }
         if (parser.has_errors()) return 1;
 
@@ -2521,10 +2915,19 @@ static int cmd_run(const std::string& source_path, const std::vector<std::string
             c_compiler = "gcc";
         }
     }
-    std::string compile_cmd = "\"" + c_compiler + " -O0 -w \"" + gen_c + "\" -o \"" + gen_bin + "\" -lws2_32 -lm\"";
 #else
     if (!cc) c_compiler = "cc";
-    std::string compile_cmd = c_compiler + " -O0 -w \"" + gen_c + "\" -o \"" + gen_bin + "\" -lm";
+#endif
+
+    std::string flags = " -O2";
+    if (sanitize) {
+        flags += " -fsanitize=address,undefined -fno-omit-frame-pointer -g";
+    }
+
+#ifdef _WIN32
+    std::string compile_cmd = "\"" + c_compiler + flags + " -w \"" + gen_c + "\" -o \"" + cached_bin.string() + "\" -lws2_32 -lm\"";
+#else
+    std::string compile_cmd = c_compiler + flags + " -w \"" + gen_c + "\" -o \"" + cached_bin.string() + "\" -lm";
 #endif
     int c_res = std::system(compile_cmd.c_str());
     std::filesystem::remove(gen_c);
@@ -2535,24 +2938,182 @@ static int cmd_run(const std::string& source_path, const std::vector<std::string
 
     std::string run_cmd;
 #ifdef _WIN32
-    run_cmd = "\"\"" + gen_bin + "\"";
+    run_cmd = "\"\"" + cached_bin.string() + "\"";
     for (const auto& arg : program_args) {
         run_cmd += " \"" + arg + "\"";
     }
     run_cmd += "\"";
 #else
-    run_cmd = "./" + gen_bin;
+    run_cmd = "\"" + cached_bin.string() + "\"";
     for (const auto& arg : program_args) {
         run_cmd += " \"" + arg + "\"";
     }
 #endif
     int run_res = std::system(run_cmd.c_str());
-    std::filesystem::remove(gen_bin);
+    if (no_cache) {
+        std::filesystem::remove(cached_bin);
+    }
 #ifdef _WIN32
     return run_res;
 #else
     return (run_res >> 8) & 0xff;
 #endif
+}
+
+static int cmd_watch(int argc, char** argv, const char* argv0) {
+    std::vector<std::string> args(argv + 1, argv + argc);
+    if (args.empty()) {
+        std::cerr << "dmc watch: usage: dmc watch <file.dmc> [args...]\n";
+        return 1;
+    }
+    std::string source_path = args[0];
+    std::vector<std::string> prog_args(args.begin() + 1, args.end());
+    if (!std::filesystem::exists(source_path)) {
+        std::cerr << "dmc watch: file not found: " << source_path << "\n";
+        return 1;
+    }
+    std::cout << "\033[1;36m[dmc watch]\033[0m Watching " << source_path << " (Press Ctrl+C to stop)...\n\n";
+
+    auto get_mtime = [](const std::filesystem::path& p) {
+        try {
+            return std::filesystem::last_write_time(p);
+        } catch (...) {
+            return std::filesystem::file_time_type::min();
+        }
+    };
+
+    auto last_time = get_mtime(source_path);
+
+    auto run_once = [&]() {
+        std::cout << "\033[1;32m[dmc watch]\033[0m Running " << source_path << "...\n";
+        cmd_run(source_path, prog_args, argv0, true, false);
+        std::cout << "\n\033[1;30m----------------------------------------\033[0m\n";
+    };
+
+    run_once();
+
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        auto cur_time = get_mtime(source_path);
+        if (cur_time != last_time) {
+            last_time = cur_time;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            std::cout << "\033[1;33m[dmc watch]\033[0m Change detected in " << source_path << "\n";
+            run_once();
+        }
+    }
+    return 0;
+}
+
+static int cmd_repl(const char* argv0) {
+    std::cout << "\033[1;31m"
+              << "   ___                         _       _____ \n"
+              << "  / _ \\___ __ _ ___  _ _  (_)__   /  __ \\\n"
+              << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
+              << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
+              << "\033[0m"
+              << "Demonic C Interactive REPL (v1.0.0)\n"
+              << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
+
+    std::vector<std::string> session_statements;
+
+    while (std::cin.good()) {
+        std::cout << "\033[1;31mdmc>\033[0m ";
+        std::string line;
+        if (!std::getline(std::cin, line)) break;
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (line.empty()) continue;
+
+        if (line == ":exit" || line == ":quit" || line == ":q") break;
+        if (line == ":clear") {
+            session_statements.clear();
+            std::cout << "REPL session cleared.\n";
+            continue;
+        }
+        if (line == ":help") {
+            std::cout << "REPL Commands:\n"
+                      << "  :exit, :q   Exit REPL\n"
+                      << "  :clear      Clear session history\n"
+                      << "  :history    Print current session code\n"
+                      << "  :help       Print this help\n";
+            continue;
+        }
+        if (line == ":history") {
+            for (const auto& s : session_statements) std::cout << "  " << s << "\n";
+            continue;
+        }
+
+        std::string statement = line;
+        if (statement.back() != ';' && statement.back() != '}') {
+            if (statement.rfind("let ", 0) != 0 && statement.rfind("var ", 0) != 0 && statement.rfind("fn ", 0) != 0) {
+                statement = "println(" + statement + ");";
+            } else {
+                statement += ";";
+            }
+        }
+
+        std::ostringstream snippet;
+        snippet << "fn main() {\n";
+        for (const auto& s : session_statements) {
+            snippet << "    " << s << "\n";
+        }
+        snippet << "    " << statement << "\n";
+        snippet << "}\n";
+
+        std::string tmp_file = "_dmc_repl_tmp.dmc";
+        std::ofstream out(tmp_file);
+        out << snippet.str();
+        out.close();
+
+        std::vector<std::string> dummy;
+        int res = cmd_run(tmp_file, dummy, argv0, true, false);
+        std::filesystem::remove(tmp_file);
+        if (res == 0) {
+            if (line.rfind("let ", 0) == 0 || line.rfind("var ", 0) == 0 || line.rfind("fn ", 0) == 0) {
+                session_statements.push_back(line.back() == ';' ? line : line + ";");
+            }
+        }
+    }
+    std::cout << "\nGoodbye!\n";
+    return 0;
+}
+
+static int cmd_install_vscode() {
+    const char* home = std::getenv("USERPROFILE");
+#ifndef _WIN32
+    if (!home) home = std::getenv("HOME");
+#endif
+    if (!home) {
+        std::cerr << "dmc: could not determine user home directory\n";
+        return 1;
+    }
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.0.0";
+    std::filesystem::path src_dir = "editor/vscode";
+    if (!std::filesystem::exists(src_dir)) {
+        if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
+    }
+    if (!std::filesystem::exists(src_dir)) {
+        std::cerr << "dmc: editor/vscode directory not found\n";
+        return 1;
+    }
+    try {
+        std::filesystem::create_directories(ext_dir);
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(src_dir)) {
+            auto rel = std::filesystem::relative(entry.path(), src_dir);
+            auto dest = ext_dir / rel;
+            if (entry.is_directory()) {
+                std::filesystem::create_directories(dest);
+            } else {
+                std::filesystem::copy_file(entry.path(), dest, std::filesystem::copy_options::overwrite_existing);
+            }
+        }
+        std::cout << "\033[1;32m[dmc]\033[0m Successfully installed Demonic C extension to " << ext_dir.string() << "\n"
+                  << "Restart or reload VS Code / Cursor to enjoy full language support!\n";
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "dmc: failed to install VS Code extension: " << e.what() << "\n";
+        return 1;
+    }
 }
 
 static int cmd_bundle() {
@@ -3038,7 +3599,18 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "lsp" || args[0] == "--lsp") {
+        if (args.size() > 1 && args[1] == "--install-vscode") {
+            return cmd_install_vscode();
+        }
         return cmd_lsp();
+    }
+
+    if (args[0] == "repl") {
+        return cmd_repl(argv[0]);
+    }
+
+    if (args[0] == "watch") {
+        return cmd_watch(argc - 1, argv + 1, argv[0]);
     }
 
     if (!args.empty() && args[0] == "pkg") {
