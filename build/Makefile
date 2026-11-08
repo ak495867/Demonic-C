@@ -20,7 +20,9 @@ $(RUNTIME)/dmc_runtime.o: $(RUNTIME)/dmc_runtime.c $(RUNTIME)/dmc_runtime.h
 
 $(BIN)/libdmc_runtime.a: $(RUNTIME)/dmc_runtime.o
 	mkdir -p $(BIN)
+	rm -f $@
 	$(AR) rcs $@ $<
+	ranlib $@ 2>/dev/null || true
 
 test: $(BIN)/dmc-native
 	../dmc test $(TEST_DIR)

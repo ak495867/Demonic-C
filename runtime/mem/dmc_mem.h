@@ -4,10 +4,18 @@
 #include <stddef.h>
 #include "core/dmc_core.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 dmc_handle dmc_mem_alloc(size_t size);
 int dmc_mem_size(dmc_handle handle, size_t *size);
 int dmc_mem_read(dmc_handle handle, size_t index, unsigned char *value);
 int dmc_mem_write(dmc_handle handle, size_t index, unsigned char value);
 int dmc_mem_free(dmc_handle handle);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

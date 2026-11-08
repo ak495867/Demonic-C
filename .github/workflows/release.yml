@@ -47,13 +47,16 @@ jobs:
         if: ${{ !matrix.is_windows }}
         run: |
           mkdir -p bin dist/dmc/bin
+          rm -f bin/dmc bin/dmc-native
           g++ -std=c++20 -O3 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native
           cp bin/dmc-native bin/dmc
           chmod +x bin/dmc bin/dmc-native
 
-          # Build runtime library
+          # Build runtime library cleanly
+          rm -f runtime/dmc_runtime.o bin/libdmc_runtime.a
           gcc -std=c11 -O3 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
-          ar rcs bin/libdmc_runtime.a runtime/dmc_runtime.o
+          ar cr bin/libdmc_runtime.a runtime/dmc_runtime.o
+          ranlib bin/libdmc_runtime.a
 
           # Quick sanity test
           ./bin/dmc --version
@@ -80,6 +83,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "bin", "dist\dmc\bin" -Force | Out-Null
+          Remove-Item bin\dmc-native.exe, bin\dmc.exe, bin\libdmc_runtime.a, runtime\dmc_runtime.o -Force -ErrorAction SilentlyContinue
           g++ -std=c++20 -O3 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native.exe
           Copy-Item bin/dmc-native.exe bin/dmc.exe -Force
 

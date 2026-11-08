@@ -41,6 +41,7 @@ jobs:
       - name: Build DMC Compiler (Unix)
         if: runner.os != 'Windows'
         run: |
+          rm -f bin/dmc bin/dmc-native
           g++ -std=c++20 -O2 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native
           cp bin/dmc-native bin/dmc
           chmod +x bin/dmc bin/dmc-native ./dmc
@@ -59,12 +60,15 @@ jobs:
       - name: Build Runtime Library (Unix)
         if: runner.os != 'Windows'
         run: |
+          rm -f runtime/dmc_runtime.o bin/libdmc_runtime.a
           gcc -std=c11 -O2 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
-          ar rcs bin/libdmc_runtime.a runtime/dmc_runtime.o
+          ar cr bin/libdmc_runtime.a runtime/dmc_runtime.o
+          ranlib bin/libdmc_runtime.a
 
       - name: Build Runtime Library (Windows)
         if: runner.os == 'Windows'
         run: |
+          Remove-Item runtime/dmc_runtime.o, bin/libdmc_runtime.a -Force -ErrorAction SilentlyContinue
           gcc -std=c11 -O2 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
           ar rcs bin/libdmc_runtime.a runtime/dmc_runtime.o
 
