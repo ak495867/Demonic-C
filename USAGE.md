@@ -121,7 +121,15 @@ commands:
   watch <src>     watch source file and rerun on save
   repl            interactive Demonic C read-eval-print loop
   build [src]     compile Demonic C source directly to executable binary
+  check [src]     fast syntax & semantic check without compiling binary
+  clean           clear build cache and temporary artifacts
+  heal / doctor   diagnose toolchain health and self-heal issues
+  update          check and self-update DMC to latest version
+  info / env      display toolchain, compiler, and environment info
   test [dir]      run test suite
+  bench [dir]     run benchmark suite
+  tree [src]      display project import dependency tree
+  tokens <src>    dump lexed syntax token stream
   lsp             run LSP daemon (--install-vscode to setup editor)
   pkg             package manager commands
   new <name>      create new project
@@ -160,6 +168,30 @@ dmc fmt --check src/main.dmc
 
 # Lint source file
 dmc lint src/main.dmc
+
+# Fast syntax and type check (no GCC compilation)
+dmc check src/main.dmc
+
+# Clean build artifacts and cache
+dmc clean
+
+# Diagnose environment and self-heal toolchain
+dmc heal
+
+# Self-update DMC to the latest GitHub release
+dmc update
+
+# Inspect environment and compiler paths
+dmc info
+
+# Run benchmark suite
+dmc bench test-files
+
+# Visualize project module import tree
+dmc tree src/main.dmc
+
+# Dump lexed token stream
+dmc tokens src/main.dmc
 ```
 
 ---

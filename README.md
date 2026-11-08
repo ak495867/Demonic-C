@@ -62,6 +62,26 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 - **Interactive REPL & Watch Mode**: Interactive REPL (`dmc repl`) and file watcher (`dmc watch`) for ultra-fast iteration.
 - **Hardware & OS Access**: Low-level port I/O (`port_in_b`, `port_out_b`), inline assembly, process control, and system calls.
 
+### Developer CLI Commands
+
+| Command | Description |
+|---|---|
+| `dmc <file.dmc>` | Instant compile and cached native execution (`< 5ms`) |
+| `dmc build <file.dmc>` | Directly compiles to optimized executable binary |
+| `dmc check <file.dmc>` | Fast syntax, semantic, and type check without compilation |
+| `dmc watch <file.dmc>` | Live reload and rerun on file save |
+| `dmc repl` | Interactive Read-Eval-Print Loop |
+| `dmc clean` | Cleans compilation cache and temporary artifacts |
+| `dmc heal` / `dmc doctor` | Diagnoses toolchain health and self-heals corrupted state |
+| `dmc update` | Self-updater that checks and updates DMC to the latest release |
+| `dmc info` / `dmc env` | Displays toolchain backend, directories, and target architecture |
+| `dmc test [dir]` | Executes unit test suite (`#[test]`) |
+| `dmc bench [dir]` | Executes performance benchmark suite (`#[bench]`) |
+| `dmc tree [file.dmc]` | Visualizes project module import hierarchy |
+| `dmc tokens <file.dmc>` | Dumps lexed token stream for compiler inspection |
+| `dmc lsp` | Starts Language Server Protocol daemon for editors (`--install-vscode`) |
+| `dmc pkg add <git-url>` | Clones Git package and registers in `dmc.toml` |
+
 ---
 
 ## Project Layout

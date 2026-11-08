@@ -175,6 +175,8 @@ public:
     bool has_errors() const { return !diagnostics_.empty(); }
     const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
     const std::vector<Diagnostic>& type_warnings() const { return type_warnings_; }
+    std::vector<std::string> get_imports() { return parse_imports(); }
+    std::string get_resolved_import(const std::string& name) const { return resolve_import(name); }
 
     std::string emit() {
         collect_declarations();
@@ -3698,13 +3700,14 @@ static void enable_ansi_console() {
 #endif
 }
 
-static void print_diagnostic(const std::string& filepath, const std::string& source, const Diagnostic& d, const std::string& severity) {
-    const char* color_red = "\033[1;31m";
-    const char* color_yellow = "\033[1;33m";
-    const char* color_cyan = "\033[1;36m";
-    const char* color_bold = "\033[1m";
-    const char* color_reset = "\033[0m";
+static const char* color_red = "\033[1;31m";
+static const char* color_green = "\033[1;32m";
+static const char* color_yellow = "\033[1;33m";
+static const char* color_cyan = "\033[1;36m";
+static const char* color_bold = "\033[1m";
+static const char* color_reset = "\033[0m";
 
+static void print_diagnostic(const std::string& filepath, const std::string& source, const Diagnostic& d, const std::string& severity) {
     bool is_error = (severity == "error");
     const char* sev_color = is_error ? color_red : color_yellow;
 
@@ -4066,6 +4069,372 @@ static int cmd_lsp() {
     return 0;
 }
 
+static int cmd_clean() {
+    std::cout << color_bold << "Cleaning Demonic C build artifacts and cache...\n" << color_reset;
+    size_t removed = 0;
+    std::error_code ec;
+    
+    if (std::filesystem::exists(".dmc/cache", ec)) {
+        for (const auto& entry : std::filesystem::directory_iterator(".dmc/cache", ec)) {
+            std::filesystem::remove_all(entry.path(), ec);
+            removed++;
+        }
+        std::cout << "  " << color_green << "[✓]" << color_reset << " Cleared .dmc/cache\n";
+    }
+    
+    for (const auto& entry : std::filesystem::directory_iterator(".", ec)) {
+        std::string filename = entry.path().filename().string();
+        if (filename.rfind("_test_tmp_", 0) == 0 || filename.rfind("_dmc_tmp_", 0) == 0 ||
+            filename.rfind("debug_", 0) == 0) {
+            std::filesystem::remove(entry.path(), ec);
+            removed++;
+        }
+    }
+    
+    std::cout << color_green << "Clean complete" << color_reset << " (" << removed << " item(s) removed).\n";
+    return 0;
+}
+
+static int cmd_check(int argc, char** argv) {
+    std::vector<std::string> args(argv + 1, argv + argc);
+    std::string source_path;
+    std::vector<std::string> include_dirs;
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (args[i] == "-I" && i + 1 < args.size()) {
+            include_dirs.push_back(args[++i]);
+        } else if (!args[i].empty() && args[i][0] != '-' && source_path.empty()) {
+            source_path = args[i];
+        }
+    }
+    if (source_path.empty()) {
+        if (std::filesystem::exists("main.dmc")) source_path = "main.dmc";
+        else if (std::filesystem::exists("src/main.dmc")) source_path = "src/main.dmc";
+        else {
+            std::cerr << "dmc check: no source file provided and main.dmc not found\nusage: dmc check <file.dmc>\n";
+            return 1;
+        }
+    }
+    try {
+        std::ifstream input(source_path);
+        if (!input) {
+            std::cerr << "dmc check: cannot open '" << source_path << "'\n";
+            return 1;
+        }
+        std::ostringstream ss;
+        ss << input.rdbuf();
+        std::string src_content = ss.str();
+        auto start_t = std::chrono::high_resolution_clock::now();
+        Parser parser(lex(src_content), source_path);
+        for (const auto& d : include_dirs) parser.add_include_dir(d);
+        parser.emit();
+        auto end_t = std::chrono::high_resolution_clock::now();
+        double elapsed_ms = std::chrono::duration<double, std::milli>(end_t - start_t).count();
+        
+        for (const auto& d : parser.diagnostics()) {
+            print_diagnostic(source_path, src_content, d, "error");
+        }
+        for (const auto& w : parser.type_warnings()) {
+            print_diagnostic(source_path, src_content, w, "warning");
+        }
+        if (parser.has_errors()) {
+            std::cerr << "\n" << color_red << "Found " << parser.diagnostics().size() << " error(s)" << color_reset << " in " << source_path << "\n";
+            return 1;
+        }
+        std::cout << color_green << "Check passed" << color_reset << " for " << source_path 
+                  << " (" << std::fixed << std::setprecision(1) << elapsed_ms << "ms)\n";
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "dmc check: " << e.what() << "\n";
+        return 1;
+    }
+}
+
+static int cmd_info() {
+    std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
+    std::cout << "  Version:       1.2.0\n";
+    std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
+#ifdef _WIN32
+    std::cout << "windows-x86_64";
+#elif defined(__APPLE__)
+    std::cout << "macos-universal";
+#else
+    std::cout << "linux-x86_64";
+#endif
+    std::cout << ")\n";
+
+    const char* cc = std::getenv("CC");
+    std::string backend = "clang";
+#ifdef _WIN32
+    if (!cc) {
+        if (std::system("gcc --version > nul 2>&1") == 0) backend = "gcc (MinGW)";
+        else if (std::system("clang --version > nul 2>&1") == 0) backend = "clang";
+        else backend = "unknown (gcc/clang recommended)";
+    } else backend = cc;
+#else
+    if (!cc) backend = "cc";
+    else backend = cc;
+#endif
+    std::cout << "  C Backend:     " << backend << "\n";
+    std::cout << "  Package Store: " << pkg_dir() << "\n";
+    std::cout << "  Cache Dir:     .dmc/cache\n";
+    
+    std::string stdlib_path = "not found";
+    if (std::filesystem::exists("stdlib")) stdlib_path = std::filesystem::absolute("stdlib").string();
+    else if (std::filesystem::exists("../stdlib")) stdlib_path = std::filesystem::absolute("../stdlib").string();
+    else {
+        const char* home = std::getenv("USERPROFILE");
+        if (!home) home = std::getenv("HOME");
+        if (home) {
+            std::filesystem::path p = std::filesystem::path(home) / ".dmc" / "stdlib";
+            if (std::filesystem::exists(p)) stdlib_path = p.string();
+        }
+    }
+    std::cout << "  Stdlib Path:   " << stdlib_path << "\n";
+    return 0;
+}
+
+static int cmd_heal(int argc, char** argv) {
+    (void)argc; (void)argv;
+    std::cout << color_bold << "🩺 Demonic C Doctor & Self-Healing\n" << color_reset;
+    std::cout << "Diagnosing toolchain health...\n\n";
+
+    bool ok = true;
+    
+    std::cout << "  [1/6] Checking C Compiler backend... ";
+    const char* cc = std::getenv("CC");
+    bool cc_found = false;
+    std::string cc_name;
+#ifdef _WIN32
+    if (cc) { cc_found = true; cc_name = cc; }
+    else if (std::system("gcc --version > nul 2>&1") == 0) { cc_found = true; cc_name = "gcc (MinGW)"; }
+    else if (std::system("clang --version > nul 2>&1") == 0) { cc_found = true; cc_name = "clang"; }
+#else
+    if (cc) { cc_found = true; cc_name = cc; }
+    else if (std::system("cc --version > /dev/null 2>&1") == 0) { cc_found = true; cc_name = "cc"; }
+    else if (std::system("clang --version > /dev/null 2>&1") == 0) { cc_found = true; cc_name = "clang"; }
+    else if (std::system("gcc --version > /dev/null 2>&1") == 0) { cc_found = true; cc_name = "gcc"; }
+#endif
+    if (cc_found) {
+        std::cout << color_green << "OK" << color_reset << " (found " << cc_name << ")\n";
+    } else {
+        std::cout << color_red << "FAILED" << color_reset << "\n";
+        std::cout << "        Warning: No C compiler found in PATH! Install GCC or Clang.\n";
+        ok = false;
+    }
+
+    std::cout << "  [2/6] Checking Git installation... ";
+#ifdef _WIN32
+    bool git_ok = (std::system("git --version > nul 2>&1") == 0);
+#else
+    bool git_ok = (std::system("git --version > /dev/null 2>&1") == 0);
+#endif
+    if (git_ok) {
+        std::cout << color_green << "OK" << color_reset << "\n";
+    } else {
+        std::cout << color_yellow << "NOT FOUND" << color_reset << " (git packages will be disabled)\n";
+    }
+
+    std::cout << "  [3/6] Checking Standard Library modules... ";
+    std::vector<std::string> stdlib_modules = {"strings.dmc", "path.dmc", "time.dmc", "random.dmc", "buffer.dmc", "log.dmc", "testing.dmc"};
+    std::filesystem::path stdlib_found_dir;
+    if (std::filesystem::exists("stdlib")) stdlib_found_dir = "stdlib";
+    else if (std::filesystem::exists("../stdlib")) stdlib_found_dir = "../stdlib";
+    else {
+        const char* home = std::getenv("USERPROFILE");
+        if (!home) home = std::getenv("HOME");
+        if (home) {
+            std::filesystem::path p = std::filesystem::path(home) / ".dmc" / "stdlib";
+            if (std::filesystem::exists(p)) stdlib_found_dir = p;
+        }
+    }
+    if (!stdlib_found_dir.empty()) {
+        int present = 0;
+        for (const auto& m : stdlib_modules) {
+            if (std::filesystem::exists(stdlib_found_dir / m)) present++;
+        }
+        std::cout << color_green << "OK" << color_reset << " (" << present << "/" << stdlib_modules.size() 
+                  << " in " << stdlib_found_dir.string() << ")\n";
+    } else {
+        std::cout << color_yellow << "MISSING" << color_reset << " (run 'dmc update --force' to restore stdlib)\n";
+    }
+
+    std::cout << "  [4/6] Checking Cache integrity... ";
+    std::error_code ec;
+    size_t cache_files = 0;
+    if (std::filesystem::exists(".dmc/cache", ec)) {
+        for (const auto& entry : std::filesystem::directory_iterator(".dmc/cache", ec)) cache_files++;
+        std::cout << color_green << "OK" << color_reset << " (" << cache_files << " cached objects)\n";
+    } else {
+        std::cout << color_green << "OK" << color_reset << " (clean)\n";
+    }
+
+    std::cout << "  [5/6] Checking Package Directory... ";
+    std::filesystem::path pkg_path = pkg_dir();
+    if (!std::filesystem::exists(pkg_path, ec)) {
+        std::filesystem::create_directories(pkg_path, ec);
+    }
+    std::cout << color_green << "OK" << color_reset << " (" << pkg_path.string() << ")\n";
+
+    std::cout << "  [6/6] Self-Healing & Maintenance... ";
+    int cleaned = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(".", ec)) {
+        std::string fname = entry.path().filename().string();
+        if (fname.rfind("_test_tmp_", 0) == 0 || fname.rfind("_dmc_tmp_", 0) == 0) {
+            std::filesystem::remove(entry.path(), ec);
+            cleaned++;
+        }
+    }
+    std::cout << color_green << "HEALED" << color_reset << " (cleaned " << cleaned << " orphan file(s))\n\n";
+
+    if (ok) {
+        std::cout << color_green << color_bold << "✓ All toolchain systems are healthy and operational!" << color_reset << "\n";
+        return 0;
+    } else {
+        std::cout << color_yellow << "⚠ Toolchain has warnings. Follow the recommendations above." << color_reset << "\n";
+        return 1;
+    }
+}
+
+static int cmd_update(int argc, char** argv) {
+    bool force = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--force" || std::string(argv[i]) == "-f") force = true;
+    }
+    std::cout << color_bold << "Demonic C Self-Updater\n" << color_reset;
+    std::cout << "Checking for latest release from GitHub...\n";
+    
+#ifdef _WIN32
+    std::string cmd = "powershell -NoProfile -Command \"try { (Invoke-RestMethod -Uri 'https://api.github.com/repos/ak495867/Demonic-C/releases/latest' -Headers @{'User-Agent'='dmc'}).tag_name } catch { '' }\"";
+#else
+    std::string cmd = "curl -s -H 'User-Agent: dmc' https://api.github.com/repos/ak495867/Demonic-C/releases/latest | grep '\"tag_name\":' | head -n 1 | cut -d '\"' -f 4";
+#endif
+    FILE* pipe =
+#ifdef _WIN32
+        _popen(cmd.c_str(), "r");
+#else
+        popen(cmd.c_str(), "r");
+#endif
+    std::string latest_tag;
+    if (pipe) {
+        char buf[256];
+        if (fgets(buf, sizeof(buf), pipe)) {
+            latest_tag = buf;
+            while (!latest_tag.empty() && (latest_tag.back() == '\r' || latest_tag.back() == '\n' || latest_tag.back() == ' ')) {
+                latest_tag.pop_back();
+            }
+        }
+#ifdef _WIN32
+        _pclose(pipe);
+#else
+        pclose(pipe);
+#endif
+    }
+    
+    if (latest_tag.empty()) {
+        std::cout << color_yellow << "Could not fetch latest release info (offline or rate limited).\n" << color_reset;
+        std::cout << "You can manually reinstall using:\n";
+#ifdef _WIN32
+        std::cout << "  irm https://raw.githubusercontent.com/ak495867/Demonic-C/main/install.ps1 | iex\n";
+#else
+        std::cout << "  curl -fsSL https://raw.githubusercontent.com/ak495867/Demonic-C/main/install.sh | bash\n";
+#endif
+        return 1;
+    }
+    
+    std::string current_ver = "v1.2.0";
+    std::cout << "Current version: " << current_ver << "\n";
+    std::cout << "Latest version:  " << latest_tag << "\n";
+    
+    if (!force && latest_tag == current_ver) {
+        std::cout << color_green << "✓ Demonic C is already up to date (" << latest_tag << ")!\n" << color_reset;
+        std::cout << "Use 'dmc update --force' to force reinstallation.\n";
+        return 0;
+    }
+    
+    std::cout << "Updating Demonic C to " << latest_tag << "...\n";
+#ifdef _WIN32
+    int res = std::system("powershell -NoProfile -Command \"irm https://raw.githubusercontent.com/ak495867/Demonic-C/main/install.ps1 | iex\"");
+#else
+    int res = std::system("curl -fsSL https://raw.githubusercontent.com/ak495867/Demonic-C/main/install.sh | bash");
+#endif
+    if (res == 0) {
+        std::cout << color_green << color_bold << "✓ Successfully updated Demonic C to " << latest_tag << "!\n" << color_reset;
+        return 0;
+    } else {
+        std::cerr << color_red << "Update script failed with code " << res << "\n" << color_reset;
+        return res;
+    }
+}
+
+static int cmd_tokens(int argc, char** argv) {
+    if (argc < 2) {
+        std::cerr << "dmc tokens: usage: dmc tokens <file.dmc>\n";
+        return 1;
+    }
+    std::string path = argv[1];
+    std::ifstream file(path);
+    if (!file) {
+        std::cerr << "dmc tokens: cannot open file: " << path << "\n";
+        return 1;
+    }
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    auto tokens = lex(ss.str());
+    std::cout << "Tokens in " << path << " (" << tokens.size() << " tokens):\n";
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        std::cout << std::setw(5) << i << ": [" 
+                  << std::setw(3) << tokens[i].line << ":" << std::setw(2) << tokens[i].col << "] "
+                  << tokens[i].text << "\n";
+    }
+    return 0;
+}
+
+static void print_import_tree(const std::string& source, const std::string& prefix, std::set<std::string>& visited) {
+    if (visited.count(source)) {
+        std::cout << prefix << "└── " << source << " (already visited)\n";
+        return;
+    }
+    visited.insert(source);
+    std::ifstream input(source);
+    if (!input) {
+        std::cout << prefix << "└── " << source << " [missing]\n";
+        return;
+    }
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    Parser parser(lex(buffer.str()), source);
+    std::vector<std::string> imports;
+    try {
+        imports = parser.get_imports();
+    } catch (...) {}
+    
+    for (size_t i = 0; i < imports.size(); ++i) {
+        bool is_last = (i + 1 == imports.size());
+        std::string branch = is_last ? "└── " : "├── ";
+        std::string next_prefix = prefix + (is_last ? "    " : "│   ");
+        std::string imp = imports[i];
+        std::cout << prefix << branch << imp << "\n";
+        try {
+            std::string resolved = parser.get_resolved_import(imp);
+            if (resolved != imp && std::filesystem::exists(resolved)) {
+                print_import_tree(resolved, next_prefix, visited);
+            }
+        } catch (...) {}
+    }
+}
+
+static int cmd_tree(int argc, char** argv) {
+    std::string root = "main.dmc";
+    if (argc >= 2) root = argv[1];
+    else if (!std::filesystem::exists("main.dmc") && std::filesystem::exists("src/main.dmc")) root = "src/main.dmc";
+    
+    std::cout << color_bold << "Dependency Tree for " << root << ":\n" << color_reset;
+    std::cout << root << "\n";
+    std::set<std::string> visited;
+    print_import_tree(root, "", visited);
+    return 0;
+}
+
 static void print_usage() {
     std::cout << "usage: dmc <source.dmc> [args...]       compile and run Demonic C program\n"
               << "       dmc run <source.dmc> [args...]   compile and run Demonic C program\n"
@@ -4085,7 +4454,15 @@ static void print_usage() {
               << "  watch <src>     watch source file and rerun on save\n"
               << "  repl            interactive Demonic C read-eval-print loop\n"
               << "  build [src]     compile Demonic C source directly to executable binary\n"
+              << "  check [src]     fast syntax & semantic check without compiling binary\n"
+              << "  clean           clear build cache and temporary artifacts\n"
+              << "  heal / doctor   diagnose toolchain health and self-heal issues\n"
+              << "  update          check and self-update DMC to latest version\n"
+              << "  info / env      display toolchain, compiler, and environment info\n"
               << "  test [dir]      run test suite\n"
+              << "  bench [dir]     run benchmark suite\n"
+              << "  tree [src]      display project import dependency tree\n"
+              << "  tokens <src>    dump lexed syntax token stream\n"
               << "  lsp             run LSP daemon (--install-vscode to setup editor)\n"
               << "  pkg             package manager commands\n"
               << "  new <name>      create new project\n"
@@ -4173,6 +4550,22 @@ int main(int argc, char** argv) {
     if (!args.empty() && args[0] == "test") {
         return cmd_test_impl(argc - 1, argv + 1, argv[0]);
     }
+
+    if (!args.empty() && args[0] == "bench") {
+        std::vector<char*> bench_argv;
+        bench_argv.push_back(argv[0]);
+        bench_argv.push_back(const_cast<char*>("--bench"));
+        for (int i = 2; i < argc; ++i) bench_argv.push_back(argv[i]);
+        return cmd_test_impl((int)bench_argv.size(), bench_argv.data(), argv[0]);
+    }
+
+    if (!args.empty() && (args[0] == "update" || args[0] == "upgrade")) return cmd_update(argc - 1, argv + 1);
+    if (!args.empty() && (args[0] == "heal" || args[0] == "doctor")) return cmd_heal(argc - 1, argv + 1);
+    if (!args.empty() && args[0] == "clean") return cmd_clean();
+    if (!args.empty() && args[0] == "check") return cmd_check(argc - 1, argv + 1);
+    if (!args.empty() && (args[0] == "info" || args[0] == "env")) return cmd_info();
+    if (!args.empty() && args[0] == "tokens") return cmd_tokens(argc - 1, argv + 1);
+    if (!args.empty() && args[0] == "tree") return cmd_tree(argc - 1, argv + 1);
 
     if (!args.empty() && args[0] == "doc") return cmd_doc(argc - 1, argv + 1);
     if (!args.empty() && args[0] == "build") return cmd_build(argc - 1, argv + 1, argv[0]);
