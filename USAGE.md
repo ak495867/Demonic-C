@@ -37,18 +37,51 @@ fn main() -> int {
 }
 ```
 
-### 2. Running Directly (One Step)
+### 2. Running Directly (One Step & Cached)
 
 Run any `.dmc` file immediately:
 ```bash
 dmc hello.dmc
 ```
-Or pass runtime arguments directly:
+Demonic C caches compiled native binaries by source content hash in `~/.dmc/cache`. Subsequent executions of unchanged files run instantly in `< 5ms`.
+Bypass cache with `--no-cache`:
+```bash
+dmc hello.dmc --no-cache
+```
+
+Pass runtime arguments directly:
 ```bash
 dmc hello.dmc arg1 arg2
 ```
 
-### 3. Building Directly to Executable Binary
+Run with AddressSanitizer & UndefinedBehaviorSanitizer:
+```bash
+dmc hello.dmc --sanitize
+```
+
+### 3. Hot-Reloading Watch Mode
+
+Automatically rerun your code on every file save:
+```bash
+dmc watch hello.dmc
+```
+
+### 4. Interactive REPL
+
+Experiment with expressions and statements directly from the command line:
+```bash
+dmc repl
+```
+Inside the REPL, type `:help` for commands, expressions to evaluate (`10 + 32`), statements (`let x = 42; println(x);`), and `:exit` to quit.
+
+### 5. VS Code & Cursor Extension Setup
+
+Install syntax highlighting and language configuration directly into your editor:
+```bash
+dmc lsp --install-vscode
+```
+
+### 6. Building Directly to Executable Binary
 
 Use `dmc build` to transpile and link directly into a permanent binary:
 ```bash
@@ -56,7 +89,7 @@ dmc build hello.dmc -o hello
 ./hello
 ```
 
-### 4. Compiling to C Code Only
+### 7. Compiling to C Code Only
 
 If you wish to inspect the generated C99/C11 code:
 ```bash
@@ -68,31 +101,45 @@ dmc hello.dmc -o hello.c
 ## Command-Line Interface (CLI)
 
 ```
-usage: dmc <source.dmc> [options]
-compile Demonic C source to C.
+usage: dmc <source.dmc> [args...]       compile and run Demonic C program
+       dmc run <source.dmc> [args...]   compile and run Demonic C program
+       dmc build <source.dmc> [options] compile to executable binary
+       dmc <source.dmc> -o <file.c>     transpile to C code
 
 options:
-  -o <file>       write generated C to <file> (default: stdout)
+  -o <file>       write generated C to <file>
+  --emit-c        transpile to C on stdout
+  --sanitize      compile with AddressSanitizer & UndefinedBehaviorSanitizer
+  --no-cache      bypass compilation cache
   -I <dir>        add import search directory (repeatable)
   --lsp           start Language Server Protocol daemon
   --version       print version and exit
   --help          print this message and exit
 
 commands:
+  run <src>       compile and run Demonic C source directly (or 'dmc <src>')
+  watch <src>     watch source file and rerun on save
+  repl            interactive Demonic C read-eval-print loop
   build [src]     compile Demonic C source directly to executable binary
-  test [dir]      discover and execute all #[test] functions in directory
-  lsp             run Demonic C Language Server Protocol (LSP) daemon
+  test [dir]      run test suite
+  lsp             run LSP daemon (--install-vscode to setup editor)
+  pkg             package manager commands
+  new <name>      create new project
+  init            initialize project in current directory
   fmt [--check]   format or check .dmc files
-  lint [--fix]    lint .dmc files for code style and syntax issues
-  new <name>      create new Demonic C project
-  init            initialize project configuration in current directory
-  pkg             package manager commands (install, search, list, publish)
-  doc             generate HTML/Markdown documentation
+  lint [--fix]    lint .dmc files for issues
+  doc             generate documentation
 ```
 
 ### Common CLI Invocations
 
 ```bash
+# Instant run with caching
+dmc src/main.dmc
+
+# Watch mode for live dev
+dmc watch src/main.dmc
+
 # Build directly to binary (automatic GCC/Clang invocation)
 dmc build src/main.dmc -o bin/app
 
@@ -101,6 +148,9 @@ dmc test test-files
 
 # Start LSP server for IDEs
 dmc lsp
+
+# Install VS Code extension
+dmc lsp --install-vscode
 
 # Format a source file
 dmc fmt src/main.dmc
@@ -244,17 +294,27 @@ for (let j: int = 0; j < 5; j = j + 1) {
 }
 ```
 
-### Structs
+### Structs & Zero-Cost Methods
+
+Demonic C supports C-compatible structs with automatic zero-cost method dispatch:
 
 ```dmc
 struct Vector2D {
-    x: int,
-    y: int
+    x: int;
+    y: int;
+}
+
+fn Vector2D_length_sq(v: Vector2D) -> int {
+    return v.x * v.x + v.y * v.y;
 }
 
 fn main() -> int {
     let v = Vector2D { x: 10, y: 20 };
     println(v.x);
+    
+    // Calls Vector2D_length_sq(v) with zero runtime cost
+    let sq = v.length_sq();
+    println(sq);
     return 0;
 }
 ```
@@ -263,29 +323,61 @@ fn main() -> int {
 
 ## Standard Runtime Library
 
-### Dynamic Collections
+### Dynamic Collections (Function & Method Syntax)
+
+Collections can be operated on using either procedural functions or object method syntax:
 
 ```dmc
 // Dynamic Vector
 let v = vec_new();
-vec_push(v, 10);
-vec_push(v, 20);
-let len = vec_len(v);
-let val = vec_get(v, 0); // 10
-vec_free(v);
+v.push(10);
+v.push(20);
+let len = v.len();       // or vec_len(v)
+let val = v.get(0);       // 10
+v.free();
 
 // Queue (FIFO)
 let q = queue_new();
-queue_push(q, 42);
-let head = queue_pop(q); // 42
-queue_free(q);
+q.push(42);
+let head = q.pop();      // 42
+q.free();
 
 // Hash Map
 let m = map_new();
-map_set(m, 1, 100);
-let found = map_has(m, 1); // 1
-let value = map_get(m, 1); // 100
-map_free(m);
+m.set(1, 100);
+let found = m.has(1);    // 1
+let value = m.get(1);    // 100
+m.free();
+```
+
+### High-Level Standard Library Modules
+
+```dmc
+import "fs";
+import "os";
+import "crypto";
+
+fn main() -> int {
+    // 1. Filesystem
+    fs_write("sample.txt", "Demonic Systems");
+    if (fs_file_exists("sample.txt") == 1) {
+        let content = fs_read_to_string("sample.txt");
+        println(content);
+        fs_remove_file("sample.txt");
+    }
+
+    // 2. Operating System
+    println(os_system_platform());
+    println(os_cpu_arch());
+    println(os_current_dir());
+
+    // 3. Cryptography
+    let hash = hash_sha256("Demonic");
+    let b64 = to_base64("hello");
+    let orig = from_base64(b64);
+    println(hash);
+    return 0;
+}
 ```
 
 ### Memory Management & Arenas

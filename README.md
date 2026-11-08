@@ -49,12 +49,14 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ### Core Capabilities
 
-- **Modern Ergonomics**: LIFO `defer` cleanup, tagged unions / payload enums, string slicing (`s[0..5]`).
-- **Zero-Overhead Memory Control**: Direct memory pointers, byte-level read/write primitives, and arena allocators.
+- **Modern Ergonomics**: LIFO `defer` cleanup, tagged unions / payload enums, string slicing (`s[0..5]`), and zero-cost method call syntax (`val.method(...)`).
+- **Instant Build Caching**: Content-hashed build cache in `~/.dmc/cache` gives sub-5ms repeated execution speeds.
+- **Interactive REPL & Watch Mode**: Interactive REPL (`dmc repl`) and file watcher (`dmc watch`) for ultra-fast iteration.
+- **Zero-Overhead Memory Control & Sanitizers**: Direct pointers, byte-level primitives, arena allocators, plus one-flag AddressSanitizer/UBSan verification (`--sanitize`).
 - **Hardware & OS Access**: Low-level port I/O (`port_in_b`, `port_out_b`), inline assembly, process control, and system calls.
 - **Networking & I/O**: High-speed TCP sockets, HTTP client, and buffered file I/O.
-- **Rich Standard Library**: JSON parsing/serialization, regular expressions, SQLite database interface, date/time utilities, and dynamic collections (vectors, queues, hash maps).
-- **Batteries-Included Toolchain**: Direct binary compiler (`dmc build`), native unit test runner (`dmc test`), Language Server Protocol daemon (`dmc lsp`), code formatter (`dmc fmt`), linter (`dmc lint`), and package manager (`dmc pkg`).
+- **Rich Standard Library**: Filesystem (`fs`), operating system (`os`), SHA-256 and Base64 cryptography (`crypto`), JSON parsing/serialization, regular expressions, SQLite database interface, date/time utilities, and dynamic collections (vectors, queues, hash maps).
+- **Batteries-Included Toolchain**: Direct runner (`dmc file.dmc`), compiler (`dmc build`), test runner (`dmc test`), REPL (`dmc repl`), watcher (`dmc watch`), LSP daemon and one-command VS Code setup (`dmc lsp --install-vscode`), formatter (`dmc fmt`), linter (`dmc lint`), and package manager (`dmc pkg`).
 
 ---
 
@@ -117,7 +119,57 @@ fn main() {
 }
 ```
 
-### 3. String Slicing
+### 3. Zero-Cost Method Call Syntax & Struct Methods
+Write object-style method calls that lower directly to static C function invocations with zero overhead:
+
+```dmc
+struct Point {
+    x: int;
+    y: int;
+}
+
+fn Point_length(p: Point) -> int {
+    return p.x * p.x + p.y * p.y;
+}
+
+fn main() {
+    let p = Point { x: 3, y: 4 };
+    let len_sq = p.length(); // Lowers directly to Point_length(p)
+    println(len_sq);         // 25
+
+    // Method syntax on strings & collections
+    let s: string = "Demonic C";
+    println(s.len());        // 9
+    let sub = s.slice(0, 7); // "Demonic"
+
+    let v = vec_new();
+    v.push(42);
+    println(v.get(0));       // 42
+    v.free();
+}
+```
+
+### 4. High-Level Standard Library Modules
+Clean, modern standard library modules for OS, Filesystem, and Cryptography:
+
+```dmc
+import "fs";
+import "os";
+import "crypto";
+
+fn main() {
+    fs_write("demo.txt", "Demonic speed!");
+    let content = fs_read("demo.txt");
+    let hash = sha256(content);
+    let b64 = to_base64("Secure");
+
+    println(content);
+    println(hash);
+    println(os_platform());
+}
+```
+
+### 5. String Slicing
 Direct, memory-safe sub-slice expressions:
 
 ```dmc
@@ -128,7 +180,7 @@ fn main() {
 }
 ```
 
-### 4. Built-in Testing Engine
+### 6. Built-in Testing Engine
 Write unit tests directly in your `.dmc` files using the `#[test]` attribute:
 
 ```dmc
@@ -151,14 +203,23 @@ dmc test test-files
 The unified `dmc` executable provides a complete development toolkit:
 
 ```bash
-# Run any DMC program directly (compiles & runs in one instant step!)
+# Run any DMC program directly (cached in ~/.dmc/cache, <5ms subsequent runs!)
 dmc app.dmc
 
 # Pass runtime arguments directly to your program
 dmc app.dmc arg1 arg2
 
-# Or use the explicit run command
-dmc run app.dmc
+# Hot-reloading watch mode: rerun whenever file changes
+dmc watch app.dmc
+
+# Interactive REPL: test expressions and statements on the fly
+dmc repl
+
+# Run with AddressSanitizer and UndefinedBehaviorSanitizer
+dmc app.dmc --sanitize
+
+# Install VS Code / Cursor language extension directly in one click
+dmc lsp --install-vscode
 
 # Build a DMC program directly to a permanent native binary
 dmc build app.dmc -o bin/app
@@ -169,7 +230,7 @@ dmc app.dmc -o app.c
 # Run all #[test] functions in a folder
 dmc test test-files
 
-# Start Language Server Protocol daemon for VS Code / Neovim
+# Start Language Server Protocol daemon
 dmc lsp
 
 # Format DMC source code

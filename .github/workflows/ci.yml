@@ -89,19 +89,30 @@ jobs:
           gcc -std=c11 -w -Iruntime runtime/smoke/dmc_runtime_smoke.c bin/libdmc_runtime.a -o bin/runtime_smoke.exe -lws2_32
           .\bin\runtime_smoke.exe
 
-      - name: Run Test Suite
-        run: |
-          ${{ matrix.binary }} test test-files
+      - name: Run Test Suite (Unix)
+        if: runner.os != 'Windows'
+        run: ./bin/dmc test test-files
+
+      - name: Run Test Suite (Windows)
+        if: runner.os == 'Windows'
+        run: & .\bin\dmc.exe test test-files
 
       - name: Verify Bootstrap Stage (Unix)
         if: runner.os != 'Windows'
         run: |
-          ${{ matrix.binary }} test-files/emit.dmc -o test-files/_stage_emit.c
-          gcc -std=c11 -w test-files/_stage_emit.c -o test-files/_stage_emit
+          ./bin/dmc test-files/emit.dmc -o test-files/_stage_emit.c
+          gcc -std=c11 -w test-files/_stage_emit.c -o test-files/_stage_emit -lm
           cd test-files
           ./_stage_emit selflex.dmc selflex_stage_out.c
-          gcc -std=c11 -w selflex_stage_out.c -o selflex_stage
-          ./selflex_stage || test $? -eq 37
+          gcc -std=c11 -w selflex_stage_out.c -o selflex_stage -lm
+          set +e
+          ./selflex_stage
+          status=$?
+          set -e
+          if [ $status -ne 37 ]; then
+            echo "Unexpected exit code $status (expected 37)"
+            exit 1
+          fi
 
       - name: Verify Bootstrap Stage (Windows)
         if: runner.os == 'Windows'
