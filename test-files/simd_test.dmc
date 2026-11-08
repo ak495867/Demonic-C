@@ -1,0 +1,65 @@
+#[test]
+fn test_simd_f32x4_basic() -> int {
+    let a: f32x4 = f32x4(1.0, 2.0, 3.0, 4.0);
+    if (a.x != 1.0) { return 1; }
+    if (a.y != 2.0) { return 2; }
+    if (a.z != 3.0) { return 3; }
+    if (a.w != 4.0) { return 4; }
+    if (a.get(0) != 1.0) { return 5; }
+    if (a.get(3) != 4.0) { return 6; }
+    if (a[1] != 2.0) { return 7; }
+    return 0;
+}
+
+#[test]
+fn test_simd_f32x4_arithmetic() -> int {
+    let a: f32x4 = f32x4(1.0, 2.0, 3.0, 4.0);
+    let b: f32x4 = f32x4(10.0, 20.0, 30.0, 40.0);
+    
+    let sum: f32x4 = a.add(b);
+    if (sum.x != 11.0) { return 1; }
+    if (sum.y != 22.0) { return 2; }
+    if (sum.z != 33.0) { return 3; }
+    if (sum.w != 44.0) { return 4; }
+
+    let diff: f32x4 = b.sub(a);
+    if (diff.x != 9.0) { return 5; }
+    if (diff.y != 18.0) { return 6; }
+    if (diff.z != 27.0) { return 7; }
+    if (diff.w != 36.0) { return 8; }
+
+    let prod: f32x4 = a.mul(f32x4_splat(2.0));
+    if (prod.x != 2.0) { return 9; }
+    if (prod.y != 4.0) { return 10; }
+    if (prod.z != 6.0) { return 11; }
+    if (prod.w != 8.0) { return 12; }
+
+    let dot_prod: float = simd_dot(a, a);
+    if (dot_prod != 30.0) { return 13; }
+
+    return 0;
+}
+
+#[test]
+fn test_simd_i32x4() -> int {
+    let a: i32x4 = i32x4(5, 10, 15, 20);
+    if (a.x != 5) { return 1; }
+    if (a.y != 10) { return 2; }
+    if (a.z != 15) { return 3; }
+    if (a.w != 20) { return 4; }
+    if (a.get(2) != 15) { return 5; }
+    if (a[3] != 20) { return 6; }
+
+    let b: i32x4 = i32x4_splat(2);
+    let m: i32x4 = a.mul(b);
+    if (m.x != 10) { return 7; }
+    if (m.y != 20) { return 8; }
+    if (m.z != 30) { return 9; }
+    if (m.w != 40) { return 10; }
+
+    let s: i32x4 = m.sub(a);
+    if (s.x != 5) { return 11; }
+    if (s.w != 20) { return 12; }
+
+    return 0;
+}

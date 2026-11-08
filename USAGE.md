@@ -103,15 +103,23 @@ dmc hello.dmc -o hello.c
 ```
 usage: dmc <source.dmc> [args...]       compile and run Demonic C program
        dmc run <source.dmc> [args...]   compile and run Demonic C program
-       dmc build <source.dmc> [options] compile to executable binary
+       dmc build <source.dmc> [options] compile to executable, shared lib, or wasm
+       dmc bindgen <header.h> [options] generate Demonic C bindings from C header
        dmc <source.dmc> -o <file.c>     transpile to C code
 
 options:
-  -o <file>       write generated C to <file>
+  -o <file>       write generated C/binary to <file>
   --emit-c        transpile to C on stdout
+  --shared        build dynamic / shared library (.dll, .so, .dylib)
+  --freestanding  bare-metal / no-std mode (no libc headers or runtime tables)
+  --target=wasm   compile directly to standalone WebAssembly (.wasm)
+  --no-line-directives omit #line source maps from generated C
   --sanitize      compile with AddressSanitizer & UndefinedBehaviorSanitizer
   --no-cache      bypass compilation cache
-  -I <dir>        add import search directory (repeatable)
+  -l<lib>         link external C/C++ library (e.g. -lm, -lcurl)
+  -L<dir>         add library search directory
+  -I <dir>        add include / import search directory (repeatable)
+  -D<macro>       pass preprocessor define to backend compiler
   --lsp           start Language Server Protocol daemon
   --version       print version and exit
   --help          print this message and exit
@@ -121,6 +129,7 @@ commands:
   watch <src>     watch source file and rerun on save
   repl            interactive Demonic C read-eval-print loop
   build [src]     compile Demonic C source directly to executable binary
+  bindgen <hdr.h> generate Demonic C bindings from C header
   check [src]     fast syntax & semantic check without compiling binary
   clean           clear build cache and temporary artifacts
   heal / doctor   diagnose toolchain health and self-heal issues
@@ -412,6 +421,113 @@ dmc build main.dmc engine.cpp -O2 -o bin/game
 dmc build main.dmc helper.c -Iinclude -DDEBUG=1
 ```
 
+### 12. Hardware SIMD Vector Types (`f32x4` / `i32x4`)
+Demonic C provides native 128-bit SIMD vector types that map directly to hardware vector extensions (`SSE`, `AVX`, and `ARM NEON`) with zero runtime overhead:
+
+```dmc
+fn main() -> int {
+    // 4-lane single precision vector
+    let a: f32x4 = f32x4(1.0, 2.0, 3.0, 4.0);
+    let b: f32x4 = f32x4_splat(2.0); // (2.0, 2.0, 2.0, 2.0)
+
+    // Hardware-accelerated lane-wise arithmetic
+    let sum: f32x4 = a.add(b); // (3.0, 4.0, 5.0, 6.0)
+    let prod: f32x4 = a.mul(b); // (2.0, 4.0, 6.0, 8.0)
+
+    // Dot product
+    let dot: float = simd_dot(a, a); // 1*1 + 2*2 + 3*3 + 4*4 = 30.0
+
+    // Direct lane extractors
+    println(sum.x); // 3.0
+    println(sum.y); // 4.0
+    println(sum.get(2)); // 5.0
+    println(sum[3]); // 6.0
+
+    // 4-lane 32-bit signed integer vector
+    let vi: i32x4 = i32x4(10, 20, 30, 40);
+    let vi2: i32x4 = vi.mul(i32x4_splat(3));
+    println(vi2.w); // 120
+    return 0;
+}
+```
+
+### 13. Automatic C Header Binding Generator (`dmc bindgen`)
+Quickly generate type-safe Demonic C bindings from any standard C header file:
+
+```bash
+# Auto-generate bindings for raylib
+dmc bindgen raylib.h -o raylib.dmc -lraylib
+
+# Generate bindings for SQLite3 with include search path
+dmc bindgen sqlite3.h -o sqlite3.dmc -lsqlite3 -I/usr/local/include
+
+# Filter functions by prefix
+dmc bindgen engine.h -o engine.dmc --prefix engine_
+```
+
+Generated bindings include:
+- `#include <header.h>` and `#link "lib"` directives
+- Constant definitions parsed from `#define` macros
+- Typedef and tagged struct definitions
+- C `enum` variants
+- Clean `extern "C" fn` signatures with converted DMC types
+
+### 14. Shared Libraries & Dynamic Plugins (`--shared` / `#[export]`)
+Compile Demonic C files into native shared libraries (`.dll` on Windows, `.so` on Linux, `.dylib` on macOS):
+
+```dmc
+// plugin.dmc
+#[export]
+fn plugin_calculate(x: int, y: int) -> int {
+    return x * 10 + y;
+}
+
+export fn plugin_name() -> string {
+    return "Demonic Plugin v1.0";
+}
+```
+
+Compile directly to dynamic library without needing a `main` function:
+```bash
+# Builds bin/plugin.dll (Windows) or bin/libplugin.so (Linux)
+dmc build plugin.dmc --shared -o bin/plugin.dll
+```
+
+### 15. Bare-Metal & Freestanding Mode (`--freestanding` / `--no-std`)
+For OS kernels, embedded microcontrollers, and bootloaders where the standard C runtime is absent:
+
+```dmc
+// kernel.dmc
+#[export]
+fn kernel_entry() -> int {
+    let base: int = 0xB8000;
+    return base;
+}
+```
+
+Compile with `--freestanding` (or `--no-std`):
+```bash
+# Omits all libc headers, sockets, and memory manager tables
+dmc build kernel.dmc --freestanding --emit-c -o kernel.c
+
+# Directly compile freestanding object
+dmc build kernel.dmc --freestanding -o kernel.o
+```
+
+### 16. Direct WebAssembly (WASM) Target (`--target=wasm`)
+Compile Demonic C logic directly into standalone WebAssembly:
+
+```bash
+# Compiles directly to bin/app.wasm using emcc or clang wasm32 backend
+dmc build app.dmc --target=wasm -o bin/app.wasm
+```
+
+### 17. Source Maps & Debugging Directives (`#line`)
+Demonic C transpiles code with accurate `#line <line> "<file>"` directives. When debugging with `gdb`, `lldb`, or diagnosing crashes with `--sanitize`:
+- Breakpoints and stack traces point directly to your `.dmc` source lines.
+- AddressSanitizer and UndefinedBehaviorSanitizer error reports highlight `.dmc` code.
+- Pass `--no-line-directives` if clean intermediate C output without preprocessor line tags is desired.
+
 ---
 
 ## Language Reference
@@ -434,6 +550,8 @@ dmc build main.dmc helper.c -Iinclude -DDEBUG=1
 | `*T` | `T*` | Direct raw pointer (non-nullable) |
 | `?*T` | `T*` | Nullable pointer (requires null check before dereference) |
 | `Vector<T>` | `Vector_T*` | Monomorphized type-safe dynamic array |
+| `f32x4` | `dmc_f32x4` | 128-bit 4-lane single precision float SIMD vector |
+| `i32x4` | `dmc_i32x4` | 128-bit 4-lane 32-bit signed integer SIMD vector |
 | `arena` | `long long` | Bump-allocator handle for fast bulk allocation |
 
 ### Variable Declarations

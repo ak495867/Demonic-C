@@ -49,6 +49,12 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ### Core Capabilities
 
+- **Hardware SIMD Vector Extensions**: Native 128-bit vector types (`f32x4`, `i32x4`) compiling directly to SSE, AVX, or ARM NEON hardware registers with lane accessors (`.x`, `.y`, `[i]`), lane-wise arithmetic, and dot products (`simd_dot`).
+- **Automatic C Header Binding Generator (`dmc bindgen`)**: Auto-extract function prototypes, structs, enums, and constants from standard C headers into clean Demonic C bindings with `#link` directives.
+- **Shared Libraries & Dynamic Plugins**: Compile `.dll` (Windows), `.so` (Linux), or `.dylib` (macOS) with `dmc build --shared` and exported symbol attributes (`#[export]` / `export fn`).
+- **Bare-Metal & Freestanding Target**: Compile for OS kernels, bootloaders, and microcontrollers without standard library headers or runtime overhead (`--freestanding` / `--no-std`).
+- **Direct WebAssembly Compilation**: Compile standalone `.wasm` binaries directly with `dmc build --target=wasm` via `emcc` or `clang wasm32`.
+- **Source Maps & Accurate Debug Directives**: Emitted C contains `#line` directives mapping GDB, LLDB, and AddressSanitizer errors and breakpoints directly to original `.dmc` lines.
 - **Compile-Time Null Safety**: Strict `?*T` (nullable) vs `*T` (non-nullable) pointer types with static verification and scope narrowing in `if (p != null)`.
 - **Ergonomic Error Propagation**: Zero-cost systems error bubbling with the `try` keyword (`let val = try expr;` and `try expr;`).
 - **Monomorphized Lightweight Generics**: Type-safe generic `Vector<T>` with zero `void*` overhead, compiling down to specialized C structs (`Vector_int`, `Vector_Point`).
@@ -69,6 +75,10 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 |---|---|
 | `dmc <file.dmc>` | Instant compile and cached native execution (`< 5ms`) |
 | `dmc build <file.dmc>` | Directly compiles to optimized executable binary |
+| `dmc build <file.dmc> --shared` | Builds dynamic shared library (`.dll`, `.so`, `.dylib`) |
+| `dmc build <file.dmc> --freestanding` | Compiles for bare-metal / embedded without libc |
+| `dmc build <file.dmc> --target=wasm` | Directly compiles to standalone WebAssembly (`.wasm`) |
+| `dmc bindgen <header.h>` | Auto-generates Demonic C bindings from C header |
 | `dmc check <file.dmc>` | Fast syntax, semantic, and type check without compilation |
 | `dmc watch <file.dmc>` | Live reload and rerun on file save |
 | `dmc repl` | Interactive Read-Eval-Print Loop |

@@ -1,0 +1,6 @@
+#[export]
+fn kernel_entry() -> int {
+    let a: int = 100;
+    let b: int = 200;
+    return a + b;
+}

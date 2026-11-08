@@ -1,0 +1,9 @@
+#[export]
+fn plugin_add(a: int, b: int) -> int {
+    return a + b;
+}
+
+#[export]
+fn plugin_mul(x: int, y: int) -> int {
+    return x * y;
+}

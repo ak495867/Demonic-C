@@ -42,6 +42,8 @@ struct Function {
     std::vector<std::string> attributes;
     bool is_extern = false;
     bool is_variadic = false;
+    bool is_export = false;
+    int line = 0;
 };
 struct Struct { std::string name; std::vector<Field> fields; };
 struct EnumVariant { std::string name; std::string payload; };
@@ -148,6 +150,8 @@ static std::string ctype(const std::string& type) {
     if (type == "f64" || type == "double") return "double";
     if (type == "char") return "char";
     if (type == "size_t") return "size_t";
+    if (type == "f32x4") return "dmc_f32x4";
+    if (type == "i32x4") return "dmc_i32x4";
     if (type == "vec" || type == "map" || type == "queue") return "int";
     if (type == "arena") return "long long";
     if (type.rfind("?*", 0) == 0) return ctype(type.substr(2)) + "*";
@@ -193,26 +197,65 @@ public:
     const std::set<std::string>& link_libs() const { return link_libs_; }
     void add_link_lib(const std::string& lib) { link_libs_.insert(lib); }
     const std::vector<std::string>& top_level_c() const { return top_level_c_; }
+    void set_emit_line_directives(bool enable) { emit_line_directives_ = enable; }
+    void set_freestanding(bool enable) { freestanding_ = enable; }
+    bool freestanding() const { return freestanding_; }
 
     std::string emit() {
         collect_declarations();
         std::ostringstream out;
-        out << "#define _GNU_SOURCE\n";
-        out << "#define _POSIX_C_SOURCE 200809L\n";
-        out << "#ifndef null\n#define null ((void*)0)\n#endif\n";
-        out << "typedef long long i64;\n";
-        out << "typedef unsigned long long u64;\n";
-        out << "typedef int i32;\n";
-        out << "typedef unsigned int u32;\n";
-        out << "typedef unsigned char u8;\n";
-        out << "#ifdef _WIN32\n";
-        out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <io.h>\n#include <direct.h>\n#include <sys/timeb.h>\n";
-        out << "#define NSCLOSE closesocket\n";
+        if (freestanding_) {
+            out << "#define _GNU_SOURCE\n";
+            out << "#ifndef null\n#define null ((void*)0)\n#endif\n";
+            out << "#include <stddef.h>\n#include <stdbool.h>\n#include <stdint.h>\n";
+            out << "typedef int64_t i64;\n";
+            out << "typedef uint64_t u64;\n";
+            out << "typedef int32_t i32;\n";
+            out << "typedef uint32_t u32;\n";
+            out << "typedef uint8_t u8;\n\n";
+        } else {
+            out << "#define _GNU_SOURCE\n";
+            out << "#define _POSIX_C_SOURCE 200809L\n";
+            out << "#ifndef null\n#define null ((void*)0)\n#endif\n";
+            out << "typedef long long i64;\n";
+            out << "typedef unsigned long long u64;\n";
+            out << "typedef int i32;\n";
+            out << "typedef unsigned int u32;\n";
+            out << "typedef unsigned char u8;\n";
+            out << "#ifdef _WIN32\n";
+            out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <io.h>\n#include <direct.h>\n#include <sys/timeb.h>\n";
+            out << "#define NSCLOSE closesocket\n";
+            out << "#else\n";
+            out << "#include <sys/types.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n";
+            out << "#define NSCLOSE close\n";
+            out << "#endif\n";
+            out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n\n";
+        }
+        out << "#if defined(_WIN32)\n#define DMC_EXPORT __declspec(dllexport)\n#elif defined(__GNUC__) || defined(__clang__)\n#define DMC_EXPORT __attribute__((visibility(\"default\")))\n#else\n#define DMC_EXPORT\n#endif\n\n";
+        out << "/* Demonic C SIMD 128-bit Vector Extensions */\n";
+        out << "#if defined(__GNUC__) || defined(__clang__)\n";
+        out << "typedef float dmc_f32x4 __attribute__((vector_size(16)));\n";
+        out << "typedef int   dmc_i32x4 __attribute__((vector_size(16)));\n";
+        out << "#define DMC_SIMD_F32X4(a, b, c, d) ((dmc_f32x4){(float)(a), (float)(b), (float)(c), (float)(d)})\n";
+        out << "#define DMC_SIMD_I32X4(a, b, c, d) ((dmc_i32x4){(int)(a), (int)(b), (int)(c), (int)(d)})\n";
         out << "#else\n";
-        out << "#include <sys/types.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n";
-        out << "#define NSCLOSE close\n";
-        out << "#endif\n";
-        out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n\n";
+        out << "typedef union { float v[4]; } dmc_f32x4;\n";
+        out << "typedef union { int v[4]; }   dmc_i32x4;\n";
+        out << "static inline dmc_f32x4 DMC_SIMD_F32X4(float a, float b, float c, float d) { dmc_f32x4 r; r.v[0]=a; r.v[1]=b; r.v[2]=c; r.v[3]=d; return r; }\n";
+        out << "static inline dmc_i32x4 DMC_SIMD_I32X4(int a, int b, int c, int d) { dmc_i32x4 r; r.v[0]=a; r.v[1]=b; r.v[2]=c; r.v[3]=d; return r; }\n";
+        out << "#endif\n\n";
+        out << "static inline dmc_f32x4 dmc_f32x4_splat(float v) { return DMC_SIMD_F32X4(v, v, v, v); }\n";
+        out << "static inline dmc_i32x4 dmc_i32x4_splat(int v) { return DMC_SIMD_I32X4(v, v, v, v); }\n";
+        out << "static inline float dmc_f32x4_get(dmc_f32x4 v, int idx) {\n#if defined(__GNUC__) || defined(__clang__)\n    return ((float*)&v)[idx & 3];\n#else\n    return v.v[idx & 3];\n#endif\n}\n";
+        out << "static inline int dmc_i32x4_get(dmc_i32x4 v, int idx) {\n#if defined(__GNUC__) || defined(__clang__)\n    return ((int*)&v)[idx & 3];\n#else\n    return v.v[idx & 3];\n#endif\n}\n";
+        out << "static inline dmc_f32x4 dmc_f32x4_add(dmc_f32x4 a, dmc_f32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a + b;\n#else\n    dmc_f32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]+b.v[i]; return r;\n#endif\n}\n";
+        out << "static inline dmc_f32x4 dmc_f32x4_sub(dmc_f32x4 a, dmc_f32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a - b;\n#else\n    dmc_f32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]-b.v[i]; return r;\n#endif\n}\n";
+        out << "static inline dmc_f32x4 dmc_f32x4_mul(dmc_f32x4 a, dmc_f32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a * b;\n#else\n    dmc_f32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]*b.v[i]; return r;\n#endif\n}\n";
+        out << "static inline dmc_f32x4 dmc_f32x4_div(dmc_f32x4 a, dmc_f32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a / b;\n#else\n    dmc_f32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]/b.v[i]; return r;\n#endif\n}\n";
+        out << "static inline float dmc_f32x4_dot(dmc_f32x4 a, dmc_f32x4 b) {\n    dmc_f32x4 m = dmc_f32x4_mul(a, b);\n    return dmc_f32x4_get(m, 0) + dmc_f32x4_get(m, 1) + dmc_f32x4_get(m, 2) + dmc_f32x4_get(m, 3);\n}\n";
+        out << "static inline dmc_i32x4 dmc_i32x4_add(dmc_i32x4 a, dmc_i32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a + b;\n#else\n    dmc_i32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]+b.v[i]; return r;\n#endif\n}\n";
+        out << "static inline dmc_i32x4 dmc_i32x4_sub(dmc_i32x4 a, dmc_i32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a - b;\n#else\n    dmc_i32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]-b.v[i]; return r;\n#endif\n}\n";
+        out << "static inline dmc_i32x4 dmc_i32x4_mul(dmc_i32x4 a, dmc_i32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a * b;\n#else\n    dmc_i32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]*b.v[i]; return r;\n#endif\n}\n\n";
         for (const auto& h : c_headers_) {
             if (h.rfind("<", 0) == 0 || h.rfind("\"", 0) == 0) out << "#include " << h << "\n";
             else out << "#include <" << h << ">\n";
@@ -225,7 +268,7 @@ public:
             out << "int _dmc_diagnostic_count = " << diagnostics_.size() << ";\n";
         }
         out << "#ifdef DMC_SQLITE\ntypedef struct sqlite3 sqlite3;\ntypedef struct sqlite3_stmt sqlite3_stmt;\nextern int sqlite3_open(const char *, sqlite3 **);\nextern int sqlite3_close(sqlite3 *);\nextern int sqlite3_prepare_v2(sqlite3 *, const char *, int, sqlite3_stmt **, const char **);\nextern int sqlite3_step(sqlite3_stmt *);\nextern int sqlite3_finalize(sqlite3_stmt *);\nextern int sqlite3_column_count(sqlite3_stmt *);\nextern const unsigned char *sqlite3_column_text(sqlite3_stmt *, int);\n#define SQLITE_OK 0\n#define SQLITE_ROW 100\n#endif\n\n";
-        emit_runtime(out);
+        if (!freestanding_) emit_runtime(out);
         for (const auto& s : structs_) {
             out << "typedef struct " << s.name << " {\n";
             for (const auto& f : s.fields) {
@@ -392,6 +435,7 @@ public:
         }
         
         for (const auto& fn : normal_fns) {
+            if (fn.is_export) out << "DMC_EXPORT ";
             out << ctype(fn.ret_type) << " " << fn.name << "(";
             if (fn.params.empty()) out << "void";
             for (size_t i = 0; i < fn.params.size(); ++i) {
@@ -492,6 +536,11 @@ private:
                     parse_top_level_c_code();
                 } else if (peek() == "extern") {
                     parse_extern_decl();
+                } else if (peek() == "export") {
+                    take();
+                    Function fn = function();
+                    fn.is_export = true;
+                    functions_.push_back(fn);
                 } else if (peek() == "#[") {
                     if (index_ + 1 < tokens_.size() && tokens_[index_ + 1].text == "link") {
                         parse_link_attribute();
@@ -500,6 +549,16 @@ private:
                     }
                 } else if (peek() == "struct") {
                     structs_.push_back(structure());
+                } else if (peek() == "let" || peek() == "const") {
+                    take();
+                    std::string cname = take();
+                    std::string ctype_str = "int";
+                    if (peek() == ":") { take(); ctype_str = type_name(); }
+                    expect("=");
+                    std::string cval = expression(";");
+                    expect(";");
+                    bind_type(cname, ctype_str);
+                    top_level_c_.push_back(ctype(ctype_str) + " " + cname + " = " + cval + ";");
                 } else if (peek() == "enum") {
                     enums_.push_back(parse_enum());
                 } else if (peek() == "fn") {
@@ -1405,7 +1464,8 @@ const char *sha256(const char *str) {
             std::string name = take();
             expect(":");
             std::string type = type_name();
-            expect(";");
+            if (peek() == ",") take();
+            else expect(";");
             result.fields.push_back({name, type});
         }
         expect("}");
@@ -1454,8 +1514,16 @@ const char *sha256(const char *str) {
             expect("]");
             attrs.push_back(attr);
         }
+        int fn_line = index_ < tokens_.size() ? tokens_[index_].line : 1;
         expect("fn");
-        Function result{take(), "int", {}, {}, attrs};
+        Function result;
+        result.name = take();
+        result.ret_type = "int";
+        result.attributes = attrs;
+        result.line = fn_line;
+        for (const auto& a : attrs) {
+            if (a == "export" || a == "no_mangle") result.is_export = true;
+        }
         expect("(");
         scopes_.emplace_back();
         if (peek() != ")") {
@@ -1497,8 +1565,15 @@ const char *sha256(const char *str) {
         std::vector<std::string> stmts;
         bool terminated = false;
         while (peek() != "}") {
+            int cur_line = (index_ < tokens_.size()) ? tokens_[index_].line : -1;
             std::string s = statement();
             if (s.empty()) continue;
+            if (emit_line_directives_ && !source_.empty() && cur_line > 0 && cur_line != last_emitted_line_) {
+                last_emitted_line_ = cur_line;
+                std::string clean = source_;
+                for (char& c : clean) if (c == '\\') c = '/';
+                stmts.push_back("#line " + std::to_string(cur_line) + " \"" + clean + "\"");
+            }
             if (terminated) stmts.push_back("0;");
             else stmts.push_back(s);
             if (s.rfind("return", 0) == 0 || s.find("proc_exit") != std::string::npos) terminated = true;
@@ -1951,6 +2026,26 @@ const char *sha256(const char *str) {
                     else val = "printf(\"%lld\", (long long)(" + args + "))";
                 } else if (val == "syscall") {
                     val = "syscall_h(" + args + ")";
+                } else if (val == "f32x4" || val == "simd_f32x4") {
+                    val = "DMC_SIMD_F32X4(" + args + ")";
+                } else if (val == "f32x4_splat" || val == "simd_f32x4_splat") {
+                    val = "dmc_f32x4_splat(" + args + ")";
+                } else if (val == "i32x4" || val == "simd_i32x4") {
+                    val = "DMC_SIMD_I32X4(" + args + ")";
+                } else if (val == "i32x4_splat" || val == "simd_i32x4_splat") {
+                    val = "dmc_i32x4_splat(" + args + ")";
+                } else if (val == "simd_dot") {
+                    val = "dmc_f32x4_dot(" + args + ")";
+                } else if (val == "simd_add") {
+                    val = "dmc_f32x4_add(" + args + ")";
+                } else if (val == "simd_sub") {
+                    val = "dmc_f32x4_sub(" + args + ")";
+                } else if (val == "simd_mul") {
+                    val = "dmc_f32x4_mul(" + args + ")";
+                } else if (val == "simd_div") {
+                    val = "dmc_f32x4_div(" + args + ")";
+                } else if (val == "simd_get") {
+                    val = "dmc_f32x4_get(" + args + ")";
                 } else {
                     val = val + "(" + args + ")";
                 }
@@ -1975,7 +2070,29 @@ const char *sha256(const char *str) {
                     std::string vt = infer_type(val);
                     std::string typed_fn = vt + "_" + field;
 
-                    if (vt.rfind("Vector<", 0) == 0 && vt.back() == '>') {
+                    if (vt == "f32x4") {
+                        if (field == "get") val = "dmc_f32x4_get(" + val + ", " + margs + ")";
+                        else if (field == "add") val = "dmc_f32x4_add(" + val + ", " + margs + ")";
+                        else if (field == "sub") val = "dmc_f32x4_sub(" + val + ", " + margs + ")";
+                        else if (field == "mul") val = "dmc_f32x4_mul(" + val + ", " + margs + ")";
+                        else if (field == "div") val = "dmc_f32x4_div(" + val + ", " + margs + ")";
+                        else if (field == "dot") val = "dmc_f32x4_dot(" + val + ", " + margs + ")";
+                        else if (field == "x") val = "dmc_f32x4_get(" + val + ", 0)";
+                        else if (field == "y") val = "dmc_f32x4_get(" + val + ", 1)";
+                        else if (field == "z") val = "dmc_f32x4_get(" + val + ", 2)";
+                        else if (field == "w") val = "dmc_f32x4_get(" + val + ", 3)";
+                        else val = "((" + val + ")." + field + ")(" + margs + ")";
+                    } else if (vt == "i32x4") {
+                        if (field == "get") val = "dmc_i32x4_get(" + val + ", " + margs + ")";
+                        else if (field == "add") val = "dmc_i32x4_add(" + val + ", " + margs + ")";
+                        else if (field == "sub") val = "dmc_i32x4_sub(" + val + ", " + margs + ")";
+                        else if (field == "mul") val = "dmc_i32x4_mul(" + val + ", " + margs + ")";
+                        else if (field == "x") val = "dmc_i32x4_get(" + val + ", 0)";
+                        else if (field == "y") val = "dmc_i32x4_get(" + val + ", 1)";
+                        else if (field == "z") val = "dmc_i32x4_get(" + val + ", 2)";
+                        else if (field == "w") val = "dmc_i32x4_get(" + val + ", 3)";
+                        else val = "((" + val + ")." + field + ")(" + margs + ")";
+                    } else if (vt.rfind("Vector<", 0) == 0 && vt.back() == '>') {
                         std::string elem = vt.substr(7, vt.size() - 8);
                         specialized_vectors_.insert(elem);
                         if (field == "push") val = "Vector_" + elem + "_push(" + val + (margs.empty() ? "" : ", " + margs) + ")";
@@ -2065,8 +2182,28 @@ const char *sha256(const char *str) {
                     }
                 } else {
                     std::string vt = infer_type(val);
-                    std::string op = (vt.front() == '*' || vt.rfind("?*", 0) == 0 || raw_type.front() == '*' || raw_type.rfind("?*", 0) == 0) ? "->" : ".";
-                    val = "(" + val + ")" + op + field;
+                    if (vt == "f32x4") {
+                        if (field == "x") val = "dmc_f32x4_get(" + val + ", 0)";
+                        else if (field == "y") val = "dmc_f32x4_get(" + val + ", 1)";
+                        else if (field == "z") val = "dmc_f32x4_get(" + val + ", 2)";
+                        else if (field == "w") val = "dmc_f32x4_get(" + val + ", 3)";
+                        else {
+                            std::string op = (vt.front() == '*' || vt.rfind("?*", 0) == 0 || raw_type.front() == '*' || raw_type.rfind("?*", 0) == 0) ? "->" : ".";
+                            val = "(" + val + ")" + op + field;
+                        }
+                    } else if (vt == "i32x4") {
+                        if (field == "x") val = "dmc_i32x4_get(" + val + ", 0)";
+                        else if (field == "y") val = "dmc_i32x4_get(" + val + ", 1)";
+                        else if (field == "z") val = "dmc_i32x4_get(" + val + ", 2)";
+                        else if (field == "w") val = "dmc_i32x4_get(" + val + ", 3)";
+                        else {
+                            std::string op = (vt.front() == '*' || vt.rfind("?*", 0) == 0 || raw_type.front() == '*' || raw_type.rfind("?*", 0) == 0) ? "->" : ".";
+                            val = "(" + val + ")" + op + field;
+                        }
+                    } else {
+                        std::string op = (vt.front() == '*' || vt.rfind("?*", 0) == 0 || raw_type.front() == '*' || raw_type.rfind("?*", 0) == 0) ? "->" : ".";
+                        val = "(" + val + ")" + op + field;
+                    }
                 }
             } else {
                 take();
@@ -2094,6 +2231,10 @@ const char *sha256(const char *str) {
                             std::string elem = vt.substr(7, vt.size() - 8);
                             specialized_vectors_.insert(elem);
                             val = "Vector_" + elem + "_get(" + val + ", " + idx + ")";
+                        } else if (vt == "f32x4") {
+                            val = "dmc_f32x4_get(" + val + ", " + idx + ")";
+                        } else if (vt == "i32x4") {
+                            val = "dmc_i32x4_get(" + val + ", " + idx + ")";
                         } else {
                             val = "(" + val + ")[" + idx + "]";
                         }
@@ -2318,6 +2459,11 @@ const char *sha256(const char *str) {
     std::string definition(const Function& fn) const {
         if (fn.is_extern) return "";
         std::ostringstream out;
+        if (emit_line_directives_ && !source_.empty() && fn.line > 0) {
+            std::string clean = source_;
+            for (char& c : clean) if (c == '\\') c = '/';
+            out << "#line " << fn.line << " \"" << clean << "\"\n";
+        }
         if (fn.name == "main") {
             out << "int __dmc_main_body(void) {\n";
             for (auto& s : fn.body) out << "    " << s << "\n";
@@ -2332,6 +2478,7 @@ const char *sha256(const char *str) {
             out << "}\n\n";
             return out.str();
         }
+        if (fn.is_export) out << "DMC_EXPORT ";
         out << (fn.name == "main" ? "int" : ctype(fn.ret_type)) << " " << fn.name << "(";
         if (fn.params.empty()) out << "void";
         for (size_t i = 0; i < fn.params.size(); ++i) {
@@ -2448,6 +2595,8 @@ const char *sha256(const char *str) {
             }
         }
         if (val.find("((const unsigned char[])") != std::string::npos) return "const unsigned char*";
+        if (val.rfind("DMC_SIMD_F32X4", 0) == 0 || val.rfind("dmc_f32x4", 0) == 0 || val.rfind("simd_f32x4", 0) == 0) return "f32x4";
+        if (val.rfind("DMC_SIMD_I32X4", 0) == 0 || val.rfind("dmc_i32x4", 0) == 0 || val.rfind("simd_i32x4", 0) == 0) return "i32x4";
         if (val.rfind("arena_new(", 0) == 0) return "arena";
         if (val.rfind("Vector_", 0) == 0 && val.find("_new(") != std::string::npos) {
             auto pos1 = val.find("Vector_");
@@ -2660,6 +2809,9 @@ const char *sha256(const char *str) {
     std::string current_ret_ = "int";
     std::vector<std::vector<std::string>> defer_stack_;
     int defer_counter_ = 0;
+    bool emit_line_directives_ = true;
+    int last_emitted_line_ = -1;
+    bool freestanding_ = false;
 };
 
 
@@ -3497,6 +3649,365 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
     return failed == 0 ? 0 : 1;
 }
 
+static int cmd_bindgen(int argc, char** argv) {
+    std::string header_path;
+    std::string output_path;
+    std::vector<std::string> link_libs;
+    std::vector<std::string> include_dirs;
+    std::string prefix_filter;
+
+    for (int i = 0; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (i == 0 && arg == "bindgen") continue;
+        if (arg == "-o" && i + 1 < argc) {
+            output_path = argv[++i];
+        } else if (arg == "--link" && i + 1 < argc) {
+            link_libs.push_back(argv[++i]);
+        } else if (arg.rfind("-l", 0) == 0 && arg.size() > 2) {
+            link_libs.push_back(arg.substr(2));
+        } else if (arg == "-I" && i + 1 < argc) {
+            include_dirs.push_back(argv[++i]);
+        } else if (arg.rfind("-I", 0) == 0 && arg.size() > 2) {
+            include_dirs.push_back(arg.substr(2));
+        } else if (arg == "--prefix" && i + 1 < argc) {
+            prefix_filter = argv[++i];
+        } else if (!arg.empty() && arg[0] != '-') {
+            if (header_path.empty()) header_path = arg;
+        }
+    }
+
+    if (header_path.empty()) {
+        std::cerr << "dmc bindgen: header file required\n";
+        std::cerr << "usage: dmc bindgen <header.h> [-o <out.dmc>] [-l<lib>|--link <lib>] [-I<dir>] [--prefix <prefix>]\n";
+        return 1;
+    }
+
+    std::filesystem::path hp(header_path);
+    if (!std::filesystem::exists(hp)) {
+        bool found = false;
+        for (const auto& d : include_dirs) {
+            std::filesystem::path cand = std::filesystem::path(d) / hp;
+            if (std::filesystem::exists(cand)) {
+                hp = cand;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            std::cerr << "dmc bindgen: header file not found: " << header_path << "\n";
+            return 1;
+        }
+    }
+
+    std::ifstream in(hp);
+    if (!in) {
+        std::cerr << "dmc bindgen: cannot open header file: " << hp.string() << "\n";
+        return 1;
+    }
+    std::string raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+
+    if (output_path.empty()) {
+        output_path = hp.stem().string() + "_bindings.dmc";
+    }
+
+    auto c_type_to_dmc = [](const std::string& raw_t) -> std::string {
+        std::string t = raw_t;
+        while (!t.empty() && (t.front() == ' ' || t.front() == '\t')) t.erase(t.begin());
+        while (!t.empty() && (t.back() == ' ' || t.back() == '\t')) t.pop_back();
+
+        bool is_const = false;
+        if (t.rfind("const ", 0) == 0) {
+            is_const = true;
+            t = t.substr(6);
+            while (!t.empty() && (t.front() == ' ' || t.front() == '\t')) t.erase(t.begin());
+        }
+        if (t.size() >= 6 && t.rfind(" const") == t.size() - 6) {
+            is_const = true;
+            t = t.substr(0, t.size() - 6);
+        }
+
+        if (t == "void") return "void";
+        if (t == "int" || t == "signed int" || t == "short" || t == "int32_t" || t == "int16_t") return "int";
+        if (t == "unsigned int" || t == "uint32_t" || t == "uint16_t" || t == "unsigned short") return "u32";
+        if (t == "long long" || t == "int64_t" || t == "long") return "i64";
+        if (t == "unsigned long long" || t == "uint64_t" || t == "size_t" || t == "uintptr_t") return "u64";
+        if (t == "float") return "float";
+        if (t == "double") return "double";
+        if (t == "bool" || t == "_Bool") return "bool";
+        if (t == "char" || t == "int8_t") return "char";
+        if (t == "unsigned char" || t == "uint8_t") return "u8";
+
+        if (t == "char*" || (is_const && t == "char*") || t == "const char*") return "string";
+        if (t == "void*" || t == "const void*") return "*void";
+        if (!t.empty() && t.back() == '*') {
+            std::string base = t.substr(0, t.size() - 1);
+            while (!base.empty() && base.back() == ' ') base.pop_back();
+            return "*" + base;
+        }
+        return t;
+    };
+
+    struct ParsedConst { std::string name; std::string type; std::string val; };
+    struct ParsedField { std::string name; std::string type; };
+    struct ParsedStruct { std::string name; std::vector<ParsedField> fields; };
+    struct ParsedEnum { std::string name; std::vector<std::string> variants; };
+    struct ParsedParam { std::string name; std::string type; };
+    struct ParsedFn { std::string name; std::string ret; std::vector<ParsedParam> params; };
+
+    std::vector<ParsedConst> constants;
+    std::vector<ParsedStruct> structs;
+    std::vector<ParsedEnum> enums;
+    std::vector<ParsedFn> functions;
+
+    std::string clean;
+    clean.reserve(raw.size());
+    for (size_t i = 0; i < raw.size();) {
+        if (raw[i] == '/' && i + 1 < raw.size() && raw[i + 1] == '/') {
+            while (i < raw.size() && raw[i] != '\n') i++;
+        } else if (raw[i] == '/' && i + 1 < raw.size() && raw[i + 1] == '*') {
+            i += 2;
+            while (i + 1 < raw.size() && !(raw[i] == '*' && raw[i + 1] == '/')) i++;
+            if (i < raw.size()) i += 2;
+        } else {
+            clean += raw[i++];
+        }
+    }
+
+    std::istringstream stream(clean);
+    std::string line;
+    while (std::getline(stream, line)) {
+        size_t start = line.find_first_not_of(" \t");
+        if (start == std::string::npos) continue;
+        std::string l = line.substr(start);
+        if (l.rfind("#define ", 0) == 0) {
+            std::istringstream ls(l.substr(8));
+            std::string cname, cval;
+            ls >> cname >> cval;
+            if (!cname.empty() && !cval.empty() && cname.find('(') == std::string::npos) {
+                if (cval.front() == '"' && cval.back() == '"') {
+                    constants.push_back({cname, "string", cval});
+                } else if (cval.find('.') != std::string::npos) {
+                    if (cval.back() == 'f' || cval.back() == 'F') cval.pop_back();
+                    constants.push_back({cname, "float", cval});
+                } else if (std::isdigit((unsigned char)cval[0]) || (cval.size() > 1 && cval[0] == '-' && std::isdigit((unsigned char)cval[1])) || (cval.rfind("0x", 0) == 0)) {
+                    constants.push_back({cname, "int", cval});
+                }
+            }
+        }
+    }
+
+    std::vector<std::string> toks;
+    {
+        std::string cur;
+        for (size_t i = 0; i < clean.size(); ++i) {
+            char c = clean[i];
+            if (std::isspace((unsigned char)c)) {
+                if (!cur.empty()) { toks.push_back(cur); cur.clear(); }
+            } else if (c == ';' || c == '{' || c == '}' || c == '(' || c == ')' || c == ',' || c == '*') {
+                if (!cur.empty()) { toks.push_back(cur); cur.clear(); }
+                toks.push_back(std::string(1, c));
+            } else {
+                cur += c;
+            }
+        }
+        if (!cur.empty()) toks.push_back(cur);
+    }
+
+    size_t ti = 0;
+    while (ti < toks.size()) {
+        if (toks[ti] == "#" || toks[ti].front() == '#') {
+            while (ti < toks.size() && toks[ti] != ";") ti++;
+            if (ti < toks.size() && toks[ti] == ";") ti++;
+            continue;
+        }
+
+        if (toks[ti] == "struct" || (toks[ti] == "typedef" && ti + 1 < toks.size() && toks[ti + 1] == "struct")) {
+            if (toks[ti] == "typedef") ti++;
+            ti++;
+            std::string tag;
+            if (ti < toks.size() && toks[ti] != "{") {
+                tag = toks[ti++];
+            }
+            if (ti < toks.size() && toks[ti] == "{") {
+                ti++;
+                std::vector<ParsedField> fields;
+                while (ti < toks.size() && toks[ti] != "}") {
+                    std::string ftype = toks[ti++];
+                    if (ti < toks.size() && toks[ti] == "*") { ftype += "*"; ti++; }
+                    if (ti < toks.size() && toks[ti] != ";" && toks[ti] != "}") {
+                        std::string fname = toks[ti++];
+                        if (ti < toks.size() && toks[ti] == ";") ti++;
+                        fields.push_back({fname, c_type_to_dmc(ftype)});
+                    }
+                }
+                if (ti < toks.size() && toks[ti] == "}") ti++;
+                std::string sname = tag;
+                if (ti < toks.size() && toks[ti] != ";") {
+                    sname = toks[ti++];
+                }
+                if (ti < toks.size() && toks[ti] == ";") ti++;
+                if (!sname.empty() && !fields.empty()) {
+                    structs.push_back({sname, fields});
+                }
+            }
+            continue;
+        }
+
+        if (toks[ti] == "enum" || (toks[ti] == "typedef" && ti + 1 < toks.size() && toks[ti + 1] == "enum")) {
+            if (toks[ti] == "typedef") ti++;
+            ti++;
+            std::string tag;
+            if (ti < toks.size() && toks[ti] != "{") {
+                tag = toks[ti++];
+            }
+            if (ti < toks.size() && toks[ti] == "{") {
+                ti++;
+                std::vector<std::string> variants;
+                while (ti < toks.size() && toks[ti] != "}") {
+                    std::string vname = toks[ti++];
+                    if (ti < toks.size() && toks[ti] == "=") {
+                        ti++;
+                        while (ti < toks.size() && toks[ti] != "," && toks[ti] != "}") ti++;
+                    }
+                    if (ti < toks.size() && toks[ti] == ",") ti++;
+                    variants.push_back(vname);
+                }
+                if (ti < toks.size() && toks[ti] == "}") ti++;
+                std::string ename = tag;
+                if (ti < toks.size() && toks[ti] != ";") {
+                    ename = toks[ti++];
+                }
+                if (ti < toks.size() && toks[ti] == ";") ti++;
+                if (!ename.empty() && !variants.empty()) {
+                    enums.push_back({ename, variants});
+                }
+            }
+            continue;
+        }
+
+        if (toks[ti] == "extern" || toks[ti] == "inline" || toks[ti] == "__inline" || toks[ti] == "__declspec" ||
+            toks[ti] == "RLAPI" || toks[ti] == "SQLITE_API" || toks[ti] == "WINAPI" || toks[ti] == "APIENTRY" ||
+            toks[ti] == "\"C\"") {
+            ti++;
+            continue;
+        }
+
+        size_t look = ti;
+        std::string ret_t = toks[look++];
+        if (ret_t == "const" && look < toks.size()) ret_t += " " + toks[look++];
+        if (look < toks.size() && toks[look] == "*") { ret_t += "*"; look++; }
+        if (look + 1 < toks.size() && toks[look + 1] == "(") {
+            std::string fname = toks[look++];
+            look++;
+            std::vector<ParsedParam> params;
+            int pidx = 0;
+            while (look < toks.size() && toks[look] != ")") {
+                if (toks[look] == "void" && look + 1 < toks.size() && toks[look + 1] == ")") {
+                    look++;
+                    break;
+                }
+                if (toks[look] == "...") {
+                    params.push_back({"...", "..."});
+                    look++;
+                    break;
+                }
+                std::string pt = toks[look++];
+                if (pt == "const" && look < toks.size()) pt += " " + toks[look++];
+                if (look < toks.size() && toks[look] == "*") { pt += "*"; look++; }
+                std::string pname;
+                if (look < toks.size() && toks[look] != "," && toks[look] != ")") {
+                    pname = toks[look++];
+                } else {
+                    pname = "arg" + std::to_string(pidx++);
+                }
+                params.push_back({pname, c_type_to_dmc(pt)});
+                if (look < toks.size() && toks[look] == ",") look++;
+            }
+            if (look < toks.size() && toks[look] == ")") look++;
+            if (look < toks.size() && toks[look] == ";") {
+                look++;
+                ti = look;
+                if (prefix_filter.empty() || fname.rfind(prefix_filter, 0) == 0) {
+                    functions.push_back({fname, c_type_to_dmc(ret_t), params});
+                }
+                continue;
+            }
+        }
+        ti++;
+    }
+
+    std::ostringstream out;
+    out << "// Auto-generated Demonic C bindings for " << hp.filename().string() << "\n";
+    out << "// Generated by dmc bindgen v1.5.0\n\n";
+    out << "#include <" << hp.filename().string() << ">\n";
+    for (const auto& lib : link_libs) {
+        out << "#link \"" << lib << "\"\n";
+    }
+    out << "\n";
+
+    if (!constants.empty()) {
+        out << "// --- Constants ---\n";
+        for (const auto& c : constants) {
+            out << "let " << c.name << ": " << c.type << " = " << c.val << ";\n";
+        }
+        out << "\n";
+    }
+
+    if (!enums.empty()) {
+        out << "// --- Enums ---\n";
+        for (const auto& e : enums) {
+            out << "enum " << e.name << " {\n";
+            for (size_t i = 0; i < e.variants.size(); ++i) {
+                out << "    " << e.variants[i] << (i + 1 < e.variants.size() ? ",\n" : "\n");
+            }
+            out << "}\n\n";
+        }
+    }
+
+    if (!structs.empty()) {
+        out << "// --- Structs ---\n";
+        for (const auto& s : structs) {
+            out << "struct " << s.name << " {\n";
+            for (size_t i = 0; i < s.fields.size(); ++i) {
+                out << "    " << s.fields[i].name << ": " << s.fields[i].type << ";\n";
+            }
+            out << "}\n\n";
+        }
+    }
+
+    if (!functions.empty()) {
+        out << "// --- Functions ---\n";
+        for (const auto& f : functions) {
+            out << "extern \"C\" fn " << f.name << "(";
+            for (size_t i = 0; i < f.params.size(); ++i) {
+                if (i) out << ", ";
+                if (f.params[i].name == "...") out << "...";
+                else out << f.params[i].name << ": " << f.params[i].type;
+            }
+            out << ") -> " << f.ret << ";\n";
+        }
+    }
+
+    if (output_path == "-") {
+        std::cout << out.str();
+    } else {
+        std::ofstream fout(output_path);
+        if (!fout) {
+            std::cerr << "dmc bindgen: cannot write to " << output_path << "\n";
+            return 1;
+        }
+        fout << out.str();
+        fout.close();
+        std::cout << "Successfully generated " << output_path << " ("
+                  << functions.size() << " functions, "
+                  << structs.size() << " structs, "
+                  << enums.size() << " enums, "
+                  << constants.size() << " constants)\n";
+    }
+    return 0;
+}
+
 static int cmd_build(int argc, char** argv, const char* argv0) {
     (void)argv0;
     std::vector<std::string> args(argv + 1, argv + argc);
@@ -3504,6 +4015,10 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     bool statik = false;
     bool sanitize = false;
     bool emit_c_only = false;
+    bool shared_lib = false;
+    bool freestanding = false;
+    bool target_wasm = false;
+    bool emit_line_directives = true;
     std::filesystem::path source = "";
     std::string explicit_output = "";
     std::vector<std::string> extra_sources;
@@ -3516,6 +4031,14 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
         else if (arg == "--static") statik = true;
         else if (arg == "--sanitize") sanitize = true;
         else if (arg == "--emit-c") emit_c_only = true;
+        else if (arg == "--shared" || arg == "--lib") shared_lib = true;
+        else if (arg == "--freestanding" || arg == "--no-std") freestanding = true;
+        else if (arg == "--target=wasm" || arg == "--target=wasm32") target_wasm = true;
+        else if (arg == "--target" && i + 1 < args.size() && (args[i + 1] == "wasm" || args[i + 1] == "wasm32")) {
+            target_wasm = true;
+            ++i;
+        }
+        else if (arg == "--no-line-directives") emit_line_directives = false;
         else if (arg == "-o") {
             if (i + 1 < args.size()) explicit_output = args[++i];
         }
@@ -3553,10 +4076,22 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     if (output.empty()) {
         std::filesystem::create_directories("bin");
         std::string stem = source.stem().string();
-        output = "bin/" + stem;
+        if (target_wasm) {
+            output = "bin/" + stem + ".wasm";
+        } else if (shared_lib) {
 #ifdef _WIN32
-        output += ".exe";
+            output = "bin/" + stem + ".dll";
+#elif defined(__APPLE__)
+            output = "bin/" + stem + ".dylib";
+#else
+            output = "bin/" + stem + ".so";
 #endif
+        } else {
+            output = "bin/" + stem;
+#ifdef _WIN32
+            output += ".exe";
+#endif
+        }
     } else {
         std::filesystem::path out_p(output);
         if (out_p.has_parent_path()) {
@@ -3580,6 +4115,8 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     }
 
     Parser parser(lex(source_content), source.string());
+    parser.set_emit_line_directives(emit_line_directives);
+    parser.set_freestanding(freestanding);
     parser.add_include_dir(".");
     parser.add_include_dir("stdlib");
     if (source.has_parent_path()) {
@@ -3611,6 +4148,28 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
         out << generated;
     }
 
+    if (target_wasm) {
+        bool has_emcc = (std::system("emcc --version > nul 2>&1") == 0);
+        bool has_clang = (std::system("clang --version > nul 2>&1") == 0);
+        std::string sources_cmd = " \"" + gen_c + "\"";
+        for (const auto& s : extra_sources) sources_cmd += " \"" + s + "\"";
+        std::string wasm_cmd;
+        if (has_emcc) {
+            wasm_cmd = "emcc -O2 -s WASM=1 -s STANDALONE_WASM=1 " + sources_cmd + " -o \"" + output + "\"";
+        } else if (has_clang) {
+            wasm_cmd = "clang --target=wasm32 -O2 -nostdlib -Wl,--no-entry -Wl,--export-all " + sources_cmd + " -o \"" + output + "\"";
+        } else {
+            std::cerr << "dmc build: WebAssembly target requires 'emcc' (Emscripten) or 'clang' with wasm32 support in PATH.\n";
+            std::cerr << "Tip: Use 'dmc build " << source.string() << " --emit-c' to inspect or compile the generated C code.\n";
+            safe_remove_file(gen_c);
+            return 1;
+        }
+        int res = std::system(wasm_cmd.c_str());
+        safe_remove_file(gen_c);
+        if (res == 0) std::cout << "Built " << output << " (WebAssembly)\n";
+        return res == 0 ? 0 : 1;
+    }
+
     bool has_cpp = false;
     for (const auto& s : extra_sources) {
         if (is_cpp_source(s)) has_cpp = true;
@@ -3640,13 +4199,26 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     std::string flags = release ? " -O2" : " -O0 -g";
     if (statik) flags += " -static";
     if (sanitize) flags += " -fsanitize=address,undefined -fno-omit-frame-pointer -g";
+    if (shared_lib) {
+        flags += " -shared";
+#ifndef _WIN32
+        flags += " -fPIC";
+#else
+        flags += " -Wl,--export-all-symbols";
+#endif
+    }
+    if (freestanding) {
+        flags += " -ffreestanding -nostdlib";
+    }
 
     std::string link_flags = "";
+    if (!freestanding) {
 #ifdef _WIN32
-    link_flags += " -lws2_32 -lm";
+        link_flags += " -lws2_32 -lm";
 #else
-    link_flags += " -lm";
+        link_flags += " -lm";
 #endif
+    }
     for (const auto& lib : parser.link_libs()) {
         link_flags += " -l" + lib;
     }
@@ -3705,6 +4277,7 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
 
     bool sanitize = force_sanitize;
     bool no_cache = force_no_cache;
+    bool emit_line_directives = true;
     std::vector<std::string> extra_sources;
     std::vector<std::string> extra_flags;
     std::vector<std::string> clean_args;
@@ -3720,6 +4293,7 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
         }
         if (a == "--sanitize") sanitize = true;
         else if (a == "--no-cache") no_cache = true;
+        else if (a == "--no-line-directives") emit_line_directives = false;
         else if (a.rfind("-l", 0) == 0 || a.rfind("-L", 0) == 0 || a.rfind("-I", 0) == 0 || a.rfind("-D", 0) == 0) {
             extra_flags.push_back(a);
         } else if (is_c_or_cpp_source(a)) {
@@ -3784,6 +4358,7 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
     std::string gen_c = tmp_stem + ".c";
 
     Parser parser(lex(source_content), source_path);
+    parser.set_emit_line_directives(emit_line_directives);
     try {
         parser.add_include_dir(".");
         parser.add_include_dir("stdlib");
@@ -3957,7 +4532,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v1.4.0)\n"
+              << "Demonic C Interactive REPL (v1.5.0)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -4032,7 +4607,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.4.0";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.5.0";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -4705,7 +5280,8 @@ static int cmd_check(int argc, char** argv) {
 
 static int cmd_info() {
     std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
-    std::cout << "  Version:       1.4.0\n";
+    std::cout << "  Version:       1.5.0\n";
+    std::cout << "  Features:      SIMD (f32x4/i32x4), #line source maps, bindgen, shared libs, freestanding, wasm\n";
     std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
 #ifdef _WIN32
     std::cout << "windows-x86_64";
@@ -4898,7 +5474,7 @@ static int cmd_update(int argc, char** argv) {
         return 1;
     }
     
-    std::string current_ver = "v1.4.0";
+    std::string current_ver = "v1.5.0";
     std::cout << "Current version: " << current_ver << "\n";
     std::cout << "Latest version:  " << latest_tag << "\n";
     
@@ -4995,11 +5571,16 @@ static int cmd_tree(int argc, char** argv) {
 static void print_usage() {
     std::cout << "usage: dmc <source.dmc> [args...]       compile and run Demonic C program\n"
               << "       dmc run <source.dmc> [args...]   compile and run Demonic C program\n"
-              << "       dmc build <source.dmc> [options] compile to executable binary\n"
+              << "       dmc build <source.dmc> [options] compile to executable, shared lib, or wasm\n"
+              << "       dmc bindgen <header.h> [options] generate Demonic C bindings from C header\n"
               << "       dmc <source.dmc> -o <file.c>     transpile to C code\n\n"
               << "options:\n"
-              << "  -o <file>       write generated C to <file>\n"
+              << "  -o <file>       write generated C/binary to <file>\n"
               << "  --emit-c        transpile to C on stdout\n"
+              << "  --shared        build dynamic / shared library (.dll, .so, .dylib)\n"
+              << "  --freestanding  bare-metal / no-std mode (no libc headers or runtime tables)\n"
+              << "  --target=wasm   compile directly to standalone WebAssembly (.wasm)\n"
+              << "  --no-line-directives omit #line source maps from generated C\n"
               << "  --sanitize      compile with AddressSanitizer & UndefinedBehaviorSanitizer\n"
               << "  --no-cache      bypass compilation cache\n"
               << "  -l<lib>         link external C/C++ library (e.g. -lm, -lcurl)\n"
@@ -5009,7 +5590,14 @@ static void print_usage() {
               << "  --lsp           start Language Server Protocol daemon\n"
               << "  --version       print version and exit\n"
               << "  --help          print this message and exit\n\n"
+              << "simd & extensions:\n"
+              << "  f32x4(a, b, c, d)      128-bit 4-lane single-precision float SIMD vector\n"
+              << "  i32x4(a, b, c, d)      128-bit 4-lane 32-bit integer SIMD vector\n"
+              << "  v.add(w) / v.mul(w)    hardware-accelerated lane-wise vector arithmetic\n"
+              << "  v.dot(w) / v.x / v[0]  vector dot products and lane extractors\n"
+              << "  #[export] / export fn  export function symbol in shared libraries (.dll/.so)\n\n"
               << "interop:\n"
+              << "  dmc bindgen raylib.h -lraylib   auto-generate DMC bindings for C header\n"
               << "  dmc main.dmc helper.c           compile DMC and C files together\n"
               << "  dmc build main.dmc -lcurl       link with external C libraries\n"
               << "  #link \"lib\" / #[link(\"lib\")]    declare required link libraries in source\n"
@@ -5020,6 +5608,7 @@ static void print_usage() {
               << "  watch <src>     watch source file and rerun on save\n"
               << "  repl            interactive Demonic C read-eval-print loop\n"
               << "  build [src]     compile Demonic C source directly to executable binary\n"
+              << "  bindgen <hdr.h> generate Demonic C bindings from C header\n"
               << "  check [src]     fast syntax & semantic check without compiling binary\n"
               << "  clean           clear build cache and temporary artifacts\n"
               << "  heal / doctor   diagnose toolchain health and self-heal issues\n"
@@ -5069,7 +5658,7 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 1.4.0 (Demonic C -> C)\n";
+        std::cout << "dmc 1.5.0 (Demonic C -> C)\n";
         return 0;
     }
 
@@ -5134,6 +5723,7 @@ int main(int argc, char** argv) {
     if (!args.empty() && args[0] == "tree") return cmd_tree(argc - 1, argv + 1);
 
     if (!args.empty() && args[0] == "doc") return cmd_doc(argc - 1, argv + 1);
+    if (!args.empty() && args[0] == "bindgen") return cmd_bindgen(argc - 1, argv + 1);
     if (!args.empty() && args[0] == "build") return cmd_build(argc - 1, argv + 1, argv[0]);
     if (!args.empty() && args[0] == "bundle") return cmd_bundle();
     if (!args.empty() && args[0] == "login") return cmd_login();
@@ -5193,7 +5783,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 1.4.0 (Demonic C -> C)\n";
+            std::cout << "dmc 1.5.0 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {
