@@ -91,7 +91,7 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 |---|---|
 | `compiler/` | C++20 compiler implementation (`dmc.cpp`) with AST, lexer, codegen, and CLI engine |
 | `runtime/` | Modular C runtime library (`runtime/dmc_runtime.c`, `runtime/core/`, `mem/`, `fs/`, `net/`) |
-| `stdlib/` | DMC standard-library modules (`datetime`, `db`, `http`, `json`, `regex`) |
+| `stdlib/` | DMC standard-library modules (`strings`, `path`, `time`, `fs`, `os`, `crypto`, `math`, `buffer`, `random`, `log`, `testing`, `json`, `http`, `db`, `regex`, `datetime`) |
 | `test-files/` | Unit tests (`#[test]`), feature tests (`modern_features.dmc`), and bootstrap chain (`emit.dmc`, `selflex.dmc`) |
 | `build/` | Makefile and shell build scripts |
 | `bin/` | Pre-compiled compiler executables and runtime static libraries |
@@ -117,7 +117,6 @@ fn process_file(path: string) {
     if (f < 0) { return; }
     defer file_close(f);
 
-    // Any early return or exit safely closes the file
     let content = file_read(f);
     println(content);
 }
@@ -159,17 +158,16 @@ fn Point_length(p: Point) -> int {
 
 fn main() {
     let p = Point { x: 3, y: 4 };
-    let len_sq = p.length(); // Lowers directly to Point_length(p)
-    println(len_sq);         // 25
+    let len_sq = p.length();
+    println(len_sq);
 
-    // Method syntax on strings & collections
     let s: string = "Demonic C";
-    println(s.len());        // 9
-    let sub = s.slice(0, 7); // "Demonic"
+    println(s.len());
+    let sub = s.slice(0, 7);
 
     let v = vec_new();
     v.push(42);
-    println(v.get(0));       // 42
+    println(v.get(0));
     v.free();
 }
 ```
@@ -202,21 +200,17 @@ fn main() {
 Call external C/C++ libraries seamlessly with zero runtime overhead, declare external functions, link libraries directly, embed inline C snippets, and compile mixed source projects:
 
 ```dmc
-// Link math library
 #link "m"
 
-// Declare external C functions (including variadic functions)
 extern fn puts(s: string) -> int;
 extern fn sqrt(x: f64) -> f64;
 extern "C" fn cos(x: f64) -> f64;
 
-// Grouped extern C block
 extern "C" {
     fn sin(x: f64) -> f64;
     fn pow(base: f64, exp: f64) -> f64;
 }
 
-// Embed raw C code directly
 c_code {
     static int fast_double(int n) { return n * 2; }
 }
@@ -225,10 +219,10 @@ extern fn fast_double(n: int) -> int;
 
 fn main() {
     let s = sqrt(49.0);
-    println(s); // 7.0
+    println(s);
 
     let d = fast_double(21);
-    println(d); // 42
+    println(d);
 }
 ```
 
@@ -243,12 +237,12 @@ Direct, memory-safe sub-slice expressions:
 ```dmc
 fn main() {
     let text: string = "Demonic C Systems Language";
-    let sub = text[0..9]; // "Demonic C"
+    let sub = text[0..9];
     println(sub);
 }
 ```
 
-### 6. Built-in Testing Engine
+### 7. Built-in Testing Engine
 Write unit tests directly in your `.dmc` files using the `#[test]` attribute:
 
 ```dmc
@@ -264,7 +258,7 @@ Run the entire test suite across your codebase:
 dmc test test-files
 ```
 
-### 7. Compile-Time Null Safety
+### 8. Compile-Time Null Safety
 Nullable pointers (`?*T`) prevent null dereference errors at compile time. Pointers are safely narrowed within `if (ptr != null)` blocks:
 
 ```dmc
@@ -273,16 +267,14 @@ struct Node {
 }
 
 fn process_node(node: ?*Node) {
-    // node.val = 10; // Compile-time ERROR: cannot dereference nullable pointer 'node' without null check
 
     if (node != null) {
-        // Safe: 'node' is promoted to '*Node' inside this block
         node.val = 42;
     }
 }
 ```
 
-### 8. Ergonomic Error Bubbling (`try`)
+### 9. Ergonomic Error Bubbling (`try`)
 Systems error codes (< 0) are automatically bubbled up to the caller with zero runtime overhead:
 
 ```dmc
@@ -293,20 +285,20 @@ fn read_config(path: string) -> int {
 }
 ```
 
-### 9. Monomorphized Lightweight Generics (`Vector<T>`)
+### 10. Monomorphized Lightweight Generics (`Vector<T>`)
 Zero-cost, type-safe dynamically sized arrays specializing to native C structs:
 
 ```dmc
 let v: Vector<int> = Vector<int>::new();
 v.push(10);
 v.push(20);
-println(v[1]);        // 20
-println(v.len());      // 2
-let popped = v.pop(); // 20
+println(v[1]);
+println(v.len());
+let popped = v.pop();
 v.free();
 ```
 
-### 10. Compile-Time Asset Embedding & Direct C Headers
+### 11. Compile-Time Asset Embedding & Direct C Headers
 Embed files directly into the compiled executable at compile time, and import raw C headers without boilerplate:
 
 ```dmc
@@ -319,21 +311,21 @@ let icon_sz = #embed_size("icon.png");
 let hash_init = comptime { 0x6a09e667 };
 
 fn main() {
-    puts(banner); // Direct C standard library call
+    puts(banner);
 }
 ```
 
-### 11. First-Class Bump Arenas
+### 12. First-Class Bump Arenas
 Fast $O(1)$ allocation with bulk cleanup:
 
 ```dmc
-let a: arena = arena_new(1024 * 1024); // 1 MB arena
+let a: arena = arena_new(1024 * 1024);
 let buf1 = a.alloc_bytes(256);
 let buf2 = a.alloc_bytes(512);
 
-println(a.used()); // Current allocation watermark
-a.reset();         // Instant O(1) reset
-a.free();          // Bulk free
+println(a.used());
+a.reset();
+a.free();
 ```
 
 ---
