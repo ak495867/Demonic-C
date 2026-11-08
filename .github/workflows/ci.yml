@@ -35,8 +35,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create bin directory
+      - name: Create bin directory (Unix)
+        if: runner.os != 'Windows'
         run: mkdir -p bin
+
+      - name: Create bin directory (Windows)
+        if: runner.os == 'Windows'
+        run: if (!(Test-Path bin)) { New-Item -ItemType Directory -Force -Path bin }
 
       - name: Build DMC Compiler (Unix)
         if: runner.os != 'Windows'

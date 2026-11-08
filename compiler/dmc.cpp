@@ -736,6 +736,9 @@ int db_close(long long connection) { (void)connection; return 0; }
         out << "long long arena_top(long long h) { return _dmc_arenas[h] ? _dmc_arena_top[h] : -1; }\n";
         out << "long long arena_free(long long h) { if (!_dmc_arenas[h]) return -1; free(_dmc_arenas[h]); _dmc_arenas[h] = NULL; _dmc_arena_top[h] = 0; _dmc_arena_sz[h] = 0; return 0; }\n\n";
         out << "#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))\n";
+        out << "#if defined(__linux__)\n";
+        out << "#include <sys/io.h>\n";
+        out << "#endif\n";
         out << "static int _dmc_io_allowed = 0;\n";
         out << "long long port_init(void) {\n";
         out << "#ifdef __linux__\n";

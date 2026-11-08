@@ -1,0 +1,13 @@
+// Demonic C Standard Library - Cryptography & Base64 Module
+
+fn hash_sha256(text: string) -> string {
+    return sha256(text);
+}
+
+fn to_base64(text: string) -> string {
+    return base64_encode(text);
+}
+
+fn from_base64(text: string) -> string {
+    return base64_decode(text);
+}

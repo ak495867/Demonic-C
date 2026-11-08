@@ -1,0 +1,21 @@
+// Demonic C Standard Library - Operating System & Environment Module
+
+fn os_get_env(key: string) -> string {
+    return os_env(key);
+}
+
+fn os_set_env_var(key: string, value: string) -> int {
+    return os_set_env(key, value);
+}
+
+fn os_current_dir() -> string {
+    return os_cwd();
+}
+
+fn os_system_platform() -> string {
+    return os_platform();
+}
+
+fn os_cpu_arch() -> string {
+    return os_arch();
+}
