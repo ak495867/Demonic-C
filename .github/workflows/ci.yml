@@ -117,14 +117,18 @@ jobs:
 
       - name: Verify Bootstrap Stage (Windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: |
-          & .\bin\dmc.exe test-files/emit.dmc -o test-files/_stage_emit.c
+          ./bin/dmc test-files/emit.dmc -o test-files/_stage_emit.c
           gcc -std=c11 -w test-files/_stage_emit.c -o test-files/_stage_emit.exe -lws2_32
-          Push-Location test-files
-          .\_stage_emit.exe selflex.dmc selflex_stage_out.c
+          cd test-files
+          ./_stage_emit.exe selflex.dmc selflex_stage_out.c
           gcc -std=c11 -w selflex_stage_out.c -o selflex_stage.exe -lws2_32
-          .\selflex_stage.exe
-          if ($LASTEXITCODE -ne 37) {
-            Write-Error "Bootstrap selflex test exited with unexpected code $LASTEXITCODE (expected 37)"
-          }
-          Pop-Location
+          set +e
+          ./selflex_stage.exe
+          status=$?
+          set -e
+          if [ $status -ne 37 ]; then
+            echo "Unexpected exit code $status (expected 37)"
+            exit 1
+          fi
