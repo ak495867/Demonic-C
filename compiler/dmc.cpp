@@ -3403,7 +3403,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v1.2.0)\n"
+              << "Demonic C Interactive REPL (v1.3.0)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -3478,7 +3478,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.2.0";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.3.0";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -4151,7 +4151,7 @@ static int cmd_check(int argc, char** argv) {
 
 static int cmd_info() {
     std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
-    std::cout << "  Version:       1.2.0\n";
+    std::cout << "  Version:       1.3.0\n";
     std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
 #ifdef _WIN32
     std::cout << "windows-x86_64";
@@ -4341,7 +4341,7 @@ static int cmd_update(int argc, char** argv) {
         return 1;
     }
     
-    std::string current_ver = "v1.2.0";
+    std::string current_ver = "v1.3.0";
     std::cout << "Current version: " << current_ver << "\n";
     std::cout << "Latest version:  " << latest_tag << "\n";
     
@@ -4503,7 +4503,7 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 1.2.0 (Demonic C -> C)\n";
+        std::cout << "dmc 1.3.0 (Demonic C -> C)\n";
         return 0;
     }
 
@@ -4611,7 +4611,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 1.2.0 (Demonic C -> C)\n";
+            std::cout << "dmc 1.3.0 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {
