@@ -26,18 +26,17 @@ jobs:
             target: linux-x86_64
             archive: dmc-linux-x86_64.tar.gz
             is_windows: false
-          - os: macos-13
-            target: macos-x86_64
-            archive: dmc-macos-x86_64.tar.gz
-            is_windows: false
+            is_mac: false
           - os: macos-latest
-            target: macos-arm64
+            target: macos-universal
             archive: dmc-macos-arm64.tar.gz
             is_windows: false
+            is_mac: true
           - os: windows-latest
             target: windows-x86_64
             archive: dmc-windows-x86_64.zip
             is_windows: true
+            is_mac: false
 
     steps:
       - name: Checkout code
@@ -48,15 +47,27 @@ jobs:
         run: |
           mkdir -p bin dist/dmc/bin
           rm -f bin/dmc bin/dmc-native
-          g++ -std=c++20 -O3 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native
-          cp bin/dmc-native bin/dmc
-          chmod +x bin/dmc bin/dmc-native
 
-          # Build runtime library cleanly
-          rm -f runtime/dmc_runtime.o bin/libdmc_runtime.a
-          gcc -std=c11 -O3 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
-          ar cr bin/libdmc_runtime.a runtime/dmc_runtime.o
-          ranlib bin/libdmc_runtime.a
+          if [ "${{ matrix.is_mac }}" = "true" ]; then
+            # Universal macOS binary (native on Apple Silicon & Intel)
+            g++ -std=c++20 -O3 -Wall -Wextra -arch arm64 -arch x86_64 compiler/dmc.cpp -o bin/dmc-native
+            cp bin/dmc-native bin/dmc
+            chmod +x bin/dmc bin/dmc-native
+
+            rm -f runtime/dmc_runtime.o bin/libdmc_runtime.a
+            gcc -std=c11 -O3 -arch arm64 -arch x86_64 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
+            ar cr bin/libdmc_runtime.a runtime/dmc_runtime.o
+            ranlib bin/libdmc_runtime.a
+          else
+            g++ -std=c++20 -O3 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native
+            cp bin/dmc-native bin/dmc
+            chmod +x bin/dmc bin/dmc-native
+
+            rm -f runtime/dmc_runtime.o bin/libdmc_runtime.a
+            gcc -std=c11 -O3 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
+            ar cr bin/libdmc_runtime.a runtime/dmc_runtime.o
+            ranlib bin/libdmc_runtime.a
+          fi
 
           # Quick sanity test
           ./bin/dmc --version
@@ -76,10 +87,17 @@ jobs:
           cd dist/dmc
           tar -czf "../../${{ matrix.archive }}" *
           cd ../..
-          if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+
+          if [ "${{ matrix.is_mac }}" = "true" ]; then
+            cp dmc-macos-arm64.tar.gz dmc-macos-x86_64.tar.gz
+            shasum -a 256 dmc-macos-arm64.tar.gz > dmc-macos-arm64.tar.gz.sha256
+            shasum -a 256 dmc-macos-x86_64.tar.gz > dmc-macos-x86_64.tar.gz.sha256
           else
-            shasum -a 256 "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+            else
+              shasum -a 256 "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+            fi
           fi
 
       - name: Build DMC & Package (Windows)
@@ -118,8 +136,9 @@ jobs:
         with:
           name: ${{ matrix.target }}
           path: |
-            ${{ matrix.archive }}
-            ${{ matrix.archive }}.sha256
+            dmc-*.tar.gz
+            dmc-*.zip
+            *.sha256
 
   publish:
     name: Publish GitHub Release
@@ -166,7 +185,7 @@ jobs:
           body: |
             ## Demonic C (${{ steps.vars.outputs.tag }})
 
-            High-performance systems programming language transpiling directly into C with zero runtime overhead, modern ergonomics (`defer`, tagged unions, string slicing, native closures, built-in test runner, and LSP).
+            High-performance systems programming language transpiling directly into C with zero runtime overhead, modern ergonomics (`defer`, tagged unions, zero-cost method call syntax, string slicing, high-level standard library modules, AddressSanitizer/UBSan integration, interactive REPL, watch mode, and built-in LSP).
 
             ### 🚀 One-Line Installation
 
