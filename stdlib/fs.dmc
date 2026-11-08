@@ -1,4 +1,3 @@
-// Demonic C Standard Library - High-Level File System Module
 
 fn fs_read_to_string(path: string) -> string {
     return fs_read(path);

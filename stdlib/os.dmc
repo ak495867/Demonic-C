@@ -1,4 +1,3 @@
-// Demonic C Standard Library - Operating System & Environment Module
 
 fn os_get_env(key: string) -> string {
     return os_env(key);

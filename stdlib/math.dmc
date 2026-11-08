@@ -1,0 +1,47 @@
+fn abs(x: int) -> int {
+    return math_abs(x);
+}
+
+fn min(a: int, b: int) -> int {
+    return math_min(a, b);
+}
+
+fn max(a: int, b: int) -> int {
+    return math_max(a, b);
+}
+
+fn clamp(x: int, lo: int, hi: int) -> int {
+    return math_clamp(x, lo, hi);
+}
+
+fn sqrt_val(x: double) -> double {
+    return math_sqrt(x);
+}
+
+fn sin_val(x: double) -> double {
+    return math_sin(x);
+}
+
+fn cos_val(x: double) -> double {
+    return math_cos(x);
+}
+
+fn tan_val(x: double) -> double {
+    return math_tan(x);
+}
+
+fn floor_val(x: double) -> double {
+    return math_floor(x);
+}
+
+fn ceil_val(x: double) -> double {
+    return math_ceil(x);
+}
+
+fn pi_val() -> double {
+    return math_pi();
+}
+
+fn e_val() -> double {
+    return math_e();
+}
