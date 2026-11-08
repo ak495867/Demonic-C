@@ -735,6 +735,7 @@ int db_close(long long connection) { (void)connection; return 0; }
         out << "long long arena_reset(long long h) { if (!_dmc_arenas[h]) return -1; _dmc_arena_top[h] = 0; return 0; }\n";
         out << "long long arena_top(long long h) { return _dmc_arenas[h] ? _dmc_arena_top[h] : -1; }\n";
         out << "long long arena_free(long long h) { if (!_dmc_arenas[h]) return -1; free(_dmc_arenas[h]); _dmc_arenas[h] = NULL; _dmc_arena_top[h] = 0; _dmc_arena_sz[h] = 0; return 0; }\n\n";
+        out << "#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))\n";
         out << "static int _dmc_io_allowed = 0;\n";
         out << "long long port_init(void) {\n";
         out << "#ifdef __linux__\n";
@@ -750,7 +751,18 @@ int db_close(long long connection) { (void)connection; return 0; }
         out << "long long port_out16(long long port, long long v) { if (!_dmc_io_allowed) return -1; __asm__ volatile(\"outw %0, %1\" :: \"a\"((unsigned short)v), \"Nd\"((unsigned short)port)); return 0; }\n";
         out << "long long port_in16(long long port) { if (!_dmc_io_allowed) return -1; unsigned short r; __asm__ volatile(\"inw %1, %0\" : \"=a\"(r) : \"Nd\"((unsigned short)port)); return r; }\n";
         out << "long long port_out32(long long port, long long v) { if (!_dmc_io_allowed) return -1; __asm__ volatile(\"outl %0, %1\" :: \"a\"((unsigned int)v), \"Nd\"((unsigned short)port)); return 0; }\n";
-        out << "long long port_in32(long long port) { if (!_dmc_io_allowed) return -1; unsigned int r; __asm__ volatile(\"inl %1, %0\" : \"=a\"(r) : \"Nd\"((unsigned short)port)); return r; }\n\n";
+        out << "long long port_in32(long long port) { if (!_dmc_io_allowed) return -1; unsigned int r; __asm__ volatile(\"inl %1, %0\" : \"=a\"(r) : \"Nd\"((unsigned short)port)); return r; }\n";
+        out << "#else\n";
+        out << "static int _dmc_io_allowed = 0;\n";
+        out << "long long port_init(void) { _dmc_io_allowed = 0; return 0; }\n";
+        out << "long long port_valid(void) { return 0; }\n";
+        out << "long long port_out8(long long port, long long v) { (void)port; (void)v; return -1; }\n";
+        out << "long long port_in8(long long port) { (void)port; return -1; }\n";
+        out << "long long port_out16(long long port, long long v) { (void)port; (void)v; return -1; }\n";
+        out << "long long port_in16(long long port) { (void)port; return -1; }\n";
+        out << "long long port_out32(long long port, long long v) { (void)port; (void)v; return -1; }\n";
+        out << "long long port_in32(long long port) { (void)port; return -1; }\n";
+        out << "#endif\n\n";
         out << "static long long _dmc_isr[256];\n";
         out << "long long isr_set(long long vec, long long handler) { if (vec < 0 || vec >= 256) return -1; _dmc_isr[vec] = handler; return 0; }\n";
         out << "long long isr_get(long long vec) { if (vec < 0 || vec >= 256) return -1; return _dmc_isr[vec]; }\n";
