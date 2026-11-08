@@ -95,7 +95,8 @@ jobs:
 
       - name: Run Test Suite (Windows)
         if: runner.os == 'Windows'
-        run: & .\bin\dmc.exe test test-files
+        run: |
+          & .\bin\dmc.exe test test-files
 
       - name: Verify Bootstrap Stage (Unix)
         if: runner.os != 'Windows'

@@ -2623,6 +2623,16 @@ static int count_attribute_functions(const std::filesystem::path& path, const st
     return count;
 }
 
+static void safe_remove_file(const std::filesystem::path& p) {
+    std::error_code ec;
+    for (int retry = 0; retry < 10; ++retry) {
+        if (!std::filesystem::exists(p, ec)) return;
+        if (std::filesystem::remove(p, ec)) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    std::filesystem::remove(p, ec);
+}
+
 static int cmd_test_impl(int argc, char** argv, const char* argv0) {
     std::vector<std::string> args(argv + 1, argv + argc);
     bool coverage = false;
@@ -2677,9 +2687,11 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
 #endif
     int passed = 0;
     int failed = 0;
+    static int test_counter = 0;
     for (const auto& file : test_files) {
-        std::string gen_c = "_test_tmp.c";
-        std::string gen_bin = "_test_tmp";
+        std::string test_id = std::to_string(++test_counter);
+        std::string gen_c = "_test_tmp_" + test_id + ".c";
+        std::string gen_bin = "_test_tmp_" + test_id;
 #ifdef _WIN32
         gen_bin += ".exe";
         std::string compile_cmd = "\"\"" + compiler + "\" \"" + file.string() + "\" -o \"" + gen_c + "\"\"";
@@ -2698,17 +2710,17 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
 #endif
         if (std::system(build_cmd.c_str()) != 0) {
             std::cerr << "FAIL build " << file.string() << "\n";
-            std::filesystem::remove(gen_c);
+            safe_remove_file(gen_c);
             failed++;
             continue;
         }
-        std::filesystem::remove(gen_c);
+        safe_remove_file(gen_c);
         std::string run_cmd = "./" + gen_bin + (bench ? " --bench" : "");
 #ifdef _WIN32
         run_cmd = gen_bin + (bench ? " --bench" : "");
 #endif
         int res = std::system(run_cmd.c_str());
-        std::filesystem::remove(gen_bin);
+        safe_remove_file(gen_bin);
         if (res == 0) {
             std::cout << "PASS " << file.string() << "\n";
             passed++;
@@ -2793,7 +2805,7 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     command = c_compiler + flags + " \"" + gen_c + "\" -o \"" + output + "\" -lm";
 #endif
     int result = std::system(command.c_str());
-    std::filesystem::remove(gen_c);
+    safe_remove_file(gen_c);
     if (result == 0) std::cout << "Built " << output << "\n";
     return result == 0 ? 0 : 1;
 }
@@ -2864,7 +2876,6 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
 #endif
     std::filesystem::path cached_bin = std::filesystem::path(dmc_cache_dir()) / exe_name;
 
-    // Check build cache
     if (!no_cache && std::filesystem::exists(cached_bin)) {
         std::string run_cmd;
 #ifdef _WIN32
@@ -2883,7 +2894,6 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
 #endif
     }
 
-    // Cache miss: transpile and compile directly into cached_bin
     uint64_t ts = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
     std::string tmp_stem = "_dmc_run_" + std::to_string(ts);
     std::string gen_c = tmp_stem + ".c";
@@ -2942,7 +2952,7 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
     std::string compile_cmd = c_compiler + flags + " -w \"" + gen_c + "\" -o \"" + cached_bin.string() + "\" -lm";
 #endif
     int c_res = std::system(compile_cmd.c_str());
-    std::filesystem::remove(gen_c);
+    safe_remove_file(gen_c);
     if (c_res != 0) {
         std::cerr << "dmc: compilation failed\n";
         return 1;
@@ -2963,7 +2973,7 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
 #endif
     int run_res = std::system(run_cmd.c_str());
     if (no_cache) {
-        std::filesystem::remove(cached_bin);
+        safe_remove_file(cached_bin);
     }
 #ifdef _WIN32
     return run_res;
@@ -3079,7 +3089,7 @@ static int cmd_repl(const char* argv0) {
 
         std::vector<std::string> dummy;
         int res = cmd_run(tmp_file, dummy, argv0, true, false);
-        std::filesystem::remove(tmp_file);
+        safe_remove_file(tmp_file);
         if (res == 0) {
             if (line.rfind("let ", 0) == 0 || line.rfind("var ", 0) == 0 || line.rfind("fn ", 0) == 0) {
                 session_statements.push_back(line.back() == ';' ? line : line + ";");
@@ -3248,14 +3258,14 @@ static void enable_ansi_console() {
     if (hOut != INVALID_HANDLE_VALUE) {
         DWORD dwMode = 0;
         if (GetConsoleMode(hOut, &dwMode)) {
-            SetConsoleMode(hOut, dwMode | 0x0004 /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */);
+            SetConsoleMode(hOut, dwMode | 0x0004 );
         }
     }
     HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
     if (hErr != INVALID_HANDLE_VALUE) {
         DWORD dwMode = 0;
         if (GetConsoleMode(hErr, &dwMode)) {
-            SetConsoleMode(hErr, dwMode | 0x0004 /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */);
+            SetConsoleMode(hErr, dwMode | 0x0004 );
         }
     }
 #endif
@@ -3444,7 +3454,6 @@ static int cmd_lsp() {
                 "}}";
             lsp_send(resp);
         } else if (method == "initialized") {
-            // No response required
         } else if (method == "textDocument/didOpen") {
             std::string uri = lsp_find_key(payload, "uri");
             std::string text = lsp_find_key(payload, "text");
