@@ -95,16 +95,51 @@ try {
         New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
     }
 
-    # Extract
+    # Safe in-place replacement function for Windows (handles running executables)
+    function Safe-CopyFile($src, $dst) {
+        $parent = Split-Path -Parent $dst
+        if (-not (Test-Path $parent)) {
+            New-Item -Path $parent -ItemType Directory -Force | Out-Null
+        }
+        try {
+            Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+        } catch {
+            # File is locked (e.g. running process). Rename destination to .old and copy
+            $old = "$dst.old"
+            Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+            Move-Item -LiteralPath $dst -Destination $old -Force -ErrorAction SilentlyContinue
+            Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+        }
+    }
+
+    # Extract to temporary staging folder first to avoid lock conflicts
     Write-Host "Extracting files..." -ForegroundColor Cyan
-    Expand-Archive -Path $TempZip -DestinationPath $InstallDir -Force
+    $ExtractDir = Join-Path ([System.IO.Path]::GetTempPath()) "dmc-extract-$([Guid]::NewGuid().ToString('N'))"
+    New-Item -Path $ExtractDir -ItemType Directory -Force | Out-Null
+    Expand-Archive -Path $TempZip -DestinationPath $ExtractDir -Force
 
     # Flatten if archive contained a top-level dmc folder
-    $NestedDmc = Join-Path $InstallDir "dmc"
+    $SourceDir = $ExtractDir
+    $NestedDmc = Join-Path $ExtractDir "dmc"
     if (Test-Path (Join-Path $NestedDmc "bin")) {
-        Copy-Item -Path "$NestedDmc\*" -Destination $InstallDir -Recurse -Force
-        Remove-Item -Path $NestedDmc -Recurse -Force
+        $SourceDir = $NestedDmc
     }
+
+    # Safely copy items into $InstallDir
+    Get-ChildItem -Path $SourceDir -Recurse | ForEach-Object {
+        $relPath = $_.FullName.Substring($SourceDir.Length).TrimStart('\', '/')
+        $targetPath = Join-Path $InstallDir $relPath
+        if ($_.PSIsContainer) {
+            if (-not (Test-Path $targetPath)) {
+                New-Item -Path $targetPath -ItemType Directory -Force | Out-Null
+            }
+        } else {
+            Safe-CopyFile $_.FullName $targetPath
+        }
+    }
+
+    # Cleanup temp extract folder
+    Remove-Item -Path $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
 
     # Ensure bin directory exists
     $BinDir = Join-Path $InstallDir "bin"
@@ -116,10 +151,10 @@ try {
     $RootExe = Join-Path $InstallDir "dmc.exe"
     $BinExe = Join-Path $BinDir "dmc.exe"
     if ((Test-Path $RootExe) -and -not (Test-Path $BinExe)) {
-        Copy-Item -Path $RootExe -Destination $BinExe -Force
+        Safe-CopyFile $RootExe $BinExe
     }
     if ((Test-Path $BinExe) -and -not (Test-Path $RootExe)) {
-        Copy-Item -Path $BinExe -Destination $RootExe -Force
+        Safe-CopyFile $BinExe $RootExe
     }
 
     # Add to User PATH if needed
