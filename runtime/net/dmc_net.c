@@ -44,6 +44,6 @@ int dmc_tcp_close(dmc_handle handle) {
     dmc_slot *slot = dmc_get(handle, DMC_SOCKET);
     if (!slot) return -1;
     int result = DMC_CLOSE(slot_fd(slot));
-    *slot = (dmc_slot){0};
-    return result;
+    dmc_release(handle);
+    return result == 0 ? 0 : -1;
 }

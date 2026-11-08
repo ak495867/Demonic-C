@@ -1,11 +1,14 @@
 #!/usr/bin/env sh
 set -e
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-case "${1:-}" in
-  test|doc|build|bundle|login|publish|deprecate|ci)
-    exec python3 "$ROOT/tools/dmc_host.py" "$@"
-    ;;
-  *)
-    exec "$ROOT/bin/dmc-native" "$@"
-    ;;
-esac
+BIN="$ROOT/bin/dmc-native"
+[ -x "$BIN" ] || BIN="$ROOT/bin/dmc"
+[ -x "$BIN" ] || BIN="$ROOT/bin/dmc.exe"
+if [ -x "$BIN" ]; then
+  exec "$BIN" "$@"
+elif [ -f "$ROOT/tools/dmc_host.py" ] && command -v python3 >/dev/null 2>&1; then
+  exec python3 "$ROOT/tools/dmc_host.py" "$@"
+else
+  echo "dmc: binary not found in $ROOT/bin" >&2
+  exit 1
+fi

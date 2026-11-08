@@ -69,11 +69,7 @@ int dmc_file_close(dmc_handle handle) {
     dmc_slot *slot = dmc_get(handle, DMC_FILE);
     if (!slot) return -1;
     FILE *fp = (FILE *)slot->value;
-    if (!fp) {
-        *slot = (dmc_slot){0};
-        return 0;
-    }
-    int result = fclose(fp);
-    *slot = (dmc_slot){0};
+    int result = fp ? fclose(fp) : 0;
+    dmc_release(handle);
     return result == 0 ? 0 : -1;
 }

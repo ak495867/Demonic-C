@@ -1,0 +1,180 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+            archive: dmc-linux-x86_64.tar.gz
+            is_windows: false
+          - os: macos-13
+            target: macos-x86_64
+            archive: dmc-macos-x86_64.tar.gz
+            is_windows: false
+          - os: macos-latest
+            target: macos-arm64
+            archive: dmc-macos-arm64.tar.gz
+            is_windows: false
+          - os: windows-latest
+            target: windows-x86_64
+            archive: dmc-windows-x86_64.zip
+            is_windows: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build DMC & Package (Unix)
+        if: ${{ !matrix.is_windows }}
+        run: |
+          mkdir -p bin dist/dmc/bin
+          g++ -std=c++20 -O3 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native
+          cp bin/dmc-native bin/dmc
+          chmod +x bin/dmc bin/dmc-native
+
+          # Build runtime library
+          gcc -std=c11 -O3 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
+          ar rcs bin/libdmc_runtime.a runtime/dmc_runtime.o
+
+          # Quick sanity test
+          ./bin/dmc --version
+          ./bin/dmc test test-files
+
+          # Populate release payload
+          cp bin/dmc dist/dmc/bin/
+          cp bin/dmc-native dist/dmc/bin/
+          cp bin/libdmc_runtime.a dist/dmc/bin/
+          cp dmc dist/dmc/
+          chmod +x dist/dmc/dmc
+          cp -r runtime dist/dmc/
+          cp -r stdlib dist/dmc/
+          cp README.md USAGE.md LICENSE.md dist/dmc/
+
+          # Create archive
+          cd dist
+          tar -czf "../${{ matrix.archive }}" dmc
+          cd ..
+          shasum -a 256 "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+
+      - name: Build DMC & Package (Windows)
+        if: ${{ matrix.is_windows }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "bin", "dist\dmc\bin" -Force | Out-Null
+          g++ -std=c++20 -O3 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native.exe
+          Copy-Item bin/dmc-native.exe bin/dmc.exe -Force
+
+          # Build runtime library
+          gcc -std=c11 -O3 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
+          ar rcs bin/libdmc_runtime.a runtime/dmc_runtime.o
+
+          # Quick sanity test
+          .\bin\dmc.exe --version
+          .\bin\dmc.exe test test-files
+
+          # Populate release payload
+          Copy-Item bin\dmc.exe dist\dmc\bin\
+          Copy-Item bin\dmc-native.exe dist\dmc\bin\
+          Copy-Item bin\libdmc_runtime.a dist\dmc\bin\
+          Copy-Item dmc.bat, dmc.cmd dist\dmc\
+          Copy-Item -Recurse runtime dist\dmc\
+          Copy-Item -Recurse stdlib dist\dmc\
+          Copy-Item README.md, USAGE.md, LICENSE.md dist\dmc\
+
+          # Create archive
+          Compress-Archive -Path "dist\dmc\*" -DestinationPath "${{ matrix.archive }}" -Force
+          $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.archive }}").Hash.ToLower()
+          "$hash  ${{ matrix.archive }}" | Out-File -Encoding ascii "${{ matrix.archive }}.sha256"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
+
+  publish:
+    name: Publish GitHub Release
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Consolidate archives and checksums
+        run: |
+          mkdir -p release-assets
+          find artifacts -name "dmc-*" -type f -exec cp {} release-assets/ \;
+          cd release-assets
+          cat *.sha256 > checksums.txt
+          rm -f *.sha256
+          cd ..
+          cp install.sh install.ps1 release-assets/
+          ls -la release-assets
+
+      - name: Determine Tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: Demonic C ${{ steps.vars.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release-assets/*
+          body: |
+            ## Demonic C (${{ steps.vars.outputs.tag }})
+
+            High-performance systems programming language transpiling directly into C with zero runtime overhead, modern ergonomics (`defer`, tagged unions, string slicing, native closures, built-in test runner, and LSP).
+
+            ### 🚀 One-Line Installation
+
+            #### Linux & macOS (bash / zsh):
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/ak495867/Demonic-C/main/install.sh | bash
+            ```
+
+            #### Windows (PowerShell):
+            ```powershell
+            irm https://raw.githubusercontent.com/ak495867/Demonic-C/main/install.ps1 | iex
+            ```
+
+            ### 📦 Direct Downloads
+            - **Windows (x86_64)**: `dmc-windows-x86_64.zip`
+            - **Linux (x86_64)**: `dmc-linux-x86_64.tar.gz`
+            - **macOS Apple Silicon (arm64)**: `dmc-macos-arm64.tar.gz`
+            - **macOS Intel (x86_64)**: `dmc-macos-x86_64.tar.gz`
+            - **Checksums**: `checksums.txt` (SHA-256)

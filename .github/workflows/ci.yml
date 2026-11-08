@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shell: bash
+            binary: bin/dmc
+            smoke_flags: ""
+          - os: macos-latest
+            shell: bash
+            binary: bin/dmc
+            smoke_flags: ""
+          - os: windows-latest
+            shell: pwsh
+            binary: bin/dmc.exe
+            smoke_flags: "-lws2_32"
+
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create bin directory
+        run: mkdir -p bin
+
+      - name: Build DMC Compiler (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native
+          cp bin/dmc-native bin/dmc
+          chmod +x bin/dmc bin/dmc-native ./dmc
+
+      - name: Build DMC Compiler (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native.exe
+          Copy-Item bin/dmc-native.exe bin/dmc.exe -Force
+
+      - name: Verify CLI Version & Usage
+        run: |
+          ${{ matrix.binary }} --version
+          ${{ matrix.binary }} --help
+
+      - name: Build Runtime Library (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          gcc -std=c11 -O2 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
+          ar rcs bin/libdmc_runtime.a runtime/dmc_runtime.o
+
+      - name: Build Runtime Library (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          gcc -std=c11 -O2 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
+          ar rcs bin/libdmc_runtime.a runtime/dmc_runtime.o
+
+      - name: Run Runtime Smoke Test (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          gcc -std=c11 -w -Iruntime runtime/smoke/dmc_runtime_smoke.c bin/libdmc_runtime.a -o bin/runtime_smoke
+          ./bin/runtime_smoke
+
+      - name: Run Runtime Smoke Test (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          gcc -std=c11 -w -Iruntime runtime/smoke/dmc_runtime_smoke.c bin/libdmc_runtime.a -o bin/runtime_smoke.exe -lws2_32
+          .\bin\runtime_smoke.exe
+
+      - name: Run Test Suite
+        run: |
+          ${{ matrix.binary }} test test-files
+
+      - name: Verify Bootstrap Stage (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ${{ matrix.binary }} test-files/emit.dmc -o test-files/_stage_emit.c
+          gcc -std=c11 -w test-files/_stage_emit.c -o test-files/_stage_emit
+          (cd test-files && ./_stage_emit selflex.dmc selflex_stage_out.c)
+          gcc -std=c11 -w test-files/selflex_stage_out.c -o test-files/selflex_stage
+          (cd test-files && ./selflex_stage) || [ $? -eq 37 ]
+
+      - name: Verify Bootstrap Stage (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          & .\bin\dmc.exe test-files/emit.dmc -o test-files/_stage_emit.c
+          gcc -std=c11 -w test-files/_stage_emit.c -o test-files/_stage_emit.exe -lws2_32
+          Push-Location test-files
+          .\_stage_emit.exe selflex.dmc selflex_stage_out.c
+          gcc -std=c11 -w selflex_stage_out.c -o selflex_stage.exe -lws2_32
+          .\selflex_stage.exe
+          if ($LASTEXITCODE -ne 37) {
+            Write-Error "Bootstrap selflex test exited with unexpected code $LASTEXITCODE (expected 37)"
+          }
+          Pop-Location

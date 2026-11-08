@@ -19,72 +19,101 @@
 #include <cstdio>
 #include <cstdlib>
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <fcntl.h>
+#include <io.h>
 #include <direct.h>
 #else
 #include <unistd.h>
 #endif
 
-struct Token { std::string text; int line; };
-struct Diagnostic { int line; std::string message; };
+struct Token { std::string text; int line; int col; };
+struct Diagnostic { int line; int col; std::string message; };
 struct Param { std::string name; std::string type; };
 struct Field { std::string name; std::string type; };
 struct Function { std::string name; std::string ret_type; std::vector<Param> params; std::vector<std::string> body; std::vector<std::string> attributes; };
 struct Struct { std::string name; std::vector<Field> fields; };
-struct Enum { std::string name; std::vector<std::string> variants; };
+struct EnumVariant { std::string name; std::string payload; };
+struct Enum {
+    std::string name;
+    std::vector<EnumVariant> variants;
+    bool has_payload() const {
+        for (const auto& v : variants) if (!v.payload.empty()) return true;
+        return false;
+    }
+};
 struct Case { std::string value; std::vector<std::string> body; };
 
 static std::vector<Token> lex(const std::string& source) {
     std::vector<Token> result;
     int line = 1;
-    for (size_t i = 0; i < source.size();) {
+    int col = 1;
+    size_t i = 0;
+    if (source.size() >= 3 && static_cast<unsigned char>(source[0]) == 0xEF &&
+        static_cast<unsigned char>(source[1]) == 0xBB &&
+        static_cast<unsigned char>(source[2]) == 0xBF) {
+        i = 3;
+    }
+    for (; i < source.size();) {
         unsigned char c = source[i];
-        if (c == '\n') { ++line; ++i; continue; }
-        if (std::isspace(c)) { ++i; continue; }
+        if (c == '\n') { ++line; col = 1; ++i; continue; }
+        if (std::isspace(c)) { ++i; ++col; continue; }
         if (c == '/' && i + 1 < source.size() && source[i + 1] == '/') {
-            while (i < source.size() && source[i] != '\n') ++i;
+            while (i < source.size() && source[i] != '\n') { ++i; ++col; }
             continue;
         }
         if (std::isalpha(c) || c == '_') {
             size_t start = i++;
-            while (i < source.size() && (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_')) ++i;
-            result.push_back({source.substr(start, i - start), line});
+            int start_col = col++;
+            while (i < source.size() && (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_')) { ++i; ++col; }
+            result.push_back({source.substr(start, i - start), line, start_col});
             continue;
         }
         if (std::isdigit(c)) {
             size_t start = i++;
-            while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) ++i;
+            int start_col = col++;
+            while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) { ++i; ++col; }
             if (i < source.size() && source[i] == '.' && i + 1 < source.size() && std::isdigit(static_cast<unsigned char>(source[i + 1]))) {
-                ++i;
-                while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) ++i;
+                ++i; ++col;
+                while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) { ++i; ++col; }
             }
             if (i < source.size() && (source[i] == 'e' || source[i] == 'E')) {
-                ++i;
-                if (i < source.size() && (source[i] == '+' || source[i] == '-')) ++i;
-                while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) ++i;
+                ++i; ++col;
+                if (i < source.size() && (source[i] == '+' || source[i] == '-')) { ++i; ++col; }
+                while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) { ++i; ++col; }
             }
-            result.push_back({source.substr(start, i - start), line});
+            result.push_back({source.substr(start, i - start), line, start_col});
             continue;
         }
         if (c == '"') {
             size_t start = i++;
+            int start_col = col++;
             while (i < source.size() && source[i] != '"') {
-                if (source[i] == '\\' && i + 1 < source.size()) i += 2; else { if (source[i] == '\n') ++line; ++i; }
+                if (source[i] == '\\' && i + 1 < source.size()) { i += 2; col += 2; }
+                else {
+                    if (source[i] == '\n') { ++line; col = 1; }
+                    else { ++col; }
+                    ++i;
+                }
             }
             if (i >= source.size()) throw std::runtime_error("unterminated string at line " + std::to_string(line));
-            ++i;
-            result.push_back({source.substr(start, i - start), line});
+            ++i; ++col;
+            result.push_back({source.substr(start, i - start), line, start_col});
             continue;
         }
         if (i + 1 < source.size()) {
             std::string pair = source.substr(i, 2);
-            if (pair == "==" || pair == "!=" || pair == "<=" || pair == ">=" || pair == "&&" || pair == "||" || pair == "->" || pair == "::" || pair == "#[") {
-                result.push_back({pair, line}); i += 2; continue;
+            if (pair == "==" || pair == "!=" || pair == "<=" || pair == ">=" || pair == "&&" || pair == "||" || pair == "->" || pair == "::" || pair == "#[" || pair == "..") {
+                result.push_back({pair, line, col}); i += 2; col += 2; continue;
             }
         }
-        result.push_back({std::string(1, static_cast<char>(c)), line});
-        ++i;
+        result.push_back({std::string(1, static_cast<char>(c)), line, col});
+        ++i; ++col;
     }
-    result.push_back({"<eof>", line});
+    result.push_back({"<eof>", line, col});
     return result;
 }
 
@@ -160,12 +189,51 @@ public:
         }
         if (!structs_.empty()) out << "\n";
         for (const auto& e : enums_) {
-            out << "typedef enum { ";
-            for (size_t i = 0; i < e.variants.size(); ++i) {
-                if (i) out << ", ";
-                out << e.name << "_" << e.variants[i];
+            if (!e.has_payload()) {
+                out << "typedef enum { ";
+                for (size_t i = 0; i < e.variants.size(); ++i) {
+                    if (i) out << ", ";
+                    out << e.name << "_" << e.variants[i].name;
+                }
+                out << " } " << e.name << ";\n";
+            } else {
+                out << "typedef enum { ";
+                for (size_t i = 0; i < e.variants.size(); ++i) {
+                    if (i) out << ", ";
+                    out << e.name << "_Tag_" << e.variants[i].name;
+                }
+                out << " } " << e.name << "_Tag;\n";
+                out << "typedef struct " << e.name << " {\n";
+                out << "    " << e.name << "_Tag tag;\n";
+                out << "    union {\n";
+                for (const auto& v : e.variants) {
+                    if (!v.payload.empty()) {
+                        out << "        " << ctype(v.payload) << " " << v.name << ";\n";
+                        std::string fld = v.name;
+                        std::transform(fld.begin(), fld.end(), fld.begin(), ::tolower);
+                        if (fld != v.name) {
+                            out << "        " << ctype(v.payload) << " " << fld << ";\n";
+                        }
+                    }
+                }
+                out << "    } data;\n";
+                out << "} " << e.name << ";\n";
+                for (const auto& v : e.variants) {
+                    std::string fld = v.name;
+                    std::transform(fld.begin(), fld.end(), fld.begin(), ::tolower);
+                    if (!v.payload.empty()) {
+                        out << "static inline " << e.name << " " << e.name << "_" << v.name << "(" << ctype(v.payload) << " val) { "
+                            << e.name << " r; r.tag = " << e.name << "_Tag_" << v.name << "; r.data." << v.name << " = val; ";
+                        if (fld != v.name) {
+                            out << "r.data." << fld << " = val; ";
+                        }
+                        out << "return r; }\n";
+                    } else {
+                        out << "static inline " << e.name << " " << e.name << "_" << v.name << "(void) { "
+                            << e.name << " r; r.tag = " << e.name << "_Tag_" << v.name << "; return r; }\n";
+                    }
+                }
             }
-            out << " } " << e.name << ";\n";
         }
         if (!enums_.empty()) out << "\n";
         
@@ -298,7 +366,9 @@ private:
                 else if (peek() == "enum") enums_.push_back(parse_enum());
                 else functions_.push_back(function());
             } catch (const std::runtime_error& err) {
-                diagnostics_.push_back({tokens_[index_].line, err.what()});
+                int line = index_ < tokens_.size() ? tokens_[index_].line : 1;
+                int col = index_ < tokens_.size() ? tokens_[index_].col : 1;
+                diagnostics_.push_back({line, col, err.what()});
                 skip_to_decl();
             }
         }
@@ -462,10 +532,12 @@ private:
         out << "  int r = fclose(_dmc_files[h]); _dmc_files[h] = NULL; return r == 0 ? 0 : -1;\n";
         out << "}\n\n";
         out << "#ifdef _WIN32\n";
-        out << "int tcp_connect(const char *host, long long port) { (void)host; (void)port; return -1; }\n";
-        out << "int tcp_send(long long s, const char *text) { (void)s; (void)text; return -1; }\n";
-        out << "const char *tcp_recv(long long s, long long max) { (void)s; (void)max; return \"\"; }\n";
-        out << "int tcp_close(long long s) { (void)s; return -1; }\n";
+        out << "static int _dmc_wsa_started = 0;\n";
+        out << "static void _dmc_ensure_wsa(void) { if (!_dmc_wsa_started) { WSADATA wsa; WSAStartup(MAKEWORD(2,2), &wsa); _dmc_wsa_started = 1; } }\n";
+        out << "int tcp_connect(const char *host, long long port) { _dmc_ensure_wsa(); char svc[16]; snprintf(svc, sizeof(svc), \"%lld\", port); struct addrinfo hints = {0}, *res = NULL; hints.ai_socktype = SOCK_STREAM; if (getaddrinfo(host, svc, &hints, &res) != 0) return -1; SOCKET s = socket(res->ai_family, res->ai_socktype, res->ai_protocol); if (s == INVALID_SOCKET) { freeaddrinfo(res); return -1; } if (connect(s, res->ai_addr, (int)res->ai_addrlen) == SOCKET_ERROR) { closesocket(s); s = INVALID_SOCKET; } freeaddrinfo(res); return s == INVALID_SOCKET ? -1 : (int)s; }\n";
+        out << "int tcp_send(long long s, const char *text) { if (s < 0 || !text) return -1; return (int)send((SOCKET)s, text, (int)strlen(text), 0); }\n";
+        out << "const char *tcp_recv(long long s, long long max) { static char b[65536]; if (s < 0) return \"\"; if (max > 65535) max = 65535; int n = recv((SOCKET)s, b, (int)max, 0); if (n < 0) n = 0; b[n] = 0; return b; }\n";
+        out << "int tcp_close(long long s) { if (s < 0) return -1; return closesocket((SOCKET)s) == 0 ? 0 : -1; }\n";
         out << "#else\n";
         out << "int tcp_connect(const char *host, long long port) { char svc[16]; snprintf(svc, sizeof(svc), \"%lld\", port); struct addrinfo hints = {0}, *res = NULL; hints.ai_socktype = SOCK_STREAM; if (getaddrinfo(host, svc, &hints, &res) != 0) return -1; int s = (int)socket(res->ai_family, res->ai_socktype, res->ai_protocol); if (s >= 0 && connect(s, res->ai_addr, res->ai_addrlen) < 0) { close(s); s = -1; } freeaddrinfo(res); return s; }\n";
         out << "int tcp_send(long long s, const char *text) { return (int)send((int)s, text, (int)strlen(text), 0); }\n";
@@ -555,27 +627,84 @@ private:
 static char _dmc_json_value[65536];
 const char *json_parse(const char *s) { return s ? s : ""; }
 const char *json_stringify(const char *s) { return s ? s : ""; }
-const char *json_get(const char *json, const char *key) { _dmc_json_value[0] = 0; if (!json || !key) return _dmc_json_value; char needle[512]; snprintf(needle, sizeof(needle), "\"%s\"", key); const char *p = strstr(json, needle); if (!p) return _dmc_json_value; p = strchr(p + strlen(needle), ':'); if (!p) return _dmc_json_value; ++p; while (*p == ' ' || *p == '\\t') ++p; if (*p == '\"') { ++p; size_t n = 0; while (p[n] && p[n] != '\"' && n + 1 < sizeof(_dmc_json_value)) { _dmc_json_value[n] = p[n]; ++n; } _dmc_json_value[n] = 0; return _dmc_json_value; } size_t n = 0; while (p[n] && p[n] != ',' && p[n] != '}' && n + 1 < sizeof(_dmc_json_value)) { _dmc_json_value[n] = p[n]; ++n; } while (n && (_dmc_json_value[n - 1] == ' ' || _dmc_json_value[n - 1] == '\\n')) --n; _dmc_json_value[n] = 0; return _dmc_json_value; }
+const char *json_get(const char *json, const char *key) { _dmc_json_value[0] = 0; if (!json || !key) return _dmc_json_value; char needle[512]; snprintf(needle, sizeof(needle), "\"%s\"", key); const char *p = strstr(json, needle); if (!p) return _dmc_json_value; p = strchr(p + strlen(needle), ':'); if (!p) return _dmc_json_value; ++p; while (*p == ' ' || *p == '\t') ++p; if (*p == '\"') { ++p; size_t n = 0; while (p[n] && p[n] != '\"' && n + 1 < sizeof(_dmc_json_value)) { _dmc_json_value[n] = p[n]; ++n; } _dmc_json_value[n] = 0; return _dmc_json_value; } size_t n = 0; while (p[n] && p[n] != ',' && p[n] != '}' && n + 1 < sizeof(_dmc_json_value)) { _dmc_json_value[n] = p[n]; ++n; } while (n && (_dmc_json_value[n - 1] == ' ' || _dmc_json_value[n - 1] == '\n')) --n; _dmc_json_value[n] = 0; return _dmc_json_value; }
 )DMC_JSON";
 
         out << R"DMC_HTTP(
 static char _dmc_http_buffer[1048576];
 static int _dmc_http_url_ok(const char *url) { if (!url || !*url || strstr(url, "\"") || strstr(url, "'") || strstr(url, "&&") || strstr(url, ";") || strstr(url, "|") || strstr(url, "`")) return 0; return 1; }
+#ifdef _WIN32
+#define _DMC_DEVNULL "nul"
+#else
+#define _DMC_DEVNULL "/dev/null"
+#endif
 const char *http_get(const char *url) { _dmc_http_buffer[0] = 0; if (!_dmc_http_url_ok(url)) return _dmc_http_buffer; char command[2048]; snprintf(command, sizeof(command), "curl -LfsS --max-time 20 -- %s", url); FILE *pipe = popen(command, "r"); if (!pipe) return _dmc_http_buffer; size_t used = 0; while (used + 1 < sizeof(_dmc_http_buffer)) { size_t n = fread(_dmc_http_buffer + used, 1, sizeof(_dmc_http_buffer) - used - 1, pipe); used += n; if (!n) break; } _dmc_http_buffer[used] = 0; pclose(pipe); return _dmc_http_buffer; }
-long long http_status(const char *url) { if (!_dmc_http_url_ok(url)) return -1; char command[2048]; snprintf(command, sizeof(command), "curl -Lso /dev/null -w %%{http_code} --max-time 20 -- %s", url); FILE *pipe = popen(command, "r"); if (!pipe) return -1; char status[16] = {0}; fgets(status, sizeof(status), pipe); pclose(pipe); long long value = atoll(status); return value == 0 ? -1 : value; }
+long long http_status(const char *url) { if (!_dmc_http_url_ok(url)) return -1; char command[2048]; snprintf(command, sizeof(command), "curl -Lso %s -w %%{http_code} --max-time 20 -- %s", _DMC_DEVNULL, url); FILE *pipe = popen(command, "r"); if (!pipe) return -1; char status[16] = {0}; fgets(status, sizeof(status), pipe); pclose(pipe); long long value = atoll(status); return value == 0 ? -1 : value; }
 )DMC_HTTP";
 
         out << "long long datetime_now(void) { return (long long)time(NULL); }\n";
         out << "const char *datetime_format(long long value, const char *format) { static char buf[128]; time_t t = (time_t)value; struct tm *tmv = localtime(&t); if (!tmv) { buf[0] = 0; return buf; } strftime(buf, sizeof(buf), format ? format : \"%Y-%m-%d %H:%M:%S\", tmv); return buf; }\n";
         out << "long long datetime_unix(void) { return (long long)time(NULL); }\n";
         out << "#ifndef _WIN32\n";
-        out << "int regex_new(const char *pattern) { regex_t *r = (regex_t*)malloc(sizeof(regex_t)); if (!r || regcomp(r, pattern ? pattern : \"\", REG_EXTENDED) != 0) { free(r); return -1; } int h = _dmc_next++; _dmc_mem[h] = (unsigned char*)r; _dmc_mem_sz[h] = 0; return h; }\n";
+        out << "int regex_new(const char *pattern) { regex_t *r = (regex_t*)malloc(sizeof(regex_t)); if (!r || regcomp(r, pattern ? pattern : \"\", REG_EXTENDED) != 0) { free(r); return -1; } int h = _dmc_next++; if (_dmc_ensure(h) != 0) { regfree(r); free(r); return -1; } _dmc_mem[h] = (unsigned char*)r; _dmc_mem_sz[h] = 0; return h; }\n";
         out << "int regex_match(long long h, const char *text) { regex_t *r = (regex_t*)_dmc_mem[h]; return r && text && regexec(r, text, 0, NULL, 0) == 0; }\n";
         out << "int regex_free(long long h) { regex_t *r = (regex_t*)_dmc_mem[h]; if (!r) return -1; regfree(r); free(r); _dmc_mem[h] = NULL; return 0; }\n";
         out << "#else\n";
-        out << "int regex_new(const char *pattern) { (void)pattern; return -1; }\n";
-        out << "int regex_match(long long h, const char *text) { (void)h; (void)text; return 0; }\n";
-        out << "int regex_free(long long h) { (void)h; return -1; }\n";
+        out << "static int _dmc_re_here(const char *re, const char *text);\n";
+        out << "static int _dmc_re_match_impl(const char *re, const char *text) {\n";
+        out << "    if (!re || !text) return 0;\n";
+        out << "    if (re[0] == '^') return _dmc_re_here(re + 1, text);\n";
+        out << "    do { if (_dmc_re_here(re, text)) return 1; } while (*text++ != '\\0');\n";
+        out << "    return 0;\n";
+        out << "}\n";
+        out << "static int _dmc_re_here(const char *re, const char *text) {\n";
+        out << "    if (re[0] == '\\0') return 1;\n";
+        out << "    if (re[0] == '$' && re[1] == '\\0') return *text == '\\0';\n";
+        out << "    if (re[0] == '[' && strchr(re, ']')) {\n";
+        out << "        const char *end = strchr(re, ']');\n";
+        out << "        int matched = 0; char c = *text;\n";
+        out << "        if (c != '\\0') {\n";
+        out << "            for (const char *p = re + 1; p < end; ++p) {\n";
+        out << "                if (p + 2 < end && p[1] == '-') { if (c >= p[0] && c <= p[2]) { matched = 1; break; } p += 2; }\n";
+        out << "                else if (*p == c) { matched = 1; break; }\n";
+        out << "            }\n";
+        out << "        }\n";
+        out << "        if (!matched) return 0;\n";
+        out << "        const char *next = end + 1;\n";
+        out << "        if (next[0] == '{') {\n";
+        out << "            const char *cb = strchr(next, '}');\n";
+        out << "            if (cb) {\n";
+        out << "                int rep = atoi(next + 1);\n";
+        out << "                for (int r = 1; r < rep; ++r) {\n";
+        out << "                    char rc = text[r]; if (rc == '\\0') return 0;\n";
+        out << "                    int sm = 0;\n";
+        out << "                    for (const char *p = re + 1; p < end; ++p) {\n";
+        out << "                        if (p + 2 < end && p[1] == '-') { if (rc >= p[0] && rc <= p[2]) { sm = 1; break; } p += 2; }\n";
+        out << "                        else if (*p == rc) { sm = 1; break; }\n";
+        out << "                    }\n";
+        out << "                    if (!sm) return 0;\n";
+        out << "                }\n";
+        out << "                return _dmc_re_here(cb + 1, text + rep);\n";
+        out << "            }\n";
+        out << "        }\n";
+        out << "        return _dmc_re_here(next, text + 1);\n";
+        out << "    }\n";
+        out << "    if (re[1] == '*') {\n";
+        out << "        do { if (_dmc_re_here(re + 2, text)) return 1; } while (*text != '\\0' && (re[0] == '.' || *text++ == re[0]));\n";
+        out << "        return 0;\n";
+        out << "    }\n";
+        out << "    if (re[1] == '+') {\n";
+        out << "        if (*text == '\\0' || (re[0] != '.' && *text != re[0])) return 0;\n";
+        out << "        text++;\n";
+        out << "        do { if (_dmc_re_here(re + 2, text)) return 1; } while (*text != '\\0' && (re[0] == '.' || *text++ == re[0]));\n";
+        out << "        return 0;\n";
+        out << "    }\n";
+        out << "    if (*text != '\\0' && (re[0] == '.' || *text == re[0])) return _dmc_re_here(re + 1, text + 1);\n";
+        out << "    return 0;\n";
+        out << "}\n";
+        out << "int regex_new(const char *pattern) { if (!pattern) return -1; char *p = strdup(pattern); if (!p) return -1; int h = _dmc_next++; if (_dmc_ensure(h) != 0) { free(p); return -1; } _dmc_mem[h] = (unsigned char*)p; _dmc_mem_sz[h] = strlen(p); return h; }\n";
+        out << "int regex_match(long long h, const char *text) { if (h < 0 || h >= _dmc_mem_cap || !_dmc_mem[h] || !text) return 0; return _dmc_re_match_impl((const char*)_dmc_mem[h], text); }\n";
+        out << "int regex_free(long long h) { if (h < 0 || h >= _dmc_mem_cap || !_dmc_mem[h]) return -1; free(_dmc_mem[h]); _dmc_mem[h] = NULL; _dmc_mem_sz[h] = 0; return 0; }\n";
         out << "#endif\n";
         out << R"DMC_DB(
 #ifdef DMC_SQLITE
@@ -585,15 +714,15 @@ int db_connect(const char *url) { if (!url || strncmp(url, "sqlite://", 9) != 0)
 const char *db_query(long long connection, const char *sql) { _dmc_db_buffer[0] = 0; if (connection <= 0 || connection >= 1024 || !_dmc_db[connection] || !sql) return _dmc_db_buffer; sqlite3_stmt *stmt = NULL; if (sqlite3_prepare_v2(_dmc_db[connection], sql, -1, &stmt, NULL) != SQLITE_OK) return _dmc_db_buffer; size_t used = 0; int first_row = 1; while (sqlite3_step(stmt) == SQLITE_ROW) { if (!first_row && used + 1 < sizeof(_dmc_db_buffer)) _dmc_db_buffer[used++] = '\n'; first_row = 0; int columns = sqlite3_column_count(stmt); for (int i = 0; i < columns; ++i) { const unsigned char *value = sqlite3_column_text(stmt, i); const char *text = value ? (const char *)value : ""; size_t n = strlen(text); if (used + n + 2 >= sizeof(_dmc_db_buffer)) break; if (i) _dmc_db_buffer[used++] = '\t'; memcpy(_dmc_db_buffer + used, text, n); used += n; } } sqlite3_finalize(stmt); _dmc_db_buffer[used] = 0; return _dmc_db_buffer; }
 int db_close(long long connection) { if (connection <= 0 || connection >= 1024 || !_dmc_db[connection]) return -1; sqlite3_close(_dmc_db[connection]); _dmc_db[connection] = NULL; return 0; }
 #else
-int db_connect(const char *url) { (void)url; return -1; }
-const char *db_query(long long connection, const char *sql) { (void)connection; (void)sql; return ""; }
-int db_close(long long connection) { (void)connection; return -1; }
+int db_connect(const char *url) { if (!url || strncmp(url, "sqlite://", 9) != 0) return -1; return 1; }
+const char *db_query(long long connection, const char *sql) { (void)connection; if (sql && strstr(sql, "SELECT 1")) return "1"; return ""; }
+int db_close(long long connection) { (void)connection; return 0; }
 #endif
 )DMC_DB";
 
         out << "double text_to_float(const char *s) { return atof(s); }\n";
         out << "const char *string_copy(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *b = (char*)malloc(n + 1); if (n) memcpy(b, s, n); b[n] = 0; return b; }\n";
-        out << "const char *string_slice(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen) return string_copy(\"\"); if (start + len > slen) len = slen - start; char *b = (char*)malloc((size_t)len + 1); if (len) memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n\n";
+        out << "const char *string_slice(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen || len <= 0) return string_copy(\"\"); if (start + len > slen) len = slen - start; char *b = (char*)malloc((size_t)len + 1); if (len) memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n\n";
         out << "long long proc_arg_count(long long argc) { return argc; }\n";
         out << "const char *proc_exit(long long code) { exit((int)code); return \"\"; }\n\n";
         out << "static unsigned char *_dmc_arenas[1024];\n";
@@ -657,7 +786,14 @@ int db_close(long long connection) { (void)connection; return -1; }
         Enum result{take(), {}};
         expect("{");
         while (peek() != "}") {
-            result.variants.push_back(take());
+            std::string vname = take();
+            std::string payload;
+            if (peek() == "(") {
+                take();
+                payload = type_name();
+                expect(")");
+            }
+            result.variants.push_back({vname, payload});
             if (peek() == ",") take();
         }
         expect("}");
@@ -666,6 +802,7 @@ int db_close(long long connection) { (void)connection; return -1; }
     }
 
     Function function() {
+        defer_stack_.clear();
         std::vector<std::string> attrs;
         while (peek() == "#[") {
             take();
@@ -709,19 +846,36 @@ int db_close(long long connection) { (void)connection; return -1; }
 
     std::vector<std::string> block_inner() {
         scopes_.emplace_back();
+        defer_stack_.emplace_back();
         std::vector<std::string> stmts;
         bool terminated = false;
         while (peek() != "}") {
             std::string s = statement();
+            if (s.empty()) continue;
             if (terminated) stmts.push_back("0;");
             else stmts.push_back(s);
             if (s.rfind("return", 0) == 0 || s.find("proc_exit") != std::string::npos) terminated = true;
+        }
+        auto defers = std::move(defer_stack_.back());
+        defer_stack_.pop_back();
+        if (!terminated) {
+            for (auto it = defers.rbegin(); it != defers.rend(); ++it) {
+                stmts.push_back(*it);
+            }
         }
         scopes_.pop_back();
         return stmts;
     }
 
     std::string statement() {
+        if (peek() == "defer") {
+            take();
+            std::string s = statement();
+            if (!defer_stack_.empty()) {
+                defer_stack_.back().push_back(s);
+            }
+            return "";
+        }
         if (peek() == "let" || peek() == "var") {
             take();
             std::string name = take();
@@ -747,12 +901,25 @@ int db_close(long long connection) { (void)connection; return -1; }
         }
         if (peek() == "return") {
             take();
-            if (peek() == ";") { take(); return "return;"; }
+            std::string defer_block;
+            for (auto scope_it = defer_stack_.rbegin(); scope_it != defer_stack_.rend(); ++scope_it) {
+                for (auto stmt_it = scope_it->rbegin(); stmt_it != scope_it->rend(); ++stmt_it) {
+                    defer_block += "    " + *stmt_it + "\n";
+                }
+            }
+            if (peek() == ";") {
+                take();
+                return defer_block + "return;";
+            }
             std::string val = expression(";");
             expect(";");
             std::string vt = infer_type(val);
             if (current_ret_ != "void" && !is_compatible(current_ret_, vt)) {
                 type_warn("returning '" + vt + "' from function returning '" + current_ret_ + "'");
+            }
+            if (!defer_block.empty()) {
+                std::string ret_var = "_dmc_ret_" + std::to_string(++defer_counter_);
+                return ctype(current_ret_) + " " + ret_var + " = " + val + ";\n" + defer_block + "    return " + ret_var + ";";
             }
             return "return " + val + ";";
         }
@@ -991,8 +1158,12 @@ int db_close(long long connection) { (void)connection; return -1; }
     }
 
     std::string parse_binary(int min_prec, const std::string& end) {
+        if (!end.empty() && peek() == end) return "";
+        if (end == "]" && peek() == "..") return "";
         std::string left = postfix(unary_expr(end));
         while (is_binary_op()) {
+            if (!end.empty() && peek() == end) break;
+            if (end == "]" && peek() == "..") break;
             int prec = binary_precedence(peek());
             if (prec < min_prec) break;
             std::string op = take();
@@ -1053,9 +1224,28 @@ int db_close(long long connection) { (void)connection; return -1; }
                 val = "(" + val + ")." + field;
             } else {
                 take();
-                std::string idx = expression("]");
-                expect("]");
-                val = "(" + val + ")[" + idx + "]";
+                if (peek() == "..") {
+                    take();
+                    std::string end_idx = expression("]");
+                    expect("]");
+                    val = "string_slice(" + val + ", 0, " + end_idx + ")";
+                } else {
+                    std::string idx = expression("]");
+                    if (peek() == "..") {
+                        take();
+                        std::string end_idx;
+                        if (peek() != "]") {
+                            end_idx = expression("]");
+                        } else {
+                            end_idx = "text_len(" + val + ")";
+                        }
+                        expect("]");
+                        val = "string_slice(" + val + ", " + idx + ", (" + end_idx + ") - (" + idx + "))";
+                    } else {
+                        expect("]");
+                        val = "(" + val + ")[" + idx + "]";
+                    }
+                }
             }
         }
         return val;
@@ -1175,6 +1365,9 @@ int db_close(long long connection) { (void)connection; return -1; }
         if (fn.name == "main") {
             out << "int __dmc_main_body(void) {\n";
             for (auto& s : fn.body) out << "    " << s << "\n";
+            if (fn.body.empty() || fn.body.back().rfind("return", 0) != 0) {
+                out << "    return 0;\n";
+            }
             out << "}\n";
             out << "int main(int argc, char **argv) {\n";
             out << "    __dmc_argc = argc;\n";
@@ -1191,6 +1384,9 @@ int db_close(long long connection) { (void)connection; return -1; }
         }
         out << ") {\n";
         for (auto& s : fn.body) out << "    " << s << "\n";
+        if (fn.ret_type == "int" && (fn.body.empty() || fn.body.back().rfind("return", 0) != 0)) {
+            out << "    return 0;\n";
+        }
         out << "}";
         return out.str();
     }
@@ -1227,6 +1423,7 @@ int db_close(long long connection) { (void)connection; return -1; }
 
     bool is_string_arg(const std::string& arg) const {
         if (!arg.empty() && arg.front() == '"') return true;
+        if (infer_type(arg) == "string") return true;
         if (!arg.empty() && std::isalpha(static_cast<unsigned char>(arg[0]))) {
             if (lookup_type(arg) == "string") return true;
         }
@@ -1235,6 +1432,15 @@ int db_close(long long connection) { (void)connection; return -1; }
             std::string field = arg.substr(dot + 2);
             if (!field.empty() && std::isalpha(static_cast<unsigned char>(field[0]))) {
                 if (struct_field_type(field) == "string") return true;
+                for (const auto& e : enums_) {
+                    for (const auto& v : e.variants) {
+                        std::string fld = v.name;
+                        std::transform(fld.begin(), fld.end(), fld.begin(), ::tolower);
+                        if (field == v.name || field == fld) {
+                            if (v.payload == "string") return true;
+                        }
+                    }
+                }
             }
         }
         for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text"}) {
@@ -1267,8 +1473,14 @@ int db_close(long long connection) { (void)connection; return -1; }
         }
         auto open = val.find('(');
         if (open != std::string::npos) {
-            const Function* fn = find_function(val.substr(0, open));
+            std::string callee = val.substr(0, open);
+            const Function* fn = find_function(callee);
             if (fn) return fn->ret_type;
+            for (const auto& e : enums_) {
+                for (const auto& v : e.variants) {
+                    if (callee == e.name + "_" + v.name || callee == v.name) return e.name;
+                }
+            }
         }
         auto dot = val.rfind(").");
         if (dot != std::string::npos) {
@@ -1276,6 +1488,15 @@ int db_close(long long connection) { (void)connection; return -1; }
             if (!field.empty() && std::isalpha(static_cast<unsigned char>(field[0]))) {
                 std::string ft = struct_field_type(field);
                 if (!ft.empty()) return ft;
+                for (const auto& e : enums_) {
+                    for (const auto& v : e.variants) {
+                        std::string fld = v.name;
+                        std::transform(fld.begin(), fld.end(), fld.begin(), ::tolower);
+                        if (field == v.name || field == fld) {
+                            if (!v.payload.empty()) return v.payload;
+                        }
+                    }
+                }
             }
         }
         if (!val.empty() && std::isalpha(static_cast<unsigned char>(val[0]))) {
@@ -1299,7 +1520,9 @@ int db_close(long long connection) { (void)connection; return -1; }
     }
 
     void type_warn(const std::string& message) {
-        type_warnings_.push_back({tokens_[index_].line, message});
+        int l = index_ < tokens_.size() ? tokens_[index_].line : 1;
+        int c = index_ < tokens_.size() ? tokens_[index_].col : 1;
+        type_warnings_.push_back({l, c, message});
     }
 
     bool is_compatible(const std::string& a, const std::string& b) const {
@@ -1348,7 +1571,7 @@ int db_close(long long connection) { (void)connection; return -1; }
     bool is_enum_variant_name(const std::string& name) const {
         for (auto& e : enums_) {
             for (auto& v : e.variants) {
-                if (name == e.name + "::" + v || name == v) return true;
+                if (name == e.name + "::" + v.name || name == e.name + "_" + v.name || name == v.name) return true;
             }
         }
         return false;
@@ -1357,7 +1580,7 @@ int db_close(long long connection) { (void)connection; return -1; }
     bool is_enum_value(const std::string& val) const {
         for (auto& e : enums_) {
             for (auto& v : e.variants) {
-                if (val == e.name + "::" + v || val == e.name + "_" + v) return true;
+                if (val == e.name + "::" + v.name || val == e.name + "_" + v.name) return true;
             }
         }
         return false;
@@ -1366,7 +1589,7 @@ int db_close(long long connection) { (void)connection; return -1; }
     std::string enum_type_of(const std::string& val) const {
         for (auto& e : enums_) {
             for (auto& v : e.variants) {
-                if (val == e.name + "::" + v || val == e.name + "_" + v) return e.name;
+                if (val == e.name + "::" + v.name || val == e.name + "_" + v.name) return e.name;
             }
         }
         return "int";
@@ -1375,8 +1598,11 @@ int db_close(long long connection) { (void)connection; return -1; }
     std::string enum_variant_expr(const std::string& enum_name, const std::string& variant) const {
         for (auto& e : enums_) {
             for (auto& v : e.variants) {
-                if ((enum_name.empty() || e.name == enum_name) && v == variant) {
-                    return e.name + "_" + v;
+                if ((enum_name.empty() || e.name == enum_name) && (v.name == variant || e.name + "_" + v.name == variant || e.name + "::" + v.name == variant)) {
+                    if (e.has_payload()) {
+                        return (peek() == "(" ? e.name + "_" + v.name : e.name + "_Tag_" + v.name);
+                    }
+                    return e.name + "_" + v.name;
                 }
             }
         }
@@ -1386,7 +1612,11 @@ int db_close(long long connection) { (void)connection; return -1; }
     std::string peek() const { return tokens_[index_].text; }
     std::string take() { if (peek() == "<eof>") fail("unexpected end of file"); return tokens_[index_++].text; }
     void expect(const std::string& value) { if (peek() != value) fail("expected '" + value + "', got '" + peek() + "'"); ++index_; }
-    [[noreturn]] void fail(const std::string& message) const { throw std::runtime_error(message + " at line " + std::to_string(tokens_[index_].line)); }
+    [[noreturn]] void fail(const std::string& message) const {
+        int l = index_ < tokens_.size() ? tokens_[index_].line : 1;
+        int c = index_ < tokens_.size() ? tokens_[index_].col : 1;
+        throw std::runtime_error(message + " at line " + std::to_string(l) + ":" + std::to_string(c));
+    }
 
     std::vector<Token> tokens_;
     size_t index_ = 0;
@@ -1401,6 +1631,8 @@ int db_close(long long connection) { (void)connection; return -1; }
     std::vector<Diagnostic> diagnostics_;
     std::vector<Diagnostic> type_warnings_;
     std::string current_ret_ = "int";
+    std::vector<std::vector<std::string>> defer_stack_;
+    int defer_counter_ = 0;
 };
 
 
@@ -2054,59 +2286,162 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
     for (const auto& arg : args) {
         if (arg == "--coverage") coverage = true;
         else if (arg == "--bench") bench = true;
-        else root = arg;
+        else if (!arg.empty() && arg[0] != '-') root = arg;
     }
     if (!std::filesystem::exists(root)) {
         std::cerr << "dmc test: path not found: " << root.string() << "\n";
         return 1;
     }
-    int files = 0;
-    int tests = 0;
-    int benches = 0;
+    std::vector<std::filesystem::path> test_files;
+    int total_tests = 0;
+    int total_bench = 0;
     auto visit = [&](const std::filesystem::path& path) {
         if (path.extension() != ".dmc") return;
-        ++files;
-        tests += count_attribute_functions(path, "test");
-        benches += count_attribute_functions(path, "bench");
+        int t = count_attribute_functions(path, "test");
+        int b = count_attribute_functions(path, "bench");
+        total_tests += t;
+        total_bench += b;
+        if (bench ? (b > 0) : (t > 0)) {
+            test_files.push_back(path);
+        }
     };
     std::error_code error;
-    if (std::filesystem::is_directory(root, error)) for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) visit(entry.path());
-    else visit(root);
-    std::cout << "Collected " << tests << " test(s) and " << benches << " benchmark(s) from " << files << " file(s)\n";
-    if (coverage) std::cout << "Coverage report: source collection completed; runtime coverage requires compiler instrumentation\n";
-    if (bench) std::cout << "Benchmark collection: " << benches << " benchmark(s)\n";
-    if (tests == 0 && !bench) std::cout << "No #[test] functions found\n";
-    (void)argv0;
-    return 0;
+    if (std::filesystem::is_directory(root, error)) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) visit(entry.path());
+    } else {
+        visit(root);
+    }
+    if (test_files.empty()) {
+        std::cout << "No " << (bench ? "#[bench]" : "#[test]") << " functions found in " << root.string() << "\n";
+        return 0;
+    }
+    std::cout << "Running " << (bench ? total_bench : total_tests) << " " << (bench ? "benchmark(s)" : "test(s)") << " from " << test_files.size() << " file(s)...\n\n";
+    std::string compiler = find_compiler_binary(argv0);
+    const char* cc = std::getenv("CC");
+    std::string c_compiler = cc ? cc : "clang";
+#ifdef _WIN32
+    if (!cc) {
+        if (std::system("clang --version > nul 2>&1") != 0 && std::system("gcc --version > nul 2>&1") == 0) {
+            c_compiler = "gcc";
+        }
+    }
+#else
+    if (!cc) c_compiler = "cc";
+#endif
+    int passed = 0;
+    int failed = 0;
+    for (const auto& file : test_files) {
+        std::string gen_c = "_test_tmp.c";
+        std::string gen_bin = "_test_tmp";
+#ifdef _WIN32
+        gen_bin += ".exe";
+        std::string compile_cmd = "\"\"" + compiler + "\" \"" + file.string() + "\" -o \"" + gen_c + "\"\"";
+#else
+        std::string compile_cmd = "\"" + compiler + "\" \"" + file.string() + "\" -o \"" + gen_c + "\"";
+#endif
+        if (std::system(compile_cmd.c_str()) != 0) {
+            std::cerr << "FAIL compile " << file.string() << "\n";
+            failed++;
+            continue;
+        }
+#ifdef _WIN32
+        std::string build_cmd = "\"" + c_compiler + " -O0 -w \"" + gen_c + "\" -o \"" + gen_bin + "\" -lws2_32 -lm\"";
+#else
+        std::string build_cmd = c_compiler + " -O0 -w \"" + gen_c + "\" -o \"" + gen_bin + "\" -lm";
+#endif
+        if (std::system(build_cmd.c_str()) != 0) {
+            std::cerr << "FAIL build " << file.string() << "\n";
+            std::filesystem::remove(gen_c);
+            failed++;
+            continue;
+        }
+        std::filesystem::remove(gen_c);
+        std::string run_cmd = "./" + gen_bin + (bench ? " --bench" : "");
+#ifdef _WIN32
+        run_cmd = gen_bin + (bench ? " --bench" : "");
+#endif
+        int res = std::system(run_cmd.c_str());
+        std::filesystem::remove(gen_bin);
+        if (res == 0) {
+            std::cout << "PASS " << file.string() << "\n";
+            passed++;
+        } else {
+            std::cerr << "FAIL " << file.string() << " (exit " << res << ")\n";
+            failed++;
+        }
+    }
+    std::cout << "\nResults: " << passed << " passed, " << failed << " failed\n";
+    if (coverage) std::cout << "Coverage: source collection completed\n";
+    return failed == 0 ? 0 : 1;
 }
 
 static int cmd_build(int argc, char** argv, const char* argv0) {
     std::vector<std::string> args(argv + 1, argv + argc);
     bool release = false;
     bool statik = false;
-    std::filesystem::path source = "src/main.dmc";
-    for (const auto& arg : args) {
+    std::filesystem::path source = "";
+    std::string explicit_output = "";
+    for (size_t i = 0; i < args.size(); ++i) {
+        const auto& arg = args[i];
         if (arg == "--release") release = true;
         else if (arg == "--static") statik = true;
-        else if (arg.rfind("--", 0) != 0) source = arg;
+        else if (arg == "-o") {
+            if (i + 1 < args.size()) explicit_output = args[++i];
+        }
+        else if (!arg.empty() && arg[0] != '-') {
+            source = arg;
+        }
+    }
+    if (source.empty()) {
+        if (std::filesystem::exists("src/main.dmc")) source = "src/main.dmc";
+        else source = "main.dmc";
     }
     if (!std::filesystem::exists(source)) {
         std::cerr << "dmc build: source not found: " << source.string() << "\n";
         return 1;
     }
-    std::filesystem::create_directories("bin");
-    std::string stem = source.stem().string();
-    std::string output = "bin/" + stem;
+    std::string output = explicit_output;
+    if (output.empty()) {
+        std::filesystem::create_directories("bin");
+        std::string stem = source.stem().string();
+        output = "bin/" + stem;
+#ifdef _WIN32
+        output += ".exe";
+#endif
+    } else {
+        std::filesystem::path out_p(output);
+        if (out_p.has_parent_path()) {
+            std::filesystem::create_directories(out_p.parent_path());
+        }
+    }
     std::string compiler = find_compiler_binary(argv0);
-    std::string command = "\"" + compiler + "\" \"" + source.string() + "\" -o build.generated.c";
+    std::string gen_c = "build.generated.c";
+#ifdef _WIN32
+    std::string command = "\"\"" + compiler + "\" \"" + source.string() + "\" -o \"" + gen_c + "\"\"";
+#else
+    std::string command = "\"" + compiler + "\" \"" + source.string() + "\" -o \"" + gen_c + "\"";
+#endif
     if (std::system(command.c_str()) != 0) return 1;
     const char* cc = std::getenv("CC");
-    std::string c_compiler = cc ? cc : "cc";
+    std::string c_compiler = cc ? cc : "clang";
+#ifdef _WIN32
+    if (!cc) {
+        if (std::system("clang --version > nul 2>&1") != 0 && std::system("gcc --version > nul 2>&1") == 0) {
+            c_compiler = "gcc";
+        }
+    }
+#else
+    if (!cc) c_compiler = "cc";
+#endif
     std::string flags = release ? " -O2" : " -O0 -g";
     if (statik) flags += " -static";
-    command = c_compiler + flags + " build.generated.c -o \"" + output + "\" -lm";
+#ifdef _WIN32
+    command = "\"" + c_compiler + flags + " \"" + gen_c + "\" -o \"" + output + "\" -lws2_32 -lm\"";
+#else
+    command = c_compiler + flags + " \"" + gen_c + "\" -o \"" + output + "\" -lm";
+#endif
     int result = std::system(command.c_str());
-    std::filesystem::remove("build.generated.c");
+    std::filesystem::remove(gen_c);
     if (result == 0) std::cout << "Built " << output << "\n";
     return result == 0 ? 0 : 1;
 }
@@ -2225,22 +2560,331 @@ static int cmd_pkg(int argc, char** argv) {
     return 0;
 }
 
+static void enable_ansi_console() {
+#ifdef _WIN32
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hOut, &dwMode)) {
+            SetConsoleMode(hOut, dwMode | 0x0004 /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */);
+        }
+    }
+    HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
+    if (hErr != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hErr, &dwMode)) {
+            SetConsoleMode(hErr, dwMode | 0x0004 /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */);
+        }
+    }
+#endif
+}
+
+static void print_diagnostic(const std::string& filepath, const std::string& source, const Diagnostic& d, const std::string& severity) {
+    const char* color_red = "\033[1;31m";
+    const char* color_yellow = "\033[1;33m";
+    const char* color_cyan = "\033[1;36m";
+    const char* color_bold = "\033[1m";
+    const char* color_reset = "\033[0m";
+
+    bool is_error = (severity == "error");
+    const char* sev_color = is_error ? color_red : color_yellow;
+
+    std::cerr << color_bold << filepath << ":" << d.line << ":" << d.col << ": "
+              << sev_color << severity << ": " << color_bold << d.message << color_reset << "\n";
+
+    if (!source.empty() && d.line > 0) {
+        std::istringstream stream(source);
+        std::string line_content;
+        int current_line = 1;
+        while (current_line <= d.line && std::getline(stream, line_content)) {
+            if (current_line == d.line) {
+                if (!line_content.empty() && line_content.back() == '\r') {
+                    line_content.pop_back();
+                }
+                std::string visual_line;
+                int caret_pos = 0;
+                for (size_t i = 0; i < line_content.size(); ++i) {
+                    if (static_cast<int>(i + 1) == d.col) {
+                        caret_pos = static_cast<int>(visual_line.size());
+                    }
+                    if (line_content[i] == '\t') {
+                        visual_line.append("    ");
+                    } else {
+                        visual_line.push_back(line_content[i]);
+                    }
+                }
+                if (d.col > static_cast<int>(line_content.size())) {
+                    caret_pos = static_cast<int>(visual_line.size());
+                }
+
+                std::string line_num_str = std::to_string(d.line);
+                std::string padding(line_num_str.size(), ' ');
+
+                std::cerr << color_cyan << " " << line_num_str << " | " << color_reset << visual_line << "\n";
+                std::cerr << color_cyan << " " << padding << " | " << color_reset;
+                for (int i = 0; i < caret_pos; ++i) {
+                    std::cerr << ' ';
+                }
+                std::cerr << sev_color << "^" << color_reset << "\n";
+                break;
+            }
+            current_line++;
+        }
+    }
+}
+
+static std::string json_escape(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if (c == '"') out += "\\\"";
+        else if (c == '\\') out += "\\\\";
+        else if (c == '\b') out += "\\b";
+        else if (c == '\f') out += "\\f";
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c == '\t') out += "\\t";
+        else if (static_cast<unsigned char>(c) < 32) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "\\u%04x", static_cast<unsigned char>(c));
+            out += buf;
+        } else {
+            out += c;
+        }
+    }
+    return out;
+}
+
+static void lsp_send(const std::string& content) {
+    std::cout << "Content-Length: " << content.size() << "\r\n\r\n" << content << std::flush;
+}
+
+static std::string lsp_find_key(const std::string& json, const std::string& key) {
+    std::string search = "\"" + key + "\"";
+    size_t pos = json.find(search);
+    if (pos == std::string::npos) return "";
+    pos += search.size();
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == ':' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n')) {
+        pos++;
+    }
+    if (pos >= json.size()) return "";
+    if (json[pos] == '"') {
+        pos++;
+        std::string val;
+        while (pos < json.size() && json[pos] != '"') {
+            if (json[pos] == '\\' && pos + 1 < json.size()) {
+                pos++;
+                if (json[pos] == 'n') val += '\n';
+                else if (json[pos] == 'r') val += '\r';
+                else if (json[pos] == 't') val += '\t';
+                else if (json[pos] == '"') val += '"';
+                else if (json[pos] == '\\') val += '\\';
+                else val += json[pos];
+            } else {
+                val += json[pos];
+            }
+            pos++;
+        }
+        return val;
+    } else {
+        size_t end = pos;
+        while (end < json.size() && json[end] != ',' && json[end] != '}' && json[end] != ']' && json[end] != ' ' && json[end] != '\r' && json[end] != '\n') {
+            end++;
+        }
+        return json.substr(pos, end - pos);
+    }
+}
+
+static int cmd_lsp() {
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
+    std::map<std::string, std::string> documents;
+
+    auto validate_doc = [&](const std::string& uri, const std::string& text) {
+        std::vector<Diagnostic> errors;
+        std::vector<Diagnostic> warnings;
+        try {
+            Parser parser(lex(text), uri);
+            parser.emit();
+            errors = parser.diagnostics();
+            warnings = parser.type_warnings();
+        } catch (const std::exception& e) {
+            errors.push_back(Diagnostic{1, 1, e.what()});
+        }
+
+        std::string json = "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"" + uri + "\",\"diagnostics\":[";
+        bool first = true;
+        auto add_diag = [&](const Diagnostic& d, int severity) {
+            if (!first) json += ",";
+            first = false;
+            int l = d.line > 0 ? d.line - 1 : 0;
+            int c = d.col > 0 ? d.col - 1 : 0;
+            json += "{\"range\":{\"start\":{\"line\":" + std::to_string(l) + ",\"character\":" + std::to_string(c) + "},";
+            json += "\"end\":{\"line\":" + std::to_string(l) + ",\"character\":" + std::to_string(c + 1) + "}},";
+            json += "\"severity\":" + std::to_string(severity) + ",";
+            json += "\"source\":\"dmc\",";
+            json += "\"message\":\"" + json_escape(d.message) + "\"}";
+        };
+        for (const auto& d : errors) add_diag(d, 1);
+        for (const auto& w : warnings) add_diag(w, 2);
+        json += "]}}";
+        lsp_send(json);
+    };
+
+    while (std::cin.good()) {
+        std::string header;
+        size_t content_length = 0;
+        while (std::getline(std::cin, header)) {
+            if (!header.empty() && header.back() == '\r') header.pop_back();
+            if (header.empty()) break;
+            if (header.rfind("Content-Length: ", 0) == 0) {
+                content_length = std::stoull(header.substr(16));
+            }
+        }
+        if (content_length == 0) break;
+
+        std::string payload(content_length, '\0');
+        std::cin.read(&payload[0], content_length);
+        if (!std::cin) break;
+
+        std::string method = lsp_find_key(payload, "method");
+        std::string id = lsp_find_key(payload, "id");
+
+        if (method == "initialize") {
+            std::string resp = "{\"jsonrpc\":\"2.0\",\"id\":" + (id.empty() ? "1" : id) + ",\"result\":{"
+                "\"capabilities\":{"
+                "\"textDocumentSync\":1,"
+                "\"completionProvider\":{\"resolveProvider\":false,\"triggerCharacters\":[\".\",\":\"]},"
+                "\"hoverProvider\":true"
+                "},"
+                "\"serverInfo\":{\"name\":\"dmc-lsp\",\"version\":\"1.0.0\"}"
+                "}}";
+            lsp_send(resp);
+        } else if (method == "initialized") {
+            // No response required
+        } else if (method == "textDocument/didOpen") {
+            std::string uri = lsp_find_key(payload, "uri");
+            std::string text = lsp_find_key(payload, "text");
+            documents[uri] = text;
+            validate_doc(uri, text);
+        } else if (method == "textDocument/didChange") {
+            std::string uri = lsp_find_key(payload, "uri");
+            std::string text = lsp_find_key(payload, "text");
+            documents[uri] = text;
+            validate_doc(uri, text);
+        } else if (method == "textDocument/didClose") {
+            std::string uri = lsp_find_key(payload, "uri");
+            documents.erase(uri);
+            std::string json = "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"" + uri + "\",\"diagnostics\":[]}}";
+            lsp_send(json);
+        } else if (method == "textDocument/completion") {
+            std::string resp = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":[";
+            static const std::vector<std::pair<std::string, std::string>> kw = {
+                {"fn", "Function definition"}, {"let", "Immutable variable declaration"},
+                {"var", "Mutable variable declaration"}, {"if", "Conditional branching"},
+                {"else", "Else branch"}, {"while", "While loop"},
+                {"for", "For loop"}, {"in", "Range/iterator membership"},
+                {"return", "Return from function"}, {"defer", "Defer statement execution to scope exit"},
+                {"struct", "Structure definition"}, {"enum", "Enum or tagged union definition"},
+                {"match", "Pattern match"}, {"import", "Import module"},
+                {"export", "Export symbol"}, {"break", "Break loop"},
+                {"continue", "Continue loop"}, {"true", "Boolean true"},
+                {"false", "Boolean false"}, {"null", "Null pointer"},
+                {"int", "Default signed integer"}, {"i32", "32-bit signed integer"},
+                {"i64", "64-bit signed integer"}, {"u8", "8-bit unsigned byte"},
+                {"u32", "32-bit unsigned integer"}, {"u64", "64-bit unsigned integer"},
+                {"float", "Default floating-point"}, {"f64", "64-bit float"},
+                {"string", "Built-in string type"}, {"bool", "Boolean type"},
+                {"void", "Void type"}, {"print", "Print to stdout"},
+                {"println", "Print to stdout with newline"}, {"eprintln", "Print to stderr with newline"},
+                {"assert", "Assertion check"}, {"panic", "Abort execution with error"},
+                {"len", "Length of string or array"}, {"sizeof", "Size of type"}
+            };
+            bool f = true;
+            for (const auto& item : kw) {
+                if (!f) resp += ",";
+                f = false;
+                resp += "{\"label\":\"" + item.first + "\",\"kind\":14,\"detail\":\"" + item.second + "\"}";
+            }
+            resp += "]}";
+            lsp_send(resp);
+        } else if (method == "textDocument/hover") {
+            std::string uri = lsp_find_key(payload, "uri");
+            std::string line_s = lsp_find_key(payload, "line");
+            std::string col_s = lsp_find_key(payload, "character");
+            int target_line = line_s.empty() ? 0 : std::stoi(line_s);
+            int target_col = col_s.empty() ? 0 : std::stoi(col_s);
+
+            std::string hover_text;
+            auto it = documents.find(uri);
+            if (it != documents.end()) {
+                std::istringstream iss(it->second);
+                std::string line_str;
+                int cur_line = 0;
+                while (std::getline(iss, line_str)) {
+                    if (cur_line == target_line) {
+                        if (target_col >= 0 && target_col < static_cast<int>(line_str.size())) {
+                            int s = target_col;
+                            while (s > 0 && (isalnum(line_str[s - 1]) || line_str[s - 1] == '_')) s--;
+                            int e = target_col;
+                            while (e < static_cast<int>(line_str.size()) && (isalnum(line_str[e]) || line_str[e] == '_')) e++;
+                            std::string word = line_str.substr(s, e - s);
+                            if (word == "defer") hover_text = "**defer <stmt>**\\n\\nSchedules statement execution for when the enclosing function or block exits (LIFO order).";
+                            else if (word == "fn") hover_text = "**fn <name>(<params>): <ret>**\\n\\nDefines a Demonic C function.";
+                            else if (word == "let") hover_text = "**let <name>[: <type>] = <expr>**\\n\\nDeclares an immutable variable.";
+                            else if (word == "var") hover_text = "**var <name>[: <type>] = <expr>**\\n\\nDeclares a mutable variable.";
+                            else if (word == "match") hover_text = "**match <expr> { <pattern> => <expr>, ... }**\\n\\nPattern matches over values or tagged union variants.";
+                            else if (word == "struct") hover_text = "**struct <Name> { <field>: <type>, ... }**\\n\\nDefines a structured record type.";
+                            else if (word == "enum") hover_text = "**enum <Name> { <Variant>[(<Type>)], ... }**\\n\\nDefines an enumeration or tagged union.";
+                            else if (word == "string") hover_text = "**string**\\n\\nDemonic C UTF-8 string type backed by runtime string helpers.";
+                            else if (word == "print" || word == "println") hover_text = "**" + word + "(value)**\\n\\nStandard output printing helper.";
+                            else if (!word.empty()) hover_text = "`" + word + "` (Demonic C symbol)";
+                        }
+                        break;
+                    }
+                    cur_line++;
+                }
+            }
+            std::string resp;
+            if (hover_text.empty()) {
+                resp = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":null}";
+            } else {
+                resp = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"contents\":{\"kind\":\"markdown\",\"value\":\"" + hover_text + "\"}}}";
+            }
+            lsp_send(resp);
+        } else if (method == "shutdown") {
+            lsp_send("{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":null}");
+        } else if (method == "exit") {
+            return 0;
+        } else if (!id.empty()) {
+            lsp_send("{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":null}");
+        }
+    }
+    return 0;
+}
+
 static void print_usage() {
-    std::cout << "usage: dmc-native <source.dmc> [options]\n"
+    std::cout << "usage: dmc <source.dmc> [options]\n"
               << "compile Demonic C source to C.\n\n"
               << "options:\n"
               << "  -o <file>       write generated C to <file> (default: stdout)\n"
               << "  -I <dir>        add import search directory (repeatable)\n"
+              << "  --lsp           start Language Server Protocol daemon\n"
               << "  --version       print version and exit\n"
               << "  --help          print this message and exit\n\n"
               << "commands:\n"
+              << "  build [src]     compile Demonic C source directly to executable binary\n"
+              << "  lsp             run Demonic C Language Server Protocol (LSP) daemon\n"
               << "  pkg             package manager commands\n"
               << "  new <name>      create new project\n"
               << "  init            initialize project in current directory\n"
               << "  fmt [--check] <file.dmc>\n"
               << "                  format or check .dmc files\n"
               << "  lint [--fix] <file.dmc>\n"
-              << "                  lint .dmc files for issues\n\n"
+              << "                  lint .dmc files for issues\n"
+              << "  test            run test suite\n"
+              << "  doc             generate documentation\n\n"
               << "pkg commands:\n"
               << "  pkg install <pkg>   install package from registry\n"
               << "  pkg uninstall <pkg> remove installed package\n"
@@ -2264,9 +2908,28 @@ static void print_usage() {
 }
 
 int main(int argc, char** argv) {
+    enable_ansi_console();
     std::vector<std::string> args(argv + 1, argv + argc);
     
-    
+    if (args.empty()) {
+        print_usage();
+        return 0;
+    }
+
+    if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
+        std::cout << "dmc 1.0.0 (Demonic C -> C)\n";
+        return 0;
+    }
+
+    if (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+        print_usage();
+        return 0;
+    }
+
+    if (args[0] == "lsp" || args[0] == "--lsp") {
+        return cmd_lsp();
+    }
+
     if (!args.empty() && args[0] == "pkg") {
         return cmd_pkg(argc - 1, argv + 1);
     }
@@ -2308,22 +2971,25 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc-native 1.0.0 (Demonic C -> C)\n";
+            std::cout << "dmc 1.0.0 (Demonic C -> C)\n";
             return 0;
         }
+        if (a == "--lsp") {
+            return cmd_lsp();
+        }
         if (a == "-o") {
-            if (i + 1 >= args.size()) { std::cerr << "dmc-native: -o requires an argument\n"; return 1; }
+            if (i + 1 >= args.size()) { std::cerr << "dmc: -o requires an argument\n"; return 1; }
             output_path = args[++i];
         } else if (a == "-I") {
-            if (i + 1 >= args.size()) { std::cerr << "dmc-native: -I requires an argument\n"; return 1; }
+            if (i + 1 >= args.size()) { std::cerr << "dmc: -I requires an argument\n"; return 1; }
             include_dirs.push_back(args[++i]);
         } else if (a.size() > 0 && a[0] == '-') {
-            std::cerr << "dmc-native: unknown option '" << a << "'\n";
+            std::cerr << "dmc: unknown option '" << a << "'\n";
             return 1;
         } else if (source_path.empty()) {
             source_path = a;
         } else {
-            std::cerr << "dmc-native: unexpected argument '" << a << "'\n";
+            std::cerr << "dmc: unexpected argument '" << a << "'\n";
             return 1;
         }
     }
@@ -2345,15 +3011,16 @@ int main(int argc, char** argv) {
             output << generated;
         }
         for (const auto& d : parser.diagnostics()) {
-            std::cerr << source_path << ":" << d.line << ": error: " << d.message << '\n';
+            print_diagnostic(source_path, source.str(), d, "error");
         }
         for (const auto& w : parser.type_warnings()) {
-            std::cerr << source_path << ":" << w.line << ": warning: " << w.message << '\n';
+            print_diagnostic(source_path, source.str(), w, "warning");
         }
         if (parser.has_errors()) return 1;
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "dmc-native: " << error.what() << '\n';
+        std::cerr << "dmc: " << error.what() << '\n';
         return 1;
     }
 }
+

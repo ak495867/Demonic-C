@@ -1,384 +1,341 @@
-# Demonic C — Usage Guide
+# Demonic C — Comprehensive Usage Guide
 
-This guide covers the DMC command-line interface, the core language reference, the standard runtime library, and cross-platform build notes. For a high-level project overview, see [README.md](README.md).
+This guide covers installation, the DMC command-line interface, core language syntax, modern language features, standard runtime library functions, and compilation instructions. For a high-level project overview, see [README.md](README.md).
 
 ---
 
-## Quick start
+## ⚡ Quick Installation
 
-### Building the compiler
+Install Demonic C directly from your terminal:
 
+### Linux & macOS (bash / zsh)
 ```bash
-# Build everything
-make
-
-# Verify installation
-./dmc-native --version
+curl -fsSL https://raw.githubusercontent.com/ak495867/Demonic-C/main/install.sh | bash
 ```
 
-### Writing your first program
+### Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/ak495867/Demonic-C/main/install.ps1 | iex
+```
 
+The installer installs to `~/.dmc/bin` and adds it to your `PATH`. Verify immediately with:
+```bash
+dmc --version
+```
+
+---
+
+## Quick Start
+
+### 1. Writing Your First Program
+
+Create a file named `hello.dmc`:
 ```dmc
-// hello.dmc
 fn main() -> int {
     println("Hello from Demonic C!");
     return 0;
 }
 ```
 
-```bash
-# Compile to C
-./dmc-native hello.dmc -o hello.c
+### 2. Building Directly to Executable
 
-# Compile to executable
-clang hello.c -o hello -lws2_32
+Use `dmc build` to transpile and link directly in one command:
+```bash
+dmc build hello.dmc -o hello
 ./hello
 ```
 
+### 3. Compiling to C Code Only
+
+If you wish to inspect the generated C99/C11 code:
+```bash
+dmc hello.dmc -o hello.c
+```
+
 ---
 
-## Command-line interface
+## Command-Line Interface (CLI)
 
 ```
-dmc-native <source.dmc> [options]
+usage: dmc <source.dmc> [options]
+compile Demonic C source to C.
 
-Options:
-  -o <file>       Write generated C to <file> (default: stdout)
-  -I <dir>        Add import search directory (repeatable)
-  --version       Print version and exit
-  --help          Print this message and exit
+options:
+  -o <file>       write generated C to <file> (default: stdout)
+  -I <dir>        add import search directory (repeatable)
+  --lsp           start Language Server Protocol daemon
+  --version       print version and exit
+  --help          print this message and exit
+
+commands:
+  build [src]     compile Demonic C source directly to executable binary
+  test [dir]      discover and execute all #[test] functions in directory
+  lsp             run Demonic C Language Server Protocol (LSP) daemon
+  fmt [--check]   format or check .dmc files
+  lint [--fix]    lint .dmc files for code style and syntax issues
+  new <name>      create new Demonic C project
+  init            initialize project configuration in current directory
+  pkg             package manager commands (install, search, list, publish)
+  doc             generate HTML/Markdown documentation
 ```
 
-### Examples
+### Common CLI Invocations
 
 ```bash
-# Compile to stdout
-./dmc-native program.dmc
+# Build directly to binary (automatic GCC/Clang invocation)
+dmc build src/main.dmc -o bin/app
 
-# Compile to a specific file
-./dmc-native program.dmc -o output.c
+# Run all unit tests in test-files/
+dmc test test-files
 
-# Add import directories
-./dmc-native program.dmc -I ./includes -I /usr/local/dmc/include
+# Start LSP server for IDEs
+dmc lsp
+
+# Format a source file
+dmc fmt src/main.dmc
+
+# Check formatting without modifying
+dmc fmt --check src/main.dmc
+
+# Lint source file
+dmc lint src/main.dmc
 ```
 
 ---
 
-## Language reference
+## Modern Language Features
 
-### Types
+### 1. LIFO Scope Cleanup (`defer`)
+Execute statements automatically when leaving a block or function:
 
-| Type | C equivalent | Description |
-|------|-------------|-------------|
+```dmc
+fn process(filename: string) {
+    let f = file_open(filename, "r");
+    if (f < 0) { return; }
+    defer file_close(f);
+
+    defer println("Done reading file");
+    let contents = file_read(f);
+    println(contents);
+}
+```
+
+### 2. Tagged Unions & Enums with Payloads
+Define sum types and variant payloads:
+
+```dmc
+enum Result {
+    Ok(string),
+    Err(int)
+}
+
+fn calculate() -> Result {
+    return Result_Ok("Calculation succeeded!");
+}
+
+fn main() {
+    let res = calculate();
+    if (res.tag == Result_Ok) {
+        println(res.data.Ok);
+    }
+}
+```
+
+### 3. String Slicing
+Sub-string slicing with range syntax `s[start..end]`:
+
+```dmc
+fn main() {
+    let s: string = "Demonic C Systems Programming";
+    let part = s[0..9]; // "Demonic C"
+    println(part);
+}
+```
+
+### 4. Built-in Testing Attribute (`#[test]`)
+Annotate test functions with `#[test]` returning `int` (0 for pass, non-zero for failure):
+
+```dmc
+#[test]
+fn test_addition() -> int {
+    if (10 + 20 == 30) { return 0; }
+    return 1;
+}
+
+#[test]
+fn test_string_slice() -> int {
+    let s: string = "Hello World";
+    let part = s[0..5];
+    if (text_cmp(part, "Hello") == 0) { return 0; }
+    return 1;
+}
+```
+
+Run tests with `dmc test test-files`.
+
+---
+
+## Language Reference
+
+### Data Types
+
+| Type | C Equivalent | Description |
+|---|---|---|
 | `int` | `long long` | 64-bit signed integer |
+| `i32` | `int` | 32-bit signed integer |
+| `i64` | `long long` | 64-bit signed integer |
+| `u8` | `unsigned char` | 8-bit unsigned integer |
+| `u32` | `unsigned int` | 32-bit unsigned integer |
+| `u64` | `unsigned long long` | 64-bit unsigned integer |
+| `float` / `f64` | `double` | 64-bit floating point |
 | `f32` | `float` | 32-bit floating point |
-| `f64` | `double` | 64-bit floating point |
-| `bool` | `bool` | Boolean (0/1) |
-| `string` | `const char*` | Null-terminated string |
-| `void` | `void` | No return value |
-| `*T` | `T*` | Pointer to `T` |
-| `[T;N]` | `T[N]` | Fixed-size array |
+| `bool` | `int` | Boolean (0 or 1) |
+| `string` | `const char*` | Null-terminated UTF-8 string |
+| `void` | `void` | Empty return type |
+| `*T` | `T*` | Direct raw pointer |
 
-### Variables
+### Variable Declarations
 
 ```dmc
 // Immutable binding
 let x: int = 42;
 
 // Mutable binding
-var y: string = "initial";
-y = "changed";
+var count: int = 0;
+count = count + 1;
 
 // Type inference
-let z = 3.14;  // inferred as f64
+let name = "Demonic C";
+let pi = 3.14159;
 ```
 
-### Control flow
+### Control Flow
 
 ```dmc
-// If-else
-if (condition) {
-    // ...
-} else if (other) {
-    // ...
+// If - Else If - Else
+if (x > 100) {
+    println("Large");
+} else if (x > 50) {
+    println("Medium");
 } else {
-    // ...
+    println("Small");
 }
 
 // While loop
-while (condition) {
-    // ...
+var i: int = 0;
+while (i < 10) {
+    i = i + 1;
 }
 
-// For loop (C-style)
-for (let i: int = 0; i < 10; i = i + 1) {
-    // ...
-}
-
-// Do-while
-do {
-    // ...
-} while (condition);
-
-// Until (inverted do-while)
-until (condition) {
-    // ...
-}
-
-// Switch
-switch (value) {
-    case 1: { /* ... */ }
-    case 2: { /* ... */ }
-    default: { /* ... */ }
+// For loop
+for (let j: int = 0; j < 5; j = j + 1) {
+    println("iteration");
 }
 ```
 
-### Functions
+### Structs
 
 ```dmc
-fn add(a: int, b: int) -> int {
-    return a + b;
-}
-
-fn print_msg(msg: string) -> void {
-    println(msg);
-}
-
-// Function with no parameters
-fn get_answer() -> int {
-    return 42;
-}
-```
-
-### Structures
-
-```dmc
-struct Point {
-    x: int;
-    y: int;
+struct Vector2D {
+    x: int,
+    y: int
 }
 
 fn main() -> int {
-    let p = Point { x: 10, y: 20 };
-    println(p.x);
-    return 0;
-}
-```
-
-### Enums
-
-```dmc
-enum Status {
-    OK,
-    ERROR,
-    PENDING
-}
-
-fn main() -> int {
-    let status = Status::OK;
-    // Use in switch
+    let v = Vector2D { x: 10, y: 20 };
+    println(v.x);
     return 0;
 }
 ```
 
 ---
 
-## Standard runtime library
+## Standard Runtime Library
 
-### Collections
+### Dynamic Collections
 
 ```dmc
-// Vectors
+// Dynamic Vector
 let v = vec_new();
 vec_push(v, 10);
 vec_push(v, 20);
-let val = vec_get(v, 0);  // 10
+let len = vec_len(v);
+let val = vec_get(v, 0); // 10
+vec_free(v);
 
-// Queues
+// Queue (FIFO)
 let q = queue_new();
-queue_push(q, 100);
-let item = queue_pop(q);  // 100
+queue_push(q, 42);
+let head = queue_pop(q); // 42
+queue_free(q);
 
-// Maps
+// Hash Map
 let m = map_new();
-map_set(m, "key", 42);
-let val = map_get(m, "key");  // 42
+map_set(m, 1, 100);
+let found = map_has(m, 1); // 1
+let value = map_get(m, 1); // 100
+map_free(m);
 ```
 
-### Memory operations
+### Memory Management & Arenas
 
 ```dmc
-// Allocate
+// Raw heap allocation
 let h = mem_alloc(1024);
-
-// Write/read bytes
-mem_write(h, 0, 65);  // 'A'
-let byte = mem_read(h, 0);
-
-// Free
+mem_write(h, 0, 65); // 'A'
+let b = mem_read(h, 0);
 mem_free(h);
 
-// Arena allocation (high performance)
+// High-speed bulk arena allocator
 let arena = arena_new(65536);
 let offset = arena_alloc(arena, 32);
-arena_write(arena, offset, 0, 42);
+arena_write(arena, offset, 0, 99);
 let val = arena_read(arena, offset, 0);
 arena_free(arena);
 ```
 
-### File I/O
-
-```dmc
-let f = file_open("data.bin", "wb");
-if (f < 0) { proc_exit(1); }
-
-file_write(f, "data");
-file_close(f);
-
-// Read
-let f2 = file_open("data.bin", "rb");
-let content = file_read(f2);
-file_close(f2);
-```
-
-### Network programming
+### Networking & TCP Sockets
 
 ```dmc
 let sock = tcp_connect("127.0.0.1", 8080);
-if (sock < 0) { proc_exit(1); }
-
-tcp_send(sock, "GET / HTTP/1.0\r\n\r\n");
-let response = tcp_recv(sock, 8192);
-tcp_close(sock);
-```
-
-### Inline assembly
-
-```dmc
-// Single instruction
-asm("nop");
-
-// Assembly block
-asm {
-    "mov rax, 1"
-    "ret"
+if (sock >= 0) {
+    tcp_send(sock, "GET / HTTP/1.0\r\n\r\n");
+    let resp = tcp_recv(sock, 4096);
+    tcp_close(sock);
 }
 ```
 
-### Process control
+### JSON & Regular Expressions
 
 ```dmc
-// Access command-line args
-let arg = arg_text(1);  // argv[1]
+// JSON Parsing
+let json = "{\"user\":\"Dante\",\"level\":99}";
+let user = json_get(json_parse(json), "user"); // "Dante"
 
-// Exit with code
-proc_exit(0);
-
-// System call
-let result = syscall(__NR_write, 1, "hello\n", 6);
-```
-
-### Mathematical functions
-
-```dmc
-let pi = math_pi();
-let e = math_e();
-let s = math_sin(pi / 2);
-let c = math_cos(0);
-let root = math_sqrt(16.0);
-let abs = math_abs(-42);
-```
-
-### Text functions
-
-```dmc
-let len = text_len("hello");
-let cat = text_concat("hello", " world");
-let sub = text_sub("hello", 1, 3);  // "ell"
-let cmp = text_cmp("a", "b");       // -1
-let num = text_from_int(42);        // "42"
-let val = text_to_int("123");
+// Regular Expressions
+let r = regex_new("^[A-Z][a-z]+$");
+let matched = regex_match(r, "Demonic"); // 1
+regex_free(r);
 ```
 
 ---
 
-## Modules and imports
+## Self-Hosting Bootstrap Chain
 
-```dmc
-// Import a built-in module
-import "math";
-import "text";
-import "mem";
-
-// Import a local module
-import "my_module";
-```
-
-Module file: `my_module.dmc` or `src/my_module.dmc`
-
-```dmc
-// my_module.dmc
-fn helper() -> int {
-    return 42;
-}
-```
-
----
-
-## Cross-platform notes
-
-### Windows
-- Link with `-lws2_32`
-- Port I/O requires administrator privileges
-- Networking uses Winsock2
-
-### Linux
-- Link with `-lm`
-- Port I/O requires `iopl(3)` or `CAP_SYS_RAWIO`
-- Networking uses standard POSIX APIs
-
----
-
-## Advanced usage
-
-### Self-hosting the compiler
+The self-hosting capability can be verified step-by-step:
 
 ```bash
-# Stage 1: native compiler builds the DMC emitter
-./dmc-native tests/emit.dmc -o _stage_emit.c
-clang -std=c11 -w _stage_emit.c -o _stage_emit.exe -lws2_32
+# 1. Compile emit.dmc into C
+./bin/dmc test-files/emit.dmc -o test-files/_stage_emit.c
 
-# Stage 2: DMC emitter compiles the self-hosting lexer
-cd tests && ./_stage_emit.exe selflex.dmc selflex_stage_out.c
-clang -std=c11 -w selflex_stage_out.c -o selflex_stage.exe -lws2_32
-cd tests && ./selflex_stage.exe   # Exit code 37 = success
+# 2. Compile stage emitter binary
+gcc -std=c11 -w test-files/_stage_emit.c -o test-files/_stage_emit -lws2_32
+
+# 3. Emit stage lexer with stage emitter
+cd test-files
+./_stage_emit selflex.dmc selflex_stage_out.c
+
+# 4. Compile and execute selflex
+gcc -std=c11 -w selflex_stage_out.c -o selflex_stage -lws2_32
+./selflex_stage # Output: 1317 tokens, exit code 37
 ```
-
-### Writing compiler tools in DMC
-
-The test suite includes reference implementations of:
-
-- Lexers (`bootstrap_lexer.dmc`)
-- Parsers (`bootstrap_parser.dmc`)
-- Code emitters (`emit.dmc`)
-
-These are useful starting points for building domain-specific languages, code generators, static analyzers, or transpilers of your own.
-
----
-
-## Debugging tips
-
-1. **Inspect generated C**: `./dmc-native program.dmc -o program.c` and read the output directly.
-2. **Enable C compiler warnings**: pass `-Wall -Wextra` when compiling the generated C.
-3. **Runtime errors**: check `dmc_last_error()` after any operation that can fail.
-4. **Memory issues**: prefer arena allocators for workloads with many small, related-lifetime allocations.
-
----
-
-## Performance considerations
-
-- Use arena allocation for many small allocations rather than repeated `mem_alloc`/`mem_free` calls.
-- Prefer stack allocation (`let`) over heap allocation where lifetime allows.
-- Use the runtime's vectors/maps for dynamic collections instead of hand-rolled structures.
-- Reach for inline assembly only on genuinely hot paths.
-- The generated C code is compiled by LLVM/Clang, so most standard C-level optimizations apply automatically.

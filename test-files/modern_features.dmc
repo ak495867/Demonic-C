@@ -1,0 +1,22 @@
+enum Result {
+    Ok(string),
+    Err(int)
+}
+
+fn test_defer() {
+    defer println("exit 1");
+    defer println("exit 2");
+    println("inside function");
+}
+
+fn main() {
+    test_defer();
+    let s: string = "Hello Demonic C World!";
+    let part = s[0..5];
+    println(part);
+
+    let res = Result_Ok("tagged union works!");
+    if (res.tag == Result_Ok) {
+        println(res.data.Ok);
+    }
+}

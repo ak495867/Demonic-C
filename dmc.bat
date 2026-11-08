@@ -1,3 +1,2 @@
 @echo off
-set ROOT=%~dp0
-"%ROOT%bin\dmc-native.exe" %*
+"%~dp0bin\dmc.exe" %*

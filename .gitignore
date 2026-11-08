@@ -1,0 +1,15 @@
+# Temporary build artifacts
+build.generated.c
+*.tmp
+*.log
+_stage_*
+*_stage*
+_test_*
+artifacts/
+release-assets/
+dist/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini

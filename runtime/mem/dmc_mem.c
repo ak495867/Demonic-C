@@ -57,6 +57,5 @@ int dmc_mem_free(dmc_handle handle) {
     dmc_slot *slot = dmc_get(handle, DMC_MEMORY);
     if (!slot) return -1;
     free(slot->value);
-    *slot = (dmc_slot){0};
     return dmc_release(handle);
 }
