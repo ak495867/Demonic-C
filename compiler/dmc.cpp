@@ -727,11 +727,11 @@ private:
         out << "double math_abs_f(double x) { return fabs(x); }\n";
         out << "double math_pi(void) { return 3.14159265358979323846; }\n";
         out << "double math_e(void) { return 2.71828182845904523536; }\n";
-        out << "long long text_len(const char *s) { return (long long)strlen(s); }\n";
-        out << "const char *text_concat(const char *a, const char *b) { static char buf[131072]; snprintf(buf, sizeof(buf), \"%s%s\", a, b); return buf; }\n";
-        out << "const char *text_sub(const char *s, long long start, long long len) { static char buf[65536]; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen) { buf[0] = 0; return buf; } if (start + len > slen) len = slen - start; memcpy(buf, s + start, (size_t)len); buf[len] = 0; return buf; }\n";
-        out << "long long text_char_at(const char *s, long long i) { if (i < 0 || i >= (long long)strlen(s)) return -1; return (unsigned char)s[i]; }\n";
-        out << "long long text_cmp(const char *a, const char *b) { return strcmp(a, b); }\n";
+        out << "long long text_len(const char *s) { return s ? (long long)strlen(s) : 0; }\n";
+        out << "const char *text_concat(const char *a, const char *b) { size_t la = a ? strlen(a) : 0; size_t lb = b ? strlen(b) : 0; char *res = (char*)malloc(la + lb + 1); if (!res) return \"\"; if (la) memcpy(res, a, la); if (lb) memcpy(res + la, b, lb); res[la + lb] = 0; return res; }\n";
+        out << "const char *text_sub(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen || len <= 0) { char *b = (char*)malloc(1); if (b) b[0] = 0; return b ? b : \"\"; } if (start + len > slen) len = slen - start; char *b = (char*)malloc((size_t)len + 1); if (!b) return \"\"; memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n";
+        out << "long long text_char_at(const char *s, long long i) { if (!s || i < 0 || i >= (long long)strlen(s)) return -1; return (unsigned char)s[i]; }\n";
+        out << "long long text_cmp(const char *a, const char *b) { if (!a && !b) return 0; if (!a) return -1; if (!b) return 1; return strcmp(a, b); }\n";
         out << "const char *text_from_int(long long x) { static char buf[32]; snprintf(buf, sizeof(buf), \"%lld\", x); return buf; }\n";
         out << "const char *text_from_float(double x) { static char buf[64]; snprintf(buf, sizeof(buf), \"%g\", x); return buf; }\n";
         out << "long long text_to_int(const char *s) { return atoll(s); }\n";
