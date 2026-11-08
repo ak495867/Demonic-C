@@ -179,15 +179,8 @@ public:
     std::string emit() {
         collect_declarations();
         std::ostringstream out;
-        for (const auto& h : c_headers_) {
-            if (h.rfind("<", 0) == 0) out << "#include " << h << "\n";
-            else out << "#include <" << h << ">\n";
-        }
-        if (!diagnostics_.empty()) {
-            out << "int _dmc_diagnostic_count = " << diagnostics_.size() << ";\n";
-        }
         out << "#define _GNU_SOURCE\n";
-        out << "#define _POSIX_C_SOURCE 200112L\n";
+        out << "#define _POSIX_C_SOURCE 200809L\n";
         out << "#ifndef null\n#define null ((void*)0)\n#endif\n";
         out << "typedef long long i64;\n";
         out << "typedef unsigned long long u64;\n";
@@ -195,15 +188,21 @@ public:
         out << "typedef unsigned int u32;\n";
         out << "typedef unsigned char u8;\n";
         out << "#ifdef _WIN32\n";
-        out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <io.h>\n#include <direct.h>\n";
+        out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <io.h>\n#include <direct.h>\n#include <sys/timeb.h>\n";
         out << "#define NSCLOSE closesocket\n";
         out << "#else\n";
-        out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n";
-        out << "#include <sys/types.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <unistd.h>\n";
+        out << "#include <sys/types.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n";
         out << "#define NSCLOSE close\n";
-        out << "#endif\n\n";
-        out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <sys/timeb.h>\n#ifndef _WIN32\n#include <regex.h>\n#endif\n\n";
-        out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#ifdef DMC_SQLITE\ntypedef struct sqlite3 sqlite3;\ntypedef struct sqlite3_stmt sqlite3_stmt;\nextern int sqlite3_open(const char *, sqlite3 **);\nextern int sqlite3_close(sqlite3 *);\nextern int sqlite3_prepare_v2(sqlite3 *, const char *, int, sqlite3_stmt **, const char **);\nextern int sqlite3_step(sqlite3_stmt *);\nextern int sqlite3_finalize(sqlite3_stmt *);\nextern int sqlite3_column_count(sqlite3_stmt *);\nextern const unsigned char *sqlite3_column_text(sqlite3_stmt *, int);\n#define SQLITE_OK 0\n#define SQLITE_ROW 100\n#endif\n\n";
+        out << "#endif\n";
+        out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n\n";
+        for (const auto& h : c_headers_) {
+            if (h.rfind("<", 0) == 0) out << "#include " << h << "\n";
+            else out << "#include <" << h << ">\n";
+        }
+        if (!diagnostics_.empty()) {
+            out << "int _dmc_diagnostic_count = " << diagnostics_.size() << ";\n";
+        }
+        out << "#ifdef DMC_SQLITE\ntypedef struct sqlite3 sqlite3;\ntypedef struct sqlite3_stmt sqlite3_stmt;\nextern int sqlite3_open(const char *, sqlite3 **);\nextern int sqlite3_close(sqlite3 *);\nextern int sqlite3_prepare_v2(sqlite3 *, const char *, int, sqlite3_stmt **, const char **);\nextern int sqlite3_step(sqlite3_stmt *);\nextern int sqlite3_finalize(sqlite3_stmt *);\nextern int sqlite3_column_count(sqlite3_stmt *);\nextern const unsigned char *sqlite3_column_text(sqlite3_stmt *, int);\n#define SQLITE_OK 0\n#define SQLITE_ROW 100\n#endif\n\n";
         emit_runtime(out);
         for (const auto& s : structs_) {
             out << "typedef struct " << s.name << " {\n";
@@ -762,14 +761,19 @@ long long http_status(const char *url) { if (!_dmc_http_url_ok(url)) return -1; 
         out << "#ifdef _WIN32\n";
         out << "    struct _timeb tb; _ftime(&tb); return (long long)tb.time * 1000 + (long long)tb.millitm;\n";
         out << "#else\n";
-        out << "    struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); return (long long)ts.tv_sec * 1000 + (long long)ts.tv_nsec / 1000000;\n";
+        out << "    struct timeval tv; gettimeofday(&tv, NULL); return (long long)tv.tv_sec * 1000 + (long long)tv.tv_usec / 1000;\n";
         out << "#endif\n";
         out << "}\n";
         out << "void time_sleep_ms(long long ms) {\n";
         out << "#ifdef _WIN32\n";
         out << "    Sleep((DWORD)(ms < 0 ? 0 : ms));\n";
         out << "#else\n";
-        out << "    usleep((useconds_t)(ms < 0 ? 0 : ms * 1000));\n";
+        out << "    if (ms > 0) {\n";
+        out << "        struct timespec req;\n";
+        out << "        req.tv_sec = (time_t)(ms / 1000);\n";
+        out << "        req.tv_nsec = (long)((ms % 1000) * 1000000L);\n";
+        out << "        nanosleep(&req, NULL);\n";
+        out << "    }\n";
         out << "#endif\n";
         out << "}\n";
         out << "static unsigned long long _dmc_rand_state = 88172645463325252ULL;\n";
@@ -1843,10 +1847,17 @@ const char *sha256(const char *str) {
                 file_path = file_path.substr(1, file_path.size() - 2);
             }
             std::filesystem::path p(file_path);
-            if (!p.is_absolute() && !source_.empty()) {
-                std::filesystem::path src_dir = std::filesystem::path(source_).parent_path();
-                if (std::filesystem::exists(src_dir / p)) {
-                    p = src_dir / p;
+            if (!p.is_absolute()) {
+                if (!source_.empty()) {
+                    std::filesystem::path src_dir = std::filesystem::path(source_).parent_path();
+                    if (std::filesystem::exists(src_dir / p)) {
+                        p = src_dir / p;
+                    }
+                }
+                if (!std::filesystem::exists(p)) {
+                    if (std::filesystem::exists(std::filesystem::path("test-files") / file_path)) {
+                        p = std::filesystem::path("test-files") / file_path;
+                    }
                 }
             }
             std::ifstream file(p, std::ios::binary);
