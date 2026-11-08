@@ -3291,14 +3291,6 @@ static int cmd_doc(int argc, char** argv) {
     return 0;
 }
 
-static std::string find_compiler_binary(const char* argv0) {
-    std::filesystem::path self(argv0 ? argv0 : "dmc-native");
-    if (std::filesystem::exists(self)) return self.string();
-    if (std::filesystem::exists("./dmc-native")) return "./dmc-native";
-    if (std::filesystem::exists("./dmc-native.exe")) return "./dmc-native.exe";
-    return "dmc-native";
-}
-
 static int count_attribute_functions(const std::filesystem::path& path, const std::string& attr) {
     int count = 0;
     for (const auto& line : read_lines(path)) if (line.find("#[" + attr + "]") != std::string::npos) ++count;
@@ -4824,7 +4816,10 @@ static int cmd_heal(int argc, char** argv) {
     std::error_code ec;
     size_t cache_files = 0;
     if (std::filesystem::exists(".dmc/cache", ec)) {
-        for (const auto& entry : std::filesystem::directory_iterator(".dmc/cache", ec)) cache_files++;
+        for (const auto& entry : std::filesystem::directory_iterator(".dmc/cache", ec)) {
+            (void)entry;
+            cache_files++;
+        }
         std::cout << color_green << "OK" << color_reset << " (" << cache_files << " cached objects)\n";
     } else {
         std::cout << color_green << "OK" << color_reset << " (clean)\n";
@@ -5213,14 +5208,12 @@ int main(int argc, char** argv) {
         } else if (a.rfind("-I", 0) == 0) {
             include_dirs.push_back(a.substr(2));
         } else if (a.rfind("-l", 0) == 0 || a.rfind("-L", 0) == 0 || a.rfind("-D", 0) == 0 || is_c_or_cpp_source(a)) {
-            // Ignored during C transpilation
         } else if (a.size() > 0 && a[0] == '-') {
             std::cerr << "dmc: unknown option '" << a << "'\n";
             return 1;
         } else if (source_path.empty()) {
             source_path = a;
         } else {
-            // Extra source or argument
         }
     }
     if (source_path.empty()) {
