@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name (e.g. v1.0.0)'
+        description: 'Tag name (e.g. v1.1.0)'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.1.0'
 
 permissions:
   contents: write
@@ -73,10 +73,14 @@ jobs:
           cp README.md USAGE.md LICENSE.md dist/dmc/
 
           # Create archive
-          cd dist
-          tar -czf "../${{ matrix.archive }}" dmc
-          cd ..
-          shasum -a 256 "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+          cd dist/dmc
+          tar -czf "../../${{ matrix.archive }}" *
+          cd ../..
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+          else
+            shasum -a 256 "${{ matrix.archive }}" > "${{ matrix.archive }}.sha256"
+          fi
 
       - name: Build DMC & Package (Windows)
         if: ${{ matrix.is_windows }}

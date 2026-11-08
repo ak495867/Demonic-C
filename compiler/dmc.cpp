@@ -2688,8 +2688,9 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
     int passed = 0;
     int failed = 0;
     static int test_counter = 0;
+    auto now_epoch = (unsigned long long)std::chrono::high_resolution_clock::now().time_since_epoch().count();
     for (const auto& file : test_files) {
-        std::string test_id = std::to_string(++test_counter);
+        std::string test_id = std::to_string(now_epoch % 10000000) + "_" + std::to_string(++test_counter);
         std::string gen_c = "_test_tmp_" + test_id + ".c";
         std::string gen_bin = "_test_tmp_" + test_id;
 #ifdef _WIN32
@@ -3034,7 +3035,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v1.0.0)\n"
+              << "Demonic C Interactive REPL (v1.1.0)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -3109,7 +3110,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.0.0";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.1.0";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -3614,7 +3615,7 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 1.0.0 (Demonic C -> C)\n";
+        std::cout << "dmc 1.1.0 (Demonic C -> C)\n";
         return 0;
     }
 
@@ -3706,7 +3707,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 1.0.0 (Demonic C -> C)\n";
+            std::cout << "dmc 1.1.0 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {

@@ -122,6 +122,12 @@ mkdir -p "${INSTALL_DIR}"
 printf "${CYAN}Extracting to ${INSTALL_DIR}...${NC}\n"
 tar -xzf "${ARCHIVE_PATH}" -C "${INSTALL_DIR}"
 
+# Flatten if archive contained a top-level dmc folder
+if [ -d "${INSTALL_DIR}/dmc" ] && [ -d "${INSTALL_DIR}/dmc/bin" ]; then
+    cp -r "${INSTALL_DIR}/dmc/"* "${INSTALL_DIR}/"
+    rm -rf "${INSTALL_DIR}/dmc"
+fi
+
 BIN_DIR="${INSTALL_DIR}/bin"
 mkdir -p "${BIN_DIR}"
 

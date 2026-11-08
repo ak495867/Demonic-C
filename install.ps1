@@ -99,6 +99,13 @@ try {
     Write-Host "Extracting files..." -ForegroundColor Cyan
     Expand-Archive -Path $TempZip -DestinationPath $InstallDir -Force
 
+    # Flatten if archive contained a top-level dmc folder
+    $NestedDmc = Join-Path $InstallDir "dmc"
+    if (Test-Path (Join-Path $NestedDmc "bin")) {
+        Copy-Item -Path "$NestedDmc\*" -Destination $InstallDir -Recurse -Force
+        Remove-Item -Path $NestedDmc -Recurse -Force
+    }
+
     # Ensure bin directory exists
     $BinDir = Join-Path $InstallDir "bin"
     if (-not (Test-Path $BinDir)) {
