@@ -34,7 +34,15 @@ struct Token { std::string text; int line; int col; };
 struct Diagnostic { int line; int col; std::string message; };
 struct Param { std::string name; std::string type; };
 struct Field { std::string name; std::string type; };
-struct Function { std::string name; std::string ret_type; std::vector<Param> params; std::vector<std::string> body; std::vector<std::string> attributes; };
+struct Function {
+    std::string name;
+    std::string ret_type;
+    std::vector<Param> params;
+    std::vector<std::string> body;
+    std::vector<std::string> attributes;
+    bool is_extern = false;
+    bool is_variadic = false;
+};
 struct Struct { std::string name; std::vector<Field> fields; };
 struct EnumVariant { std::string name; std::string payload; };
 struct Enum {
@@ -111,6 +119,9 @@ static std::vector<Token> lex(const std::string& source) {
             result.push_back({source.substr(start, i - start), line, start_col});
             continue;
         }
+        if (i + 2 < source.size() && source[i] == '.' && source[i + 1] == '.' && source[i + 2] == '.') {
+            result.push_back({"...", line, col}); i += 3; col += 3; continue;
+        }
         if (i + 1 < source.size()) {
             std::string pair = source.substr(i, 2);
             if (pair == "==" || pair == "!=" || pair == "<=" || pair == ">=" || pair == "&&" || pair == "||" || pair == "->" || pair == "::" || pair == "#[" || pair == ".." || pair == "?*") {
@@ -128,13 +139,15 @@ static std::string ctype(const std::string& type) {
     if (type == "string") return "const char*";
     if (type == "const unsigned char*") return "const unsigned char*";
     if (type == "u8") return "unsigned char";
-    if (type == "i32") return "int";
+    if (type == "i32" || type == "int") return "int";
     if (type == "u32") return "unsigned int";
     if (type == "i64" || type == "u64") return "long long";
     if (type == "bool") return "bool";
     if (type == "void") return "void";
-    if (type == "f32") return "float";
-    if (type == "f64") return "double";
+    if (type == "f32" || type == "float") return "float";
+    if (type == "f64" || type == "double") return "double";
+    if (type == "char") return "char";
+    if (type == "size_t") return "size_t";
     if (type == "vec" || type == "map" || type == "queue") return "int";
     if (type == "arena") return "long long";
     if (type.rfind("?*", 0) == 0) return ctype(type.substr(2)) + "*";
@@ -177,6 +190,9 @@ public:
     const std::vector<Diagnostic>& type_warnings() const { return type_warnings_; }
     std::vector<std::string> get_imports() { return parse_imports(); }
     std::string get_resolved_import(const std::string& name) const { return resolve_import(name); }
+    const std::set<std::string>& link_libs() const { return link_libs_; }
+    void add_link_lib(const std::string& lib) { link_libs_.insert(lib); }
+    const std::vector<std::string>& top_level_c() const { return top_level_c_; }
 
     std::string emit() {
         collect_declarations();
@@ -198,8 +214,12 @@ public:
         out << "#endif\n";
         out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n\n";
         for (const auto& h : c_headers_) {
-            if (h.rfind("<", 0) == 0) out << "#include " << h << "\n";
+            if (h.rfind("<", 0) == 0 || h.rfind("\"", 0) == 0) out << "#include " << h << "\n";
             else out << "#include <" << h << ">\n";
+        }
+        for (const auto& lib : link_libs_) {
+            out << "/* DMC_LINK: " << lib << " */\n";
+            out << "#if defined(_MSC_VER)\n#pragma comment(lib, \"" << lib << "\")\n#endif\n";
         }
         if (!diagnostics_.empty()) {
             out << "int _dmc_diagnostic_count = " << diagnostics_.size() << ";\n";
@@ -318,11 +338,20 @@ public:
             out << "}\n\n";
         }
         
+        for (const auto& c_snippet : top_level_c_) {
+            out << c_snippet << "\n\n";
+        }
+
         std::vector<Function> test_fns;
         std::vector<Function> bench_fns;
         std::vector<Function> normal_fns;
+        std::vector<Function> extern_fns;
         bool has_main = false;
         for (const auto& fn : functions_) {
+            if (fn.is_extern) {
+                extern_fns.push_back(fn);
+                continue;
+            }
             if (fn.name == "main") {
                 has_main = true;
                 continue;
@@ -336,6 +365,30 @@ public:
             if (is_test) test_fns.push_back(fn);
             else if (is_bench) bench_fns.push_back(fn);
             else normal_fns.push_back(fn);
+        }
+
+        if (!extern_fns.empty()) {
+            out << "#ifdef __cplusplus\nextern \"C\" {\n#endif\n";
+            for (const auto& fn : extern_fns) {
+                out << "extern " << ctype(fn.ret_type) << " " << fn.name << "(";
+                if (fn.params.empty()) {
+                    out << "void";
+                } else {
+                    for (size_t i = 0; i < fn.params.size(); ++i) {
+                        if (i) out << ", ";
+                        if (fn.params[i].name == "..." || fn.params[i].type == "...") {
+                            out << "...";
+                        } else {
+                            out << ctype(fn.params[i].type);
+                            if (!fn.params[i].name.empty() && fn.params[i].name[0] != '_') {
+                                out << " " << fn.params[i].name;
+                            }
+                        }
+                    }
+                }
+                out << ");\n";
+            }
+            out << "#ifdef __cplusplus\n}\n#endif\n\n";
         }
         
         for (const auto& fn : normal_fns) {
@@ -427,25 +480,35 @@ public:
 
 private:
     void collect_declarations() {
-        std::vector<std::string> mods = parse_imports();
-        for (auto& name : mods) if (is_builtin_module(name)) imports_.insert(name);
-        for (auto& name : mods) {
-            if (is_builtin_module(name)) continue;
-            std::string path = resolve_import(name);
-            if (loaded_.count(path)) continue;
-            loaded_.insert(path);
-            Parser mod(lex(read_file(path)), path);
-            mod.loaded_ = loaded_;
-            mod.include_dirs_ = include_dirs_;
-            mod.collect_declarations();
-            mod.merge_into(this);
-            loaded_ = mod.loaded_;
-        }
         while (peek() != "<eof>") {
             try {
-                if (peek() == "struct") structs_.push_back(structure());
-                else if (peek() == "enum") enums_.push_back(parse_enum());
-                else functions_.push_back(function());
+                if (peek() == "import" || peek() == "summon") {
+                    parse_single_import();
+                } else if (peek() == "include" || peek() == "#include") {
+                    parse_include_directive();
+                } else if (peek() == "link" || peek() == "#link") {
+                    parse_link_directive();
+                } else if (peek() == "c_code" || peek() == "__c__") {
+                    parse_top_level_c_code();
+                } else if (peek() == "extern") {
+                    parse_extern_decl();
+                } else if (peek() == "#[") {
+                    if (index_ + 1 < tokens_.size() && tokens_[index_ + 1].text == "link") {
+                        parse_link_attribute();
+                    } else {
+                        functions_.push_back(function());
+                    }
+                } else if (peek() == "struct") {
+                    structs_.push_back(structure());
+                } else if (peek() == "enum") {
+                    enums_.push_back(parse_enum());
+                } else if (peek() == "fn") {
+                    functions_.push_back(function());
+                } else if (peek() == ";") {
+                    take();
+                } else {
+                    functions_.push_back(function());
+                }
             } catch (const std::runtime_error& err) {
                 int line = index_ < tokens_.size() ? tokens_[index_].line : 1;
                 int col = index_ < tokens_.size() ? tokens_[index_].col : 1;
@@ -455,40 +518,237 @@ private:
         }
     }
 
+    void parse_single_import() {
+        take();
+        std::string name;
+        if (peek() == "<") {
+            take();
+            name = "<";
+            while (peek() != ">" && peek() != "<eof>") name += take();
+            expect(">");
+            name += ">";
+        } else {
+            name = take();
+        }
+        if (peek() == ";") take();
+
+        if (name.size() >= 2 && name.front() == '"' && name.back() == '"') {
+            std::string unquoted = name.substr(1, name.size() - 2);
+            if (unquoted.size() >= 2 && unquoted.rfind(".h") == unquoted.size() - 2) {
+                c_headers_.insert(name);
+            } else {
+                load_module(unquoted);
+            }
+        } else if (name.rfind("<", 0) == 0 || (name.size() >= 2 && name.rfind(".h") == name.size() - 2)) {
+            c_headers_.insert(name);
+        } else {
+            load_module(name);
+        }
+    }
+
+    void load_module(const std::string& name) {
+        if (is_builtin_module(name)) {
+            imports_.insert(name);
+            return;
+        }
+        std::string path = resolve_import(name);
+        if (loaded_.count(path)) return;
+        loaded_.insert(path);
+        Parser mod(lex(read_file(path)), path);
+        mod.loaded_ = loaded_;
+        mod.include_dirs_ = include_dirs_;
+        mod.collect_declarations();
+        mod.merge_into(this);
+        loaded_ = mod.loaded_;
+    }
+
+    void parse_include_directive() {
+        take();
+        std::string name;
+        if (peek() == "<") {
+            take();
+            name = "<";
+            while (peek() != ">" && peek() != "<eof>") name += take();
+            expect(">");
+            name += ">";
+        } else {
+            name = take();
+        }
+        if (peek() == ";") take();
+        c_headers_.insert(name);
+    }
+
+    void parse_link_directive() {
+        take();
+        while (peek() != ";" && peek() != "<eof>") {
+            std::string tok = take();
+            if (tok.size() >= 2 && tok.front() == '"' && tok.back() == '"') {
+                tok = tok.substr(1, tok.size() - 2);
+            }
+            if (!tok.empty() && tok != ",") {
+                link_libs_.insert(tok);
+            }
+            if (peek() == ",") take();
+            else break;
+        }
+        if (peek() == ";") take();
+    }
+
+    void parse_link_attribute() {
+        expect("#[");
+        expect("link");
+        expect("(");
+        std::string lib = take();
+        if (lib.size() >= 2 && lib.front() == '"' && lib.back() == '"') {
+            lib = lib.substr(1, lib.size() - 2);
+        }
+        link_libs_.insert(lib);
+        expect(")");
+        expect("]");
+    }
+
+    void parse_extern_decl() {
+        expect("extern");
+        if (peek() == "\"C\"" || peek() == "C") {
+            take();
+        }
+        if (peek() == "{") {
+            take();
+            while (peek() != "}" && peek() != "<eof>") {
+                parse_single_extern();
+            }
+            expect("}");
+            if (peek() == ";") take();
+        } else {
+            parse_single_extern();
+        }
+    }
+
+    void parse_single_extern() {
+        if (peek() == ";") { take(); return; }
+        Function fn;
+        fn.is_extern = true;
+        if (peek() == "fn") {
+            take();
+            fn.name = take();
+            expect("(");
+            if (peek() != ")") {
+                while (true) {
+                    if (peek() == "...") {
+                        take();
+                        fn.is_variadic = true;
+                        fn.params.push_back({"...", "..."});
+                        break;
+                    }
+                    std::string pname = take();
+                    std::string ptype = "int";
+                    if (peek() == ":") {
+                        take();
+                        ptype = type_name();
+                    }
+                    fn.params.push_back({pname, ptype});
+                    if (peek() != ",") break;
+                    take();
+                }
+            }
+            expect(")");
+            fn.ret_type = "int";
+            if (peek() == "->") {
+                take();
+                fn.ret_type = type_name();
+            }
+            if (peek() == ";") take();
+            functions_.push_back(fn);
+        } else {
+            std::string ret_t = type_name();
+            std::string name = take();
+            fn.name = name;
+            fn.ret_type = ret_t;
+            expect("(");
+            if (peek() != ")") {
+                while (true) {
+                    if (peek() == "...") {
+                        take();
+                        fn.is_variadic = true;
+                        fn.params.push_back({"...", "..."});
+                        break;
+                    }
+                    std::string ptype = type_name();
+                    std::string pname;
+                    if (peek() != "," && peek() != ")") {
+                        pname = take();
+                    } else {
+                        pname = "_arg" + std::to_string(fn.params.size());
+                    }
+                    fn.params.push_back({pname, ptype});
+                    if (peek() != ",") break;
+                    take();
+                }
+            }
+            expect(")");
+            if (peek() == ";") take();
+            functions_.push_back(fn);
+        }
+    }
+
+    void parse_top_level_c_code() {
+        take();
+        if (peek() == "{") {
+            take();
+            int depth = 1;
+            std::string code;
+            while (depth > 0 && peek() != "<eof>") {
+                Token t = tokens_[index_++];
+                if (t.text == "{") {
+                    depth++;
+                    code += "{ ";
+                } else if (t.text == "}") {
+                    depth--;
+                    if (depth == 0) break;
+                    code += "} ";
+                } else if (t.text == ";") {
+                    code += ";\n";
+                } else if (t.text.rfind("#", 0) == 0) {
+                    code += "\n" + t.text + " ";
+                } else {
+                    code += t.text + " ";
+                }
+            }
+            top_level_c_.push_back(code);
+        } else {
+            std::string s = take();
+            if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+                s = s.substr(1, s.size() - 2);
+            }
+            if (peek() == ";") take();
+            top_level_c_.push_back(s);
+        }
+    }
+
     void skip_to_decl() {
         while (peek() != "<eof>") {
-            if (peek() == "struct" || peek() == "enum" || peek() == "fn" || peek() == "import") return;
+            if (peek() == "struct" || peek() == "enum" || peek() == "fn" || peek() == "import" ||
+                peek() == "summon" || peek() == "include" || peek() == "#include" ||
+                peek() == "link" || peek() == "#link" || peek() == "extern" ||
+                peek() == "c_code" || peek() == "__c__") return;
             ++index_;
         }
     }
 
     std::vector<std::string> parse_imports() {
         std::vector<std::string> mods;
-        while (peek() == "import") {
-            take();
-            std::string name;
-            if (peek() == "<") {
-                take();
-                name = "<";
-                while (peek() != ">" && peek() != "<eof>") name += take();
-                expect(">");
-                name += ">";
-            } else {
-                name = take();
-            }
-            if (name.size() >= 2 && name.front() == '"' && name.back() == '"') {
-                std::string unquoted = name.substr(1, name.size() - 2);
-                if (unquoted.size() >= 2 && unquoted.rfind(".h") == unquoted.size() - 2) {
-                    c_headers_.insert(unquoted);
-                } else {
-                    mods.push_back(unquoted);
+        for (size_t i = 0; i < tokens_.size(); ++i) {
+            if (tokens_[i].text == "import" || tokens_[i].text == "summon") {
+                if (i + 1 < tokens_.size()) {
+                    std::string name = tokens_[i + 1].text;
+                    if (name.size() >= 2 && name.front() == '"' && name.back() == '"') {
+                        name = name.substr(1, name.size() - 2);
+                    }
+                    if (name.rfind("<", 0) != 0 && (name.size() < 2 || name.rfind(".h") != name.size() - 2)) {
+                        mods.push_back(name);
+                    }
                 }
-            } else if (name.rfind("<", 0) == 0 || (name.size() >= 2 && name.rfind(".h") == name.size() - 2)) {
-                c_headers_.insert(name);
-            } else {
-                mods.push_back(name);
             }
-            expect(";");
         }
         return mods;
     }
@@ -555,6 +815,8 @@ private:
         for (auto& i : imports_) target->imports_.insert(i);
         for (auto& h : c_headers_) target->c_headers_.insert(h);
         for (auto& v : specialized_vectors_) target->specialized_vectors_.insert(v);
+        for (auto& l : link_libs_) target->link_libs_.insert(l);
+        for (auto& c : top_level_c_) target->top_level_c_.push_back(c);
     }
 
     bool has_function(const std::string& name) const {
@@ -1177,6 +1439,18 @@ const char *sha256(const char *str) {
         while (peek() == "#[") {
             take();
             std::string attr = take();
+            if (peek() == "(") {
+                take();
+                std::string arg = take();
+                if (arg.size() >= 2 && arg.front() == '"' && arg.back() == '"') {
+                    arg = arg.substr(1, arg.size() - 2);
+                }
+                expect(")");
+                if (attr == "link") {
+                    link_libs_.insert(arg);
+                }
+                attr = attr + "(" + arg + ")";
+            }
             expect("]");
             attrs.push_back(attr);
         }
@@ -1241,6 +1515,39 @@ const char *sha256(const char *str) {
     }
 
     std::string statement() {
+        if (peek() == "c_code" || peek() == "__c__") {
+            take();
+            if (peek() == "{") {
+                take();
+                int depth = 1;
+                std::string code;
+                while (depth > 0 && peek() != "<eof>") {
+                    Token t = tokens_[index_++];
+                    if (t.text == "{") {
+                        depth++;
+                        code += "{ ";
+                    } else if (t.text == "}") {
+                        depth--;
+                        if (depth == 0) break;
+                        code += "} ";
+                    } else if (t.text == ";") {
+                        code += ";\n    ";
+                    } else if (t.text.rfind("#", 0) == 0) {
+                        code += "\n" + t.text + " ";
+                    } else {
+                        code += t.text + " ";
+                    }
+                }
+                return code + ";";
+            } else {
+                std::string s = take();
+                if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+                    s = s.substr(1, s.size() - 2);
+                }
+                if (peek() == ";") take();
+                return s + ";";
+            }
+        }
         if (peek() == "defer") {
             take();
             std::string s = statement();
@@ -2009,6 +2316,7 @@ const char *sha256(const char *str) {
     }
 
     std::string definition(const Function& fn) const {
+        if (fn.is_extern) return "";
         std::ostringstream out;
         if (fn.name == "main") {
             out << "int __dmc_main_body(void) {\n";
@@ -2059,6 +2367,10 @@ const char *sha256(const char *str) {
             if (base == "Vector") specialized_vectors_.insert(inner);
             return full_type;
         }
+        while (peek() == "*") {
+            take();
+            base = "*" + base;
+        }
         return base;
     }
 
@@ -2066,7 +2378,7 @@ const char *sha256(const char *str) {
         if (arg.size() >= 3 && std::isdigit(static_cast<unsigned char>(arg[0])) && arg.find('.') != std::string::npos) return true;
         if (!arg.empty() && std::isalpha(static_cast<unsigned char>(arg[0]))) {
             std::string t = lookup_type(arg);
-            if (t == "f32" || t == "f64") return true;
+            if (t == "f32" || t == "f64" || t == "double" || t == "float") return true;
         }
         for (const auto& fn : {"math_sin", "math_cos", "math_tan", "math_sqrt", "math_floor", "math_ceil", "math_abs_f", "math_pi", "math_e", "text_to_float", "text_from_float"}) {
             if (arg.rfind(std::string(fn) + "(", 0) == 0) return true;
@@ -2074,7 +2386,7 @@ const char *sha256(const char *str) {
         auto open = arg.find('(');
         if (open != std::string::npos) {
             const Function* fn = find_function(arg.substr(0, open));
-            if (fn && (fn->ret_type == "f32" || fn->ret_type == "f64")) return true;
+            if (fn && (fn->ret_type == "f32" || fn->ret_type == "f64" || fn->ret_type == "double" || fn->ret_type == "float")) return true;
         }
         return false;
     }
@@ -2336,6 +2648,8 @@ const char *sha256(const char *str) {
     std::vector<std::unordered_map<std::string, std::string>> scopes_;
     std::set<std::string> imports_;
     std::set<std::string> c_headers_;
+    std::set<std::string> link_libs_;
+    std::vector<std::string> top_level_c_;
     std::set<std::string> specialized_vectors_;
     int try_counter_ = 0;
     std::string source_ = "";
@@ -3001,15 +3315,45 @@ static void safe_remove_file(const std::filesystem::path& p) {
     std::filesystem::remove(p, ec);
 }
 
+static bool is_c_or_cpp_source(const std::string& path) {
+    if (path.size() >= 2 && path.compare(path.size() - 2, 2, ".c") == 0) return true;
+    if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".cpp") == 0) return true;
+    if (path.size() >= 3 && path.compare(path.size() - 3, 3, ".cc") == 0) return true;
+    if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".cxx") == 0) return true;
+    if (path.size() >= 2 && path.compare(path.size() - 2, 2, ".o") == 0) return true;
+    if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".obj") == 0) return true;
+    if (path.size() >= 2 && path.compare(path.size() - 2, 2, ".a") == 0) return true;
+    if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".lib") == 0) return true;
+    return false;
+}
+
+static bool is_cpp_source(const std::string& path) {
+    if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".cpp") == 0) return true;
+    if (path.size() >= 3 && path.compare(path.size() - 3, 3, ".cc") == 0) return true;
+    if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".cxx") == 0) return true;
+    return false;
+}
+
+static void print_diagnostic(const std::string& filepath, const std::string& source, const Diagnostic& d, const std::string& severity);
+
 static int cmd_test_impl(int argc, char** argv, const char* argv0) {
+    (void)argv0;
     std::vector<std::string> args(argv + 1, argv + argc);
     bool coverage = false;
     bool bench = false;
+    std::vector<std::string> extra_flags;
+    std::vector<std::string> extra_sources;
     std::filesystem::path root = std::filesystem::exists("test-files") ? "test-files" : "../test-files";
     for (const auto& arg : args) {
         if (arg == "--coverage") coverage = true;
         else if (arg == "--bench") bench = true;
-        else if (!arg.empty() && arg[0] != '-') root = arg;
+        else if (arg.rfind("-l", 0) == 0 || arg.rfind("-L", 0) == 0 || arg.rfind("-I", 0) == 0 || arg.rfind("-D", 0) == 0) {
+            extra_flags.push_back(arg);
+        } else if (is_c_or_cpp_source(arg)) {
+            extra_sources.push_back(arg);
+        } else if (!arg.empty() && arg[0] != '-') {
+            root = arg;
+        }
     }
     if (!std::filesystem::exists(root)) {
         std::cerr << "dmc test: path not found: " << root.string() << "\n";
@@ -3039,7 +3383,6 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
         return 0;
     }
     std::cout << "Running " << (bench ? total_bench : total_tests) << " " << (bench ? "benchmark(s)" : "test(s)") << " from " << test_files.size() << " file(s)...\n\n";
-    std::string compiler = find_compiler_binary(argv0);
     const char* cc = std::getenv("CC");
     std::string c_compiler = cc ? cc : "clang";
 #ifdef _WIN32
@@ -3063,19 +3406,78 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
         std::string gen_bin = "_test_tmp_" + test_id;
 #ifdef _WIN32
         gen_bin += ".exe";
-        std::string compile_cmd = "\"\"" + compiler + "\" \"" + file.string() + "\" -o \"" + gen_c + "\"\"";
-#else
-        std::string compile_cmd = "\"" + compiler + "\" \"" + file.string() + "\" -o \"" + gen_c + "\"";
 #endif
-        if (std::system(compile_cmd.c_str()) != 0) {
-            std::cerr << "FAIL compile " << file.string() << "\n";
+        std::string source_content;
+        try {
+            std::ifstream in(file);
+            if (!in) {
+                std::cerr << "FAIL read " << file.string() << "\n";
+                failed++;
+                continue;
+            }
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            source_content = ss.str();
+        } catch (...) {
+            std::cerr << "FAIL read " << file.string() << "\n";
             failed++;
             continue;
         }
+
+        Parser parser(lex(source_content), file.string());
+        parser.add_include_dir(".");
+        parser.add_include_dir("stdlib");
+        if (file.has_parent_path()) {
+            parser.add_include_dir(file.parent_path().string());
+        }
+        for (const auto& flg : extra_flags) {
+            if (flg.rfind("-I", 0) == 0 && flg.size() > 2) {
+                parser.add_include_dir(flg.substr(2));
+            }
+        }
+        std::string generated = parser.emit();
+        if (parser.has_errors()) {
+            std::cerr << "FAIL compile " << file.string() << "\n";
+            for (const auto& d : parser.diagnostics()) {
+                print_diagnostic(file.string(), source_content, d, "error");
+            }
+            failed++;
+            continue;
+        }
+
+        {
+            std::ofstream out(gen_c);
+            out << generated;
+        }
+
+        bool has_cpp = false;
+        for (const auto& s : extra_sources) if (is_cpp_source(s)) has_cpp = true;
+
+        std::string link_flags = "";
 #ifdef _WIN32
-        std::string build_cmd = "\"" + c_compiler + " -O0 -w \"" + gen_c + "\" -o \"" + gen_bin + "\" -lws2_32 -lm\"";
+        link_flags += " -lws2_32 -lm";
 #else
-        std::string build_cmd = c_compiler + " -O0 -w \"" + gen_c + "\" -o \"" + gen_bin + "\" -lm";
+        link_flags += " -lm";
+#endif
+        for (const auto& lib : parser.link_libs()) {
+            link_flags += " -l" + lib;
+        }
+        for (const auto& flg : extra_flags) {
+            link_flags += " " + flg;
+        }
+        if (has_cpp && !cc) {
+            link_flags += " -lstdc++";
+        }
+
+        std::string sources_cmd = " \"" + gen_c + "\"";
+        for (const auto& s : extra_sources) {
+            sources_cmd += " \"" + s + "\"";
+        }
+
+#ifdef _WIN32
+        std::string build_cmd = "\"" + c_compiler + " -O0 -w" + sources_cmd + " -o \"" + gen_bin + "\"" + link_flags + "\"";
+#else
+        std::string build_cmd = c_compiler + " -O0 -w" + sources_cmd + " -o \"" + gen_bin + "\"" + link_flags;
 #endif
         if (std::system(build_cmd.c_str()) != 0) {
             std::cerr << "FAIL build " << file.string() << "\n";
@@ -3104,22 +3506,47 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
 }
 
 static int cmd_build(int argc, char** argv, const char* argv0) {
+    (void)argv0;
     std::vector<std::string> args(argv + 1, argv + argc);
     bool release = false;
     bool statik = false;
     bool sanitize = false;
+    bool emit_c_only = false;
     std::filesystem::path source = "";
     std::string explicit_output = "";
+    std::vector<std::string> extra_sources;
+    std::vector<std::string> extra_flags;
+    std::vector<std::string> include_dirs;
+
     for (size_t i = 0; i < args.size(); ++i) {
         const auto& arg = args[i];
         if (arg == "--release") release = true;
         else if (arg == "--static") statik = true;
         else if (arg == "--sanitize") sanitize = true;
+        else if (arg == "--emit-c") emit_c_only = true;
         else if (arg == "-o") {
             if (i + 1 < args.size()) explicit_output = args[++i];
         }
+        else if (arg == "-I") {
+            if (i + 1 < args.size()) {
+                std::string d = args[++i];
+                include_dirs.push_back(d);
+                extra_flags.push_back("-I" + d);
+            }
+        }
+        else if (arg.rfind("-I", 0) == 0) {
+            include_dirs.push_back(arg.substr(2));
+            extra_flags.push_back(arg);
+        }
+        else if (arg.rfind("-l", 0) == 0 || arg.rfind("-L", 0) == 0 || arg.rfind("-D", 0) == 0) {
+            extra_flags.push_back(arg);
+        }
+        else if (is_c_or_cpp_source(arg)) {
+            extra_sources.push_back(arg);
+        }
         else if (!arg.empty() && arg[0] != '-') {
-            source = arg;
+            if (source.empty()) source = arg;
+            else extra_sources.push_back(arg);
         }
     }
     if (source.empty()) {
@@ -3144,35 +3571,112 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
             std::filesystem::create_directories(out_p.parent_path());
         }
     }
-    std::string compiler = find_compiler_binary(argv0);
-    std::string gen_c = "build.generated.c";
-#ifdef _WIN32
-    std::string command = "\"\"" + compiler + "\" \"" + source.string() + "\" -o \"" + gen_c + "\"\"";
-#else
-    std::string command = "\"" + compiler + "\" \"" + source.string() + "\" -o \"" + gen_c + "\"";
-#endif
-    if (std::system(command.c_str()) != 0) return 1;
-    const char* cc = std::getenv("CC");
-    std::string c_compiler = cc ? cc : "clang";
-#ifdef _WIN32
-    if (!cc) {
-        if (std::system("gcc --version > nul 2>&1") == 0) {
-            c_compiler = "gcc";
-        } else if (std::system("clang --version > nul 2>&1") == 0) {
-            c_compiler = "clang";
+
+    std::string source_content;
+    try {
+        std::ifstream in(source);
+        if (!in) {
+            std::cerr << "dmc build: cannot open source file: " << source.string() << "\n";
+            return 1;
         }
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        source_content = ss.str();
+    } catch (...) {
+        std::cerr << "dmc build: cannot read source file: " << source.string() << "\n";
+        return 1;
     }
+
+    Parser parser(lex(source_content), source.string());
+    parser.add_include_dir(".");
+    parser.add_include_dir("stdlib");
+    if (source.has_parent_path()) {
+        parser.add_include_dir(source.parent_path().string());
+    }
+    for (const auto& d : include_dirs) parser.add_include_dir(d);
+
+    std::string generated = parser.emit();
+    for (const auto& d : parser.diagnostics()) {
+        print_diagnostic(source.string(), source_content, d, "error");
+    }
+    for (const auto& w : parser.type_warnings()) {
+        print_diagnostic(source.string(), source_content, w, "warning");
+    }
+    if (parser.has_errors()) return 1;
+
+    if (emit_c_only) {
+        std::string c_out = explicit_output.empty() ? source.stem().string() + ".c" : explicit_output;
+        std::ofstream out(c_out);
+        out << generated;
+        std::cout << "Emitted C source: " << c_out << "\n";
+        return 0;
+    }
+
+    uint64_t ts = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+    std::string gen_c = "_build_tmp_" + std::to_string(ts) + ".c";
+    {
+        std::ofstream out(gen_c);
+        out << generated;
+    }
+
+    bool has_cpp = false;
+    for (const auto& s : extra_sources) {
+        if (is_cpp_source(s)) has_cpp = true;
+    }
+
+    const char* cc = std::getenv(has_cpp ? "CXX" : "CC");
+    std::string c_compiler;
+    if (cc) {
+        c_compiler = cc;
+    } else {
+#ifdef _WIN32
+        if (has_cpp) {
+            if (std::system("g++ --version > nul 2>&1") == 0) c_compiler = "g++";
+            else if (std::system("clang++ --version > nul 2>&1") == 0) c_compiler = "clang++";
+            else c_compiler = "g++";
+        } else {
+            if (std::system("gcc --version > nul 2>&1") == 0) c_compiler = "gcc";
+            else if (std::system("clang --version > nul 2>&1") == 0) c_compiler = "clang";
+            else c_compiler = "gcc";
+        }
 #else
-    if (!cc) c_compiler = "cc";
+        if (has_cpp) c_compiler = "c++";
+        else c_compiler = "cc";
 #endif
+    }
+
     std::string flags = release ? " -O2" : " -O0 -g";
     if (statik) flags += " -static";
     if (sanitize) flags += " -fsanitize=address,undefined -fno-omit-frame-pointer -g";
+
+    std::string link_flags = "";
 #ifdef _WIN32
-    command = "\"" + c_compiler + flags + " \"" + gen_c + "\" -o \"" + output + "\" -lws2_32 -lm\"";
+    link_flags += " -lws2_32 -lm";
 #else
-    command = c_compiler + flags + " \"" + gen_c + "\" -o \"" + output + "\" -lm";
+    link_flags += " -lm";
 #endif
+    for (const auto& lib : parser.link_libs()) {
+        link_flags += " -l" + lib;
+    }
+    for (const auto& flg : extra_flags) {
+        link_flags += " " + flg;
+    }
+    if (has_cpp && !cc) {
+        link_flags += " -lstdc++";
+    }
+
+    std::string sources_cmd = " \"" + gen_c + "\"";
+    for (const auto& s : extra_sources) {
+        sources_cmd += " \"" + s + "\"";
+    }
+
+    std::string command;
+#ifdef _WIN32
+    command = "\"" + c_compiler + flags + sources_cmd + " -o \"" + output + "\"" + link_flags + "\"";
+#else
+    command = c_compiler + flags + sources_cmd + " -o \"" + output + "\"" + link_flags;
+#endif
+
     int result = std::system(command.c_str());
     safe_remove_file(gen_c);
     if (result == 0) std::cout << "Built " << output << "\n";
@@ -3209,11 +3713,28 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
 
     bool sanitize = force_sanitize;
     bool no_cache = force_no_cache;
+    std::vector<std::string> extra_sources;
+    std::vector<std::string> extra_flags;
     std::vector<std::string> clean_args;
+    bool after_dash_dash = false;
     for (const auto& a : program_args) {
+        if (after_dash_dash) {
+            clean_args.push_back(a);
+            continue;
+        }
+        if (a == "--") {
+            after_dash_dash = true;
+            continue;
+        }
         if (a == "--sanitize") sanitize = true;
         else if (a == "--no-cache") no_cache = true;
-        else clean_args.push_back(a);
+        else if (a.rfind("-l", 0) == 0 || a.rfind("-L", 0) == 0 || a.rfind("-I", 0) == 0 || a.rfind("-D", 0) == 0) {
+            extra_flags.push_back(a);
+        } else if (is_c_or_cpp_source(a)) {
+            extra_sources.push_back(a);
+        } else {
+            clean_args.push_back(a);
+        }
     }
     program_args = clean_args;
 
@@ -3234,6 +3755,9 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
 
     std::string stem = std::filesystem::path(source_path).stem().string();
     std::string hash_input = source_path + ":" + (sanitize ? "san:" : "nosan:") + source_content;
+    for (const auto& s : extra_sources) hash_input += ":src:" + s;
+    for (const auto& f : extra_flags) hash_input += ":flg:" + f;
+
     uint64_t hash_val = compute_fnv1a_hash(hash_input);
     std::stringstream hss;
     hss << std::hex << hash_val;
@@ -3245,7 +3769,7 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
 #endif
     std::filesystem::path cached_bin = std::filesystem::path(dmc_cache_dir()) / exe_name;
 
-    if (!no_cache && std::filesystem::exists(cached_bin)) {
+    if (!no_cache && extra_sources.empty() && std::filesystem::exists(cached_bin)) {
         std::string run_cmd;
 #ifdef _WIN32
         run_cmd = "\"\"" + cached_bin.string() + "\"";
@@ -3267,13 +3791,18 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
     std::string tmp_stem = "_dmc_run_" + std::to_string(ts);
     std::string gen_c = tmp_stem + ".c";
 
+    Parser parser(lex(source_content), source_path);
     try {
-        Parser parser(lex(source_content), source_path);
         parser.add_include_dir(".");
         parser.add_include_dir("stdlib");
         std::filesystem::path sp(source_path);
         if (sp.has_parent_path()) {
             parser.add_include_dir(sp.parent_path().string());
+        }
+        for (const auto& flg : extra_flags) {
+            if (flg.rfind("-I", 0) == 0 && flg.size() > 2) {
+                parser.add_include_dir(flg.substr(2));
+            }
         }
         std::string generated = parser.emit();
         for (const auto& d : parser.diagnostics()) {
@@ -3296,29 +3825,62 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
         return 1;
     }
 
-    const char* cc = std::getenv("CC");
-    std::string c_compiler = cc ? cc : "clang";
-#ifdef _WIN32
-    if (!cc) {
-        if (std::system("gcc --version > nul 2>&1") == 0) {
-            c_compiler = "gcc";
-        } else if (std::system("clang --version > nul 2>&1") == 0) {
-            c_compiler = "clang";
-        }
+    bool has_cpp = false;
+    for (const auto& s : extra_sources) {
+        if (is_cpp_source(s)) has_cpp = true;
     }
+
+    const char* cc = std::getenv(has_cpp ? "CXX" : "CC");
+    std::string c_compiler;
+    if (cc) {
+        c_compiler = cc;
+    } else {
+#ifdef _WIN32
+        if (has_cpp) {
+            if (std::system("g++ --version > nul 2>&1") == 0) c_compiler = "g++";
+            else if (std::system("clang++ --version > nul 2>&1") == 0) c_compiler = "clang++";
+            else c_compiler = "g++";
+        } else {
+            if (std::system("gcc --version > nul 2>&1") == 0) c_compiler = "gcc";
+            else if (std::system("clang --version > nul 2>&1") == 0) c_compiler = "clang";
+            else c_compiler = "gcc";
+        }
 #else
-    if (!cc) c_compiler = "cc";
+        if (has_cpp) c_compiler = "c++";
+        else c_compiler = "cc";
 #endif
+    }
 
     std::string flags = " -O2";
     if (sanitize) {
         flags += " -fsanitize=address,undefined -fno-omit-frame-pointer -g";
     }
 
+    std::string link_flags = "";
 #ifdef _WIN32
-    std::string compile_cmd = "\"" + c_compiler + flags + " -w \"" + gen_c + "\" -o \"" + cached_bin.string() + "\" -lws2_32 -lm\"";
+    link_flags += " -lws2_32 -lm";
 #else
-    std::string compile_cmd = c_compiler + flags + " -w \"" + gen_c + "\" -o \"" + cached_bin.string() + "\" -lm";
+    link_flags += " -lm";
+#endif
+    for (const auto& lib : parser.link_libs()) {
+        link_flags += " -l" + lib;
+    }
+    for (const auto& flg : extra_flags) {
+        link_flags += " " + flg;
+    }
+    if (has_cpp && !cc) {
+        link_flags += " -lstdc++";
+    }
+
+    std::string sources_cmd = " \"" + gen_c + "\"";
+    for (const auto& s : extra_sources) {
+        sources_cmd += " \"" + s + "\"";
+    }
+
+#ifdef _WIN32
+    std::string compile_cmd = "\"" + c_compiler + flags + " -w" + sources_cmd + " -o \"" + cached_bin.string() + "\"" + link_flags + "\"";
+#else
+    std::string compile_cmd = c_compiler + flags + " -w" + sources_cmd + " -o \"" + cached_bin.string() + "\"" + link_flags;
 #endif
     int c_res = std::system(compile_cmd.c_str());
     safe_remove_file(gen_c);
@@ -3341,7 +3903,7 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
     }
 #endif
     int run_res = std::system(run_cmd.c_str());
-    if (no_cache) {
+    if (no_cache || !extra_sources.empty()) {
         safe_remove_file(cached_bin);
     }
 #ifdef _WIN32
@@ -3403,7 +3965,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v1.3.0)\n"
+              << "Demonic C Interactive REPL (v1.4.0)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -3478,7 +4040,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.3.0";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.4.0";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -4151,7 +4713,7 @@ static int cmd_check(int argc, char** argv) {
 
 static int cmd_info() {
     std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
-    std::cout << "  Version:       1.3.0\n";
+    std::cout << "  Version:       1.4.0\n";
     std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
 #ifdef _WIN32
     std::cout << "windows-x86_64";
@@ -4341,7 +4903,7 @@ static int cmd_update(int argc, char** argv) {
         return 1;
     }
     
-    std::string current_ver = "v1.3.0";
+    std::string current_ver = "v1.4.0";
     std::cout << "Current version: " << current_ver << "\n";
     std::cout << "Latest version:  " << latest_tag << "\n";
     
@@ -4445,10 +5007,19 @@ static void print_usage() {
               << "  --emit-c        transpile to C on stdout\n"
               << "  --sanitize      compile with AddressSanitizer & UndefinedBehaviorSanitizer\n"
               << "  --no-cache      bypass compilation cache\n"
-              << "  -I <dir>        add import search directory (repeatable)\n"
+              << "  -l<lib>         link external C/C++ library (e.g. -lm, -lcurl)\n"
+              << "  -L<dir>         add library search directory\n"
+              << "  -I <dir>        add include / import search directory (repeatable)\n"
+              << "  -D<macro>       pass preprocessor define to backend compiler\n"
               << "  --lsp           start Language Server Protocol daemon\n"
               << "  --version       print version and exit\n"
               << "  --help          print this message and exit\n\n"
+              << "interop:\n"
+              << "  dmc main.dmc helper.c           compile DMC and C files together\n"
+              << "  dmc build main.dmc -lcurl       link with external C libraries\n"
+              << "  #link \"lib\" / #[link(\"lib\")]    declare required link libraries in source\n"
+              << "  extern fn name(...) -> type;    declare external C functions\n"
+              << "  c_code { ... }                  embed raw inline C code snippets\n\n"
               << "commands:\n"
               << "  run <src>       compile and run Demonic C source directly (or 'dmc <src>')\n"
               << "  watch <src>     watch source file and rerun on save\n"
@@ -4503,7 +5074,7 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 1.3.0 (Demonic C -> C)\n";
+        std::cout << "dmc 1.4.0 (Demonic C -> C)\n";
         return 0;
     }
 
@@ -4595,10 +5166,26 @@ int main(int argc, char** argv) {
         return s.size() >= 4 && s.compare(s.size() - 4, 4, ".dmc") == 0;
     };
 
-    if (!args.empty() && !has_dash_o && !has_emit_c && is_dmc_file(args[0])) {
-        std::string source = args[0];
-        std::vector<std::string> prog_args(args.begin() + 1, args.end());
-        return cmd_run(source, prog_args, argv[0]);
+    if (!args.empty() && !has_dash_o && !has_emit_c) {
+        std::string dmc_file;
+        for (const auto& a : args) {
+            if (is_dmc_file(a)) {
+                dmc_file = a;
+                break;
+            }
+        }
+        if (!dmc_file.empty()) {
+            std::vector<std::string> prog_args;
+            bool found_dmc = false;
+            for (const auto& a : args) {
+                if (!found_dmc && a == dmc_file) {
+                    found_dmc = true;
+                    continue;
+                }
+                prog_args.push_back(a);
+            }
+            return cmd_run(dmc_file, prog_args, argv[0]);
+        }
     }
     
     std::string source_path;
@@ -4611,7 +5198,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 1.3.0 (Demonic C -> C)\n";
+            std::cout << "dmc 1.4.0 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {
@@ -4623,14 +5210,17 @@ int main(int argc, char** argv) {
         } else if (a == "-I") {
             if (i + 1 >= args.size()) { std::cerr << "dmc: -I requires an argument\n"; return 1; }
             include_dirs.push_back(args[++i]);
+        } else if (a.rfind("-I", 0) == 0) {
+            include_dirs.push_back(a.substr(2));
+        } else if (a.rfind("-l", 0) == 0 || a.rfind("-L", 0) == 0 || a.rfind("-D", 0) == 0 || is_c_or_cpp_source(a)) {
+            // Ignored during C transpilation
         } else if (a.size() > 0 && a[0] == '-') {
             std::cerr << "dmc: unknown option '" << a << "'\n";
             return 1;
         } else if (source_path.empty()) {
             source_path = a;
         } else {
-            std::cerr << "dmc: unexpected argument '" << a << "'\n";
-            return 1;
+            // Extra source or argument
         }
     }
     if (source_path.empty()) {

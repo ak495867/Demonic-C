@@ -53,7 +53,8 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 - **Ergonomic Error Propagation**: Zero-cost systems error bubbling with the `try` keyword (`let val = try expr;` and `try expr;`).
 - **Monomorphized Lightweight Generics**: Type-safe generic `Vector<T>` with zero `void*` overhead, compiling down to specialized C structs (`Vector_int`, `Vector_Point`).
 - **Compile-Time Execution & Asset Embedding**: `#embed("file")` static byte arrays, `#embed_str("file")` escaped strings, `#embed_size("file")`, and `comptime { ... }`.
-- **Direct C Header Ingestion**: First-class C interoperability (`import "stdio.h";`, `import <math.h>;`) emitting native `#include` and suppressing symbol warnings.
+- **C-Family Language Interoperability**: Zero-overhead ABI interoperability with C and C++, external function declarations (`extern fn`, `extern "C"`), source linker directives (`#link "lib"`), inline C blocks (`c_code { ... }`), and mixed-source compilation (`dmc main.dmc helper.c -lcurl`).
+- **Direct C Header Ingestion**: First-class C header integration (`import "stdio.h";`, `import <math.h>;`, `include <header.h>;`).
 - **First-Class Arena Allocators**: Built-in bump allocation (`arena_new`, `a.alloc_bytes(sz)`, `a.reset()`, `a.used()`, `a.free()`).
 - **LSP 2.0 & Editor Intelligence**: Full LSP server with Go to Definition (`textDocument/definition`), Markdown tooltips (`textDocument/hover`), and inline diagnostics.
 - **Git-Based Package Manager**: Install dependencies directly from GitHub via `dmc pkg add <git-url>` with automatic `dmc.toml` tracking.
@@ -197,7 +198,46 @@ fn main() {
 }
 ```
 
-### 5. String Slicing
+### 5. C-Family Interoperability & Mixed Source Builds
+Call external C/C++ libraries seamlessly with zero runtime overhead, declare external functions, link libraries directly, embed inline C snippets, and compile mixed source projects:
+
+```dmc
+// Link math library
+#link "m"
+
+// Declare external C functions (including variadic functions)
+extern fn puts(s: string) -> int;
+extern fn sqrt(x: f64) -> f64;
+extern "C" fn cos(x: f64) -> f64;
+
+// Grouped extern C block
+extern "C" {
+    fn sin(x: f64) -> f64;
+    fn pow(base: f64, exp: f64) -> f64;
+}
+
+// Embed raw C code directly
+c_code {
+    static int fast_double(int n) { return n * 2; }
+}
+
+extern fn fast_double(n: int) -> int;
+
+fn main() {
+    let s = sqrt(49.0);
+    println(s); // 7.0
+
+    let d = fast_double(21);
+    println(d); // 42
+}
+```
+
+Compile mixed `.dmc` and `.c` files in a single command:
+```bash
+dmc main.dmc helper.c -lcurl
+```
+
+### 6. String Slicing
 Direct, memory-safe sub-slice expressions:
 
 ```dmc

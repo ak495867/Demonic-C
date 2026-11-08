@@ -1,0 +1,12 @@
+extern fn c_compute_factorial(n: int) -> int;
+extern fn c_greet(name: string) -> string;
+
+fn main() {
+    println("Calling C99 helper functions from Demonic C:");
+    let fact5 = c_compute_factorial(5);
+    println("Factorial of 5 from C: ");
+    println(fact5);
+
+    let greeting = c_greet("Demonic C Developer");
+    println(greeting);
+}

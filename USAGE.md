@@ -341,6 +341,77 @@ Add GitHub repositories as project dependencies:
 dmc pkg add https://github.com/user/dmc-json.git
 ```
 
+### 11. C-Family Language Interoperability (C / C++ / Mixed Builds)
+Demonic C provides zero-overhead, direct ABI interoperability with C and C++ libraries.
+
+#### A. External Function Declarations (`extern fn` & `extern "C"`)
+Declare external C functions with DMC syntax or C-style blocks, including variadic functions (`...`):
+
+```dmc
+// Declare individual C functions
+extern fn puts(s: string) -> int;
+extern fn sqrt(x: f64) -> f64;
+extern fn abs(x: int) -> int;
+
+// Variadic functions (e.g. printf)
+extern fn printf(fmt: string, ...) -> int;
+
+// Grouped block with extern "C"
+extern "C" {
+    fn sin(x: f64) -> f64;
+    fn cos(x: f64) -> f64;
+    fn pow(base: f64, exp: f64) -> f64;
+}
+```
+
+#### B. Direct Library Linking Directives (`#link`)
+Instruct DMC to link specific libraries automatically when building or running. When importing a DMC package, all `#link` directives propagate automatically to downstream consumers:
+
+```dmc
+#link "m"                  // Links libm (-lm)
+#link "curl", "ssl"        // Links libcurl and OpenSSL
+#[link("raylib")]          // Attribute syntax
+```
+
+#### C. Raw Inline C Embedding (`c_code { ... }`)
+Embed custom C code, helper functions, macros, or typedefs directly into DMC programs at the top level or inside functions:
+
+```dmc
+c_code {
+    #include <math.h>
+
+    static double fast_hypot(double a, double b) {
+        return sqrt(a * a + b * b);
+    }
+}
+
+extern fn fast_hypot(a: f64, b: f64) -> f64;
+
+fn main() {
+    let dist = fast_hypot(3.0, 4.0);
+    println(dist); // 5.0
+
+    // Statement-level inline C
+    c_code {
+        printf("Inline C execution works inside functions!\n");
+    }
+}
+```
+
+#### D. Mixed C / C++ Compilation
+Compile mixed projects consisting of `.dmc`, `.c`, and `.cpp` files in a single command:
+
+```bash
+# Compile and run DMC with C helper files
+dmc main.dmc helper.c utils.c -lcurl
+
+# Build an executable with C++ source files
+dmc build main.dmc engine.cpp -O2 -o bin/game
+
+# Pass include directories and compiler defines
+dmc build main.dmc helper.c -Iinclude -DDEBUG=1
+```
+
 ---
 
 ## Language Reference
