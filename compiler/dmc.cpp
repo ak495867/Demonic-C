@@ -88,6 +88,13 @@ static std::vector<Token> lex(const std::string& source) {
             result.push_back({source.substr(start, i - start), line, start_col});
             continue;
         }
+        if (c == '#' && i + 1 < source.size() && source[i + 1] != '[') {
+            size_t start = i++;
+            int start_col = col++;
+            while (i < source.size() && (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_')) { ++i; ++col; }
+            result.push_back({source.substr(start, i - start), line, start_col});
+            continue;
+        }
         if (c == '"') {
             size_t start = i++;
             int start_col = col++;
@@ -106,7 +113,7 @@ static std::vector<Token> lex(const std::string& source) {
         }
         if (i + 1 < source.size()) {
             std::string pair = source.substr(i, 2);
-            if (pair == "==" || pair == "!=" || pair == "<=" || pair == ">=" || pair == "&&" || pair == "||" || pair == "->" || pair == "::" || pair == "#[" || pair == "..") {
+            if (pair == "==" || pair == "!=" || pair == "<=" || pair == ">=" || pair == "&&" || pair == "||" || pair == "->" || pair == "::" || pair == "#[" || pair == ".." || pair == "?*") {
                 result.push_back({pair, line, col}); i += 2; col += 2; continue;
             }
         }
@@ -119,12 +126,20 @@ static std::vector<Token> lex(const std::string& source) {
 
 static std::string ctype(const std::string& type) {
     if (type == "string") return "const char*";
+    if (type == "const unsigned char*") return "const unsigned char*";
+    if (type == "u8") return "unsigned char";
     if (type == "bool") return "bool";
     if (type == "void") return "void";
     if (type == "f32") return "float";
     if (type == "f64") return "double";
     if (type == "vec" || type == "map" || type == "queue") return "int";
+    if (type == "arena") return "long long";
+    if (type.rfind("?*", 0) == 0) return ctype(type.substr(2)) + "*";
     if (!type.empty() && type.front() == '*') return ctype(type.substr(1)) + "*";
+    if (type.rfind("Vector<", 0) == 0 && type.back() == '>') {
+        std::string inner = type.substr(7, type.size() - 8);
+        return "Vector_" + inner + "*";
+    }
     if (!type.empty() && type.front() == '[') {
         auto sep = type.find(';');
         if (sep != std::string::npos) return ctype(type.substr(1, sep - 1));
@@ -138,6 +153,8 @@ static bool is_builtin_module(const std::string& name) {
     for (auto& m : BUILTIN_MODULES) if (m == name) return true;
     return false;
 }
+
+static std::string pkg_dir();
 
 class Parser {
 public:
@@ -159,11 +176,16 @@ public:
     std::string emit() {
         collect_declarations();
         std::ostringstream out;
+        for (const auto& h : c_headers_) {
+            if (h.rfind("<", 0) == 0) out << "#include " << h << "\n";
+            else out << "#include <" << h << ">\n";
+        }
         if (!diagnostics_.empty()) {
             out << "int _dmc_diagnostic_count = " << diagnostics_.size() << ";\n";
         }
         out << "#define _GNU_SOURCE\n";
         out << "#define _POSIX_C_SOURCE 200112L\n";
+        out << "#ifndef null\n#define null ((void*)0)\n#endif\n";
         out << "#ifdef _WIN32\n";
         out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <io.h>\n#include <direct.h>\n";
         out << "#define NSCLOSE closesocket\n";
@@ -238,6 +260,54 @@ public:
             }
         }
         if (!enums_.empty()) out << "\n";
+        
+        for (const auto& elem : specialized_vectors_) {
+            std::string c_elem = ctype(elem);
+            out << "typedef struct {\n";
+            out << "    " << c_elem << "* data;\n";
+            out << "    size_t len;\n";
+            out << "    size_t cap;\n";
+            out << "} Vector_" << elem << ";\n\n";
+
+            out << "static inline Vector_" << elem << "* Vector_" << elem << "_new(void) {\n";
+            out << "    Vector_" << elem << "* v = (Vector_" << elem << "*)malloc(sizeof(Vector_" << elem << "));\n";
+            out << "    if (!v) return NULL;\n";
+            out << "    v->len = 0;\n";
+            out << "    v->cap = 8;\n";
+            out << "    v->data = (" << c_elem << "*)malloc(sizeof(" << c_elem << ") * v->cap);\n";
+            out << "    return v;\n";
+            out << "}\n\n";
+
+            out << "static inline void Vector_" << elem << "_push(Vector_" << elem << "* v, " << c_elem << " item) {\n";
+            out << "    if (!v) return;\n";
+            out << "    if (v->len >= v->cap) {\n";
+            out << "        v->cap = v->cap ? v->cap * 2 : 8;\n";
+            out << "        v->data = (" << c_elem << "*)realloc(v->data, sizeof(" << c_elem << ") * v->cap);\n";
+            out << "    }\n";
+            out << "    v->data[v->len++] = item;\n";
+            out << "}\n\n";
+
+            out << "static inline " << c_elem << " Vector_" << elem << "_get(Vector_" << elem << "* v, size_t idx) {\n";
+            out << "    if (!v || !v->data || idx >= v->len) { " << c_elem << " _d = {0}; return _d; }\n";
+            out << "    return v->data[idx];\n";
+            out << "}\n\n";
+
+            out << "static inline " << c_elem << " Vector_" << elem << "_pop(Vector_" << elem << "* v) {\n";
+            out << "    if (!v || !v->data || v->len == 0) { " << c_elem << " _d = {0}; return _d; }\n";
+            out << "    return v->data[--v->len];\n";
+            out << "}\n\n";
+
+            out << "static inline size_t Vector_" << elem << "_len(Vector_" << elem << "* v) {\n";
+            out << "    return v ? v->len : 0;\n";
+            out << "}\n\n";
+
+            out << "static inline void Vector_" << elem << "_free(Vector_" << elem << "* v) {\n";
+            out << "    if (v) {\n";
+            out << "        if (v->data) free(v->data);\n";
+            out << "        free(v);\n";
+            out << "    }\n";
+            out << "}\n\n";
+        }
         
         std::vector<Function> test_fns;
         std::vector<Function> bench_fns;
@@ -387,9 +457,25 @@ private:
         std::vector<std::string> mods;
         while (peek() == "import") {
             take();
-            std::string name = take();
+            std::string name;
+            if (peek() == "<") {
+                take();
+                name = "<";
+                while (peek() != ">" && peek() != "<eof>") name += take();
+                expect(">");
+                name += ">";
+            } else {
+                name = take();
+            }
             if (name.size() >= 2 && name.front() == '"' && name.back() == '"') {
-                if (name.size() > 2) mods.push_back(name.substr(1, name.size() - 2));
+                std::string unquoted = name.substr(1, name.size() - 2);
+                if (unquoted.size() >= 2 && unquoted.rfind(".h") == unquoted.size() - 2) {
+                    c_headers_.insert(unquoted);
+                } else {
+                    mods.push_back(unquoted);
+                }
+            } else if (name.rfind("<", 0) == 0 || (name.size() >= 2 && name.rfind(".h") == name.size() - 2)) {
+                c_headers_.insert(name);
             } else {
                 mods.push_back(name);
             }
@@ -415,6 +501,9 @@ private:
             candidates.push_back(importer_dir / (name + ".dmc"));
             candidates.push_back(importer_dir / "src" / name);
             candidates.push_back(importer_dir / "src" / (name + ".dmc"));
+            candidates.push_back(importer_dir / "packages" / name);
+            candidates.push_back(importer_dir / "packages" / name / (name + ".dmc"));
+            candidates.push_back(importer_dir / "packages" / name / "src" / (name + ".dmc"));
             candidates.push_back(importer_dir / "stdlib" / name);
             candidates.push_back(importer_dir / "stdlib" / (name + ".dmc"));
             candidates.push_back(importer_dir.parent_path() / "stdlib" / name);
@@ -426,6 +515,11 @@ private:
         }
         candidates.push_back(std::filesystem::path(name));
         candidates.push_back(std::filesystem::path(name + ".dmc"));
+        candidates.push_back(std::filesystem::path("packages") / name);
+        candidates.push_back(std::filesystem::path("packages") / name / (name + ".dmc"));
+        candidates.push_back(std::filesystem::path("packages") / name / "src" / (name + ".dmc"));
+        candidates.push_back(std::filesystem::path(pkg_dir()) / name);
+        candidates.push_back(std::filesystem::path(pkg_dir()) / name / (name + ".dmc"));
         candidates.push_back(std::filesystem::path("stdlib") / name);
         candidates.push_back(std::filesystem::path("stdlib") / (name + ".dmc"));
         for (auto& candidate : candidates) {
@@ -450,6 +544,8 @@ private:
             if (!target->has_function(f.name)) target->functions_.push_back(f);
         }
         for (auto& i : imports_) target->imports_.insert(i);
+        for (auto& h : c_headers_) target->c_headers_.insert(h);
+        for (auto& v : specialized_vectors_) target->specialized_vectors_.insert(v);
     }
 
     bool has_function(const std::string& name) const {
@@ -948,7 +1044,9 @@ const char *sha256(const char *str) {
         out << "long long arena_read(long long h, long long off, long long i) { if (!_dmc_arenas[h] || off < 0 || i < 0 || (size_t)(off + i) >= _dmc_arena_sz[h]) return -1; return _dmc_arenas[h][(size_t)(off + i)]; }\n";
         out << "long long arena_reset(long long h) { if (!_dmc_arenas[h]) return -1; _dmc_arena_top[h] = 0; return 0; }\n";
         out << "long long arena_top(long long h) { return _dmc_arenas[h] ? _dmc_arena_top[h] : -1; }\n";
-        out << "long long arena_free(long long h) { if (!_dmc_arenas[h]) return -1; free(_dmc_arenas[h]); _dmc_arenas[h] = NULL; _dmc_arena_top[h] = 0; _dmc_arena_sz[h] = 0; return 0; }\n\n";
+        out << "long long arena_free(long long h) { if (!_dmc_arenas[h]) return -1; free(_dmc_arenas[h]); _dmc_arenas[h] = NULL; _dmc_arena_top[h] = 0; _dmc_arena_sz[h] = 0; return 0; }\n";
+        out << "long long arena_used(long long h) { return arena_top(h); }\n";
+        out << "long long arena_alloc_bytes(long long h, long long n) { return arena_alloc(h, n); }\n\n";
         out << "#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))\n";
         out << "static int _dmc_io_allowed = 0;\n";
         out << "long long port_init(void) {\n";
@@ -1062,18 +1160,21 @@ const char *sha256(const char *str) {
         return result;
     }
 
-    std::vector<std::string> block() {
+    std::vector<std::string> block(const std::string& narrow_var = "", const std::string& narrow_type = "") {
         expect("{");
         std::vector<std::string> stmts;
-        auto body = block_inner();
+        auto body = block_inner(narrow_var, narrow_type);
         stmts = std::move(body);
         expect("}");
         return stmts;
     }
 
-    std::vector<std::string> block_inner() {
+    std::vector<std::string> block_inner(const std::string& narrow_var = "", const std::string& narrow_type = "") {
         scopes_.emplace_back();
         defer_stack_.emplace_back();
+        if (!narrow_var.empty() && !narrow_type.empty()) {
+            bind_type(narrow_var, narrow_type);
+        }
         std::vector<std::string> stmts;
         bool terminated = false;
         while (peek() != "}") {
@@ -1109,6 +1210,18 @@ const char *sha256(const char *str) {
             std::string type;
             if (peek() == ":") { take(); type = type_name(); }
             expect("=");
+            if (peek() == "try") {
+                take();
+                std::string expr = expression(";");
+                expect(";");
+                if (type.empty()) type = infer_type(expr);
+                bind_type(name, type.empty() ? "long long" : type);
+                int id = ++try_counter_;
+                std::string c_t = ctype(type.empty() ? "long long" : type);
+                return "long long _dmc_try_" + std::to_string(id) + " = " + expr + ";\n" +
+                       "    if (_dmc_try_" + std::to_string(id) + " < 0) return _dmc_try_" + std::to_string(id) + ";\n" +
+                       "    " + c_t + " " + name + " = (" + c_t + ")_dmc_try_" + std::to_string(id) + ";";
+            }
             std::string val = expression(";");
             expect(";");
             if (type.empty()) {
@@ -1125,6 +1238,14 @@ const char *sha256(const char *str) {
                 return elem + " " + name + "[" + sz + "] = " + arr + ";";
             }
             return (type == "string" ? "const char* " : ctype(type) + " ") + name + " = " + val + ";";
+        }
+        if (peek() == "try") {
+            take();
+            std::string expr = expression(";");
+            expect(";");
+            int id = ++try_counter_;
+            return "long long _dmc_try_" + std::to_string(id) + " = " + expr + ";\n" +
+                   "    if (_dmc_try_" + std::to_string(id) + " < 0) return _dmc_try_" + std::to_string(id) + ";";
         }
         if (peek() == "return") {
             take();
@@ -1155,7 +1276,43 @@ const char *sha256(const char *str) {
             expect("(");
             std::string cond = expression(")");
             expect(")");
-            auto then_body = block();
+            std::string narrowed_var;
+            std::string narrowed_type;
+            auto check_ptr_cond = [&](const std::string& c) {
+                std::string s = c;
+                s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
+                std::string target = "";
+                if (s.find("!=((void*)0)") != std::string::npos) {
+                    target = s.substr(0, s.find("!=((void*)0)"));
+                } else if (s.find("!=null") != std::string::npos) {
+                    target = s.substr(0, s.find("!=null"));
+                } else if (s.find("!=NULL") != std::string::npos) {
+                    target = s.substr(0, s.find("!=NULL"));
+                } else if (s.find("!=0") != std::string::npos) {
+                    target = s.substr(0, s.find("!=0"));
+                } else if (s.find("((void*)0)!=") == 0) {
+                    target = s.substr(12);
+                } else if (s.find("null!=") == 0) {
+                    target = s.substr(5);
+                } else if (s.find("NULL!=") == 0) {
+                    target = s.substr(5);
+                }
+                while (!target.empty() && target.front() == '(') {
+                    target = target.substr(1);
+                }
+                while (!target.empty() && target.back() == ')') {
+                    target.pop_back();
+                }
+                if (!target.empty()) {
+                    std::string t = lookup_type(target);
+                    if (t.rfind("?*", 0) == 0) {
+                        narrowed_var = target;
+                        narrowed_type = t.substr(1);
+                    }
+                }
+            };
+            check_ptr_cond(cond);
+            auto then_body = block(narrowed_var, narrowed_type);
             std::string result = "if (" + cond + ") {\n";
             for (auto& s : then_body) result += "    " + s + "\n";
             result += "}";
@@ -1448,6 +1605,13 @@ const char *sha256(const char *str) {
             } else if (peek() == ".") {
                 take();
                 std::string field = take();
+                std::string raw_val = val;
+                while (!raw_val.empty() && raw_val.front() == '(' && raw_val.back() == ')') raw_val = raw_val.substr(1, raw_val.size() - 2);
+                std::string raw_type = lookup_type(raw_val);
+                if (raw_type.rfind("?*", 0) == 0) {
+                    type_warn("cannot dereference nullable pointer '" + raw_val + "' without null check");
+                    diagnostics_.push_back({tokens_[index_].line, tokens_[index_].col, "cannot dereference nullable pointer '" + raw_val + "' without null check"});
+                }
                 if (peek() == "(") {
                     take();
                     std::string margs;
@@ -1459,7 +1623,24 @@ const char *sha256(const char *str) {
                     std::string vt = infer_type(val);
                     std::string typed_fn = vt + "_" + field;
 
-                    if (vt == "string" || (!val.empty() && val.front() == '"')) {
+                    if (vt.rfind("Vector<", 0) == 0 && vt.back() == '>') {
+                        std::string elem = vt.substr(7, vt.size() - 8);
+                        specialized_vectors_.insert(elem);
+                        if (field == "push") val = "Vector_" + elem + "_push(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "pop") val = "Vector_" + elem + "_pop(" + val + ")";
+                        else if (field == "get") val = "Vector_" + elem + "_get(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "len") val = "Vector_" + elem + "_len(" + val + ")";
+                        else if (field == "free") val = "Vector_" + elem + "_free(" + val + ")";
+                        else val = "((" + val + ")->" + field + ")(" + margs + ")";
+                    } else if (vt == "arena" || val.find("arena") != std::string::npos) {
+                        if (field == "alloc_bytes" || field == "alloc") val = "arena_alloc(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "reset") val = "arena_reset(" + val + ")";
+                        else if (field == "free") val = "arena_free(" + val + ")";
+                        else if (field == "used" || field == "top") val = "arena_used(" + val + ")";
+                        else if (field == "write") val = "arena_write(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "read") val = "arena_read(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else val = "((" + val + ")." + field + ")(" + margs + ")";
+                    } else if (vt == "string" || (!val.empty() && val.front() == '"')) {
                         if (field == "len") val = "text_len(" + val + ")";
                         else if (field == "slice") val = "string_slice(" + val + (margs.empty() ? "" : ", " + margs) + ")";
                         else if (field == "sub") val = "text_sub(" + val + (margs.empty() ? "" : ", " + margs) + ")";
@@ -1531,7 +1712,9 @@ const char *sha256(const char *str) {
                         val = "((" + val + ")." + field + ")(" + margs + ")";
                     }
                 } else {
-                    val = "(" + val + ")." + field;
+                    std::string vt = infer_type(val);
+                    std::string op = (vt.front() == '*' || vt.rfind("?*", 0) == 0 || raw_type.front() == '*' || raw_type.rfind("?*", 0) == 0) ? "->" : ".";
+                    val = "(" + val + ")" + op + field;
                 }
             } else {
                 take();
@@ -1554,7 +1737,14 @@ const char *sha256(const char *str) {
                         val = "string_slice(" + val + ", " + idx + ", (" + end_idx + ") - (" + idx + "))";
                     } else {
                         expect("]");
-                        val = "(" + val + ")[" + idx + "]";
+                        std::string vt = infer_type(val);
+                        if (vt.rfind("Vector<", 0) == 0 && vt.back() == '>') {
+                            std::string elem = vt.substr(7, vt.size() - 8);
+                            specialized_vectors_.insert(elem);
+                            val = "Vector_" + elem + "_get(" + val + ", " + idx + ")";
+                        } else {
+                            val = "(" + val + ")[" + idx + "]";
+                        }
                     }
                 }
             }
@@ -1563,7 +1753,19 @@ const char *sha256(const char *str) {
     }
 
     std::string unary_expr(const std::string& end) {
-        if (peek() == "!" || peek() == "-" || peek() == "*") {
+        if (peek() == "*") {
+            std::string op = take();
+            std::string operand = postfix(unary_expr(end));
+            std::string raw = operand;
+            while (!raw.empty() && raw.front() == '(' && raw.back() == ')') raw = raw.substr(1, raw.size() - 2);
+            std::string vt = lookup_type(raw);
+            if (vt.rfind("?*", 0) == 0) {
+                type_warn("cannot dereference nullable pointer '" + raw + "' without null check");
+                diagnostics_.push_back({tokens_[index_].line, tokens_[index_].col, "cannot dereference nullable pointer '" + raw + "' without null check"});
+            }
+            return "(*" + operand + ")";
+        }
+        if (peek() == "!" || peek() == "-") {
             std::string op = take();
             std::string operand = postfix(unary_expr(end));
             return "(" + op + operand + ")";
@@ -1592,9 +1794,89 @@ const char *sha256(const char *str) {
         if (peek() == "asm") {
             return asm_inline();
         }
+        if (peek() == "#embed" || peek() == "#embed_str" || peek() == "#embed_size") {
+            std::string directive = take();
+            expect("(");
+            std::string path_literal = take();
+            expect(")");
+            std::string file_path = path_literal;
+            if (file_path.size() >= 2 && file_path.front() == '"' && file_path.back() == '"') {
+                file_path = file_path.substr(1, file_path.size() - 2);
+            }
+            std::filesystem::path p(file_path);
+            if (!p.is_absolute() && !source_.empty()) {
+                std::filesystem::path src_dir = std::filesystem::path(source_).parent_path();
+                if (std::filesystem::exists(src_dir / p)) {
+                    p = src_dir / p;
+                }
+            }
+            std::ifstream file(p, std::ios::binary);
+            if (!file) {
+                throw std::runtime_error("failed to embed file: '" + file_path + "'");
+            }
+            std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            if (directive == "#embed_size") {
+                return std::to_string(bytes.size());
+            } else if (directive == "#embed_str") {
+                std::string s = "\"";
+                for (unsigned char b : bytes) {
+                    if (b == '\\') s += "\\\\";
+                    else if (b == '"') s += "\\\"";
+                    else if (b == '\n') s += "\\n";
+                    else if (b == '\r') s += "\\r";
+                    else if (b == '\t') s += "\\t";
+                    else if (b >= 32 && b <= 126) s += static_cast<char>(b);
+                    else {
+                        char hex[8];
+                        snprintf(hex, sizeof(hex), "\\x%02x", b);
+                        s += hex;
+                    }
+                }
+                s += "\"";
+                return s;
+            } else {
+                std::string s = "((const unsigned char[]){";
+                for (size_t bi = 0; bi < bytes.size(); ++bi) {
+                    if (bi > 0) s += ",";
+                    s += std::to_string((unsigned int)bytes[bi]);
+                }
+                if (bytes.empty()) s += "0";
+                s += "})";
+                return s;
+            }
+        }
+        if (peek() == "comptime") {
+            take();
+            expect("{");
+            std::string cexpr = expression("}");
+            expect("}");
+            return "(" + cexpr + ")";
+        }
         std::string next = peek();
+        if (next == "null") {
+            take();
+            return "null";
+        }
         if (std::isalpha(static_cast<unsigned char>(next[0])) || next[0] == '_') {
             std::string name = take();
+            if (name == "Vector" && peek() == "<") {
+                take();
+                std::string elem = type_name();
+                expect(">");
+                specialized_vectors_.insert(elem);
+                if (peek() == "::") {
+                    take();
+                    std::string m = take();
+                    expect("(");
+                    if (peek() != ")") expression(")");
+                    expect(")");
+                    return "Vector_" + elem + "_new()";
+                } else if (peek() == "(") {
+                    take(); expect(")");
+                    return "Vector_" + elem + "_new()";
+                }
+                return "Vector_" + elem;
+            }
             if (peek() == "::") {
                 take();
                 std::string variant = take();
@@ -1608,7 +1890,9 @@ const char *sha256(const char *str) {
             }
             if (peek() != "(") {
                 if (lookup_type(name).empty() && !is_user_function(name) && !is_stdlib_fn(name)) {
-                    type_warn("use of undeclared identifier '" + name + "'");
+                    if (c_headers_.empty()) {
+                        type_warn("use of undeclared identifier '" + name + "'");
+                    }
                 }
             }
             return name;
@@ -1704,6 +1988,7 @@ const char *sha256(const char *str) {
     }
 
     std::string type_name() {
+        if (peek() == "?*") { take(); return "?*" + type_name(); }
         if (peek() == "*") { take(); return "*" + type_name(); }
         if (peek() == "[") {
             take();
@@ -1713,7 +1998,16 @@ const char *sha256(const char *str) {
             expect("]");
             return "[" + elem + ";" + sz + "]";
         }
-        return take();
+        std::string base = take();
+        if (peek() == "<") {
+            take();
+            std::string inner = type_name();
+            expect(">");
+            std::string full_type = base + "<" + inner + ">";
+            if (base == "Vector") specialized_vectors_.insert(inner);
+            return full_type;
+        }
+        return base;
     }
 
     bool is_float_arg(const std::string& arg) const {
@@ -1787,6 +2081,24 @@ const char *sha256(const char *str) {
                 for (const auto& s : structs_) {
                     if (s.name == cand) return cand;
                 }
+            }
+        }
+        if (val.find("((const unsigned char[])") != std::string::npos) return "const unsigned char*";
+        if (val.rfind("arena_new(", 0) == 0) return "arena";
+        if (val.rfind("Vector_", 0) == 0 && val.find("_new(") != std::string::npos) {
+            auto pos1 = val.find("Vector_");
+            auto pos2 = val.find("_new(");
+            if (pos1 != std::string::npos && pos2 != std::string::npos && pos2 > pos1 + 7) {
+                std::string elem = val.substr(pos1 + 7, pos2 - (pos1 + 7));
+                return "Vector<" + elem + ">";
+            }
+        }
+        if (val.rfind("Vector_", 0) == 0 && (val.find("_get(") != std::string::npos || val.find("_pop(") != std::string::npos)) {
+            auto pos1 = val.find("Vector_");
+            auto pos2 = val.find("_get(");
+            if (pos2 == std::string::npos) pos2 = val.find("_pop(");
+            if (pos1 != std::string::npos && pos2 != std::string::npos && pos2 > pos1 + 7) {
+                return val.substr(pos1 + 7, pos2 - (pos1 + 7));
             }
         }
         if (val.rfind("vec_new(", 0) == 0) return "vec";
@@ -1903,7 +2215,7 @@ const char *sha256(const char *str) {
             "fs_read", "fs_write", "fs_append", "fs_exists", "fs_remove", "fs_size",
             "os_env", "os_set_env", "os_cwd", "os_platform", "os_arch",
             "sha256", "base64_encode", "base64_decode",
-            "proc_arg_count", "proc_exit", "syscall", "interrupt"
+            "proc_arg_count", "proc_exit", "syscall", "interrupt", "arena_new", "arena_alloc", "arena_alloc_bytes", "arena_write", "arena_read", "arena_reset", "arena_top", "arena_used", "arena_free"
         };
         for (auto& f : fns) if (f == name) return true;
         return false;
@@ -1970,6 +2282,9 @@ const char *sha256(const char *str) {
     std::vector<Enum> enums_;
     std::vector<std::unordered_map<std::string, std::string>> scopes_;
     std::set<std::string> imports_;
+    std::set<std::string> c_headers_;
+    std::set<std::string> specialized_vectors_;
+    int try_counter_ = 0;
     std::string source_ = "";
     std::set<std::string> loaded_;
     std::vector<std::string> include_dirs_;
@@ -3188,13 +3503,73 @@ static int cmd_pkg(int argc, char** argv) {
     std::vector<std::string> args(argv + 1, argv + argc);
     
     if (args.empty()) {
-        std::cerr << "dmc pkg: usage: dmc pkg <install|uninstall|update|search|list|publish> [package]\n";
+        std::cerr << "dmc pkg: usage: dmc pkg <add|install|uninstall|update|search|list|publish> [package/git-url]\n";
         return 1;
     }
     
     std::string command = args[0];
     
-    if (command == "install") {
+    if (command == "add") {
+        if (args.size() < 2) {
+            std::cerr << "dmc pkg add: repository URL or package name required\n";
+            return 1;
+        }
+        std::string target = args[1];
+        if (target.find("http://") != std::string::npos || 
+            target.find("https://") != std::string::npos || 
+            target.find("git@") != std::string::npos || 
+            (target.size() > 4 && target.rfind(".git") == target.size() - 4)) {
+            
+            std::string repo_name = target;
+            if (repo_name.size() > 4 && repo_name.rfind(".git") == repo_name.size() - 4) {
+                repo_name = repo_name.substr(0, repo_name.size() - 4);
+            }
+            size_t slash = repo_name.find_last_of("/\\");
+            if (slash != std::string::npos) {
+                repo_name = repo_name.substr(slash + 1);
+            }
+            
+            std::filesystem::create_directories("packages");
+            std::string dest = "packages/" + repo_name;
+            std::string clone_cmd = "git clone --depth 1 " + target + " " + dest;
+            std::cout << "Cloning " << target << " into " << dest << "...\n";
+            int ret = system(clone_cmd.c_str());
+            if (ret != 0) {
+                std::cerr << "dmc pkg add: git clone failed with code " << ret << "\n";
+                return 1;
+            }
+            
+            std::string toml_path = "dmc.toml";
+            std::string content;
+            bool has_deps = false;
+            if (std::filesystem::exists(toml_path)) {
+                std::ifstream f(toml_path);
+                std::string line;
+                while (std::getline(f, line)) {
+                    if (line.find("[dependencies]") != std::string::npos) has_deps = true;
+                    content += line + "\n";
+                }
+            } else {
+                content = "[package]\nname = \"dmc_project\"\nversion = \"0.1.0\"\n\n";
+            }
+            
+            if (has_deps) {
+                size_t pos = content.find("[dependencies]");
+                size_t next_line = content.find('\n', pos);
+                content.insert(next_line + 1, repo_name + " = { git = \"" + target + "\" }\n");
+            } else {
+                content += "[dependencies]\n" + repo_name + " = { git = \"" + target + "\" }\n";
+            }
+            std::ofstream out(toml_path);
+            out << content;
+            std::cout << "Successfully added package '" << repo_name << "' to " << toml_path << "\n";
+            return 0;
+        } else {
+            install_package(target, args.size() > 2 ? args[2] : "");
+            resolve_dependencies();
+            return 0;
+        }
+    } else if (command == "install") {
         std::string name = "";
         std::string version = "";
         for (size_t i = 1; i < args.size(); ++i) {
@@ -3449,9 +3824,10 @@ static int cmd_lsp() {
                 "\"capabilities\":{"
                 "\"textDocumentSync\":1,"
                 "\"completionProvider\":{\"resolveProvider\":false,\"triggerCharacters\":[\".\",\":\"]},"
-                "\"hoverProvider\":true"
+                "\"hoverProvider\":true,"
+                "\"definitionProvider\":true"
                 "},"
-                "\"serverInfo\":{\"name\":\"dmc-lsp\",\"version\":\"1.0.0\"}"
+                "\"serverInfo\":{\"name\":\"dmc-lsp\",\"version\":\"2.0.0\"}"
                 "}}";
             lsp_send(resp);
         } else if (method == "initialized") {
@@ -3501,6 +3877,65 @@ static int cmd_lsp() {
             }
             resp += "]}";
             lsp_send(resp);
+        } else if (method == "textDocument/definition") {
+            std::string uri = lsp_find_key(payload, "uri");
+            std::string line_s = lsp_find_key(payload, "line");
+            std::string col_s = lsp_find_key(payload, "character");
+            int target_line = line_s.empty() ? 0 : std::stoi(line_s);
+            int target_col = col_s.empty() ? 0 : std::stoi(col_s);
+
+            std::string word;
+            auto it = documents.find(uri);
+            if (it != documents.end()) {
+                std::istringstream iss(it->second);
+                std::string line_str;
+                int cur_line = 0;
+                while (std::getline(iss, line_str)) {
+                    if (cur_line == target_line) {
+                        if (target_col >= 0 && target_col < static_cast<int>(line_str.size())) {
+                            int s = target_col;
+                            while (s > 0 && (isalnum(static_cast<unsigned char>(line_str[s - 1])) || line_str[s - 1] == '_')) s--;
+                            int e = target_col;
+                            while (e < static_cast<int>(line_str.size()) && (isalnum(static_cast<unsigned char>(line_str[e])) || line_str[e] == '_')) e++;
+                            word = line_str.substr(s, e - s);
+                        }
+                        break;
+                    }
+                    cur_line++;
+                }
+            }
+
+            int def_line = -1, def_col = -1;
+            if (!word.empty() && it != documents.end()) {
+                std::istringstream iss(it->second);
+                std::string line_str;
+                int cur_line = 0;
+                while (std::getline(iss, line_str)) {
+                    std::vector<std::string> prefixes = {"fn " + word, "struct " + word, "enum " + word, "let " + word, "var " + word};
+                    for (const auto& pfx : prefixes) {
+                        auto pos = line_str.find(pfx);
+                        if (pos != std::string::npos) {
+                            def_line = cur_line;
+                            def_col = (int)pos + (int)(pfx.size() - word.size());
+                            break;
+                        }
+                    }
+                    if (def_line >= 0) break;
+                    cur_line++;
+                }
+            }
+
+            std::string resp;
+            if (def_line >= 0) {
+                resp = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{"
+                       "\"uri\":\"" + uri + "\","
+                       "\"range\":{\"start\":{\"line\":" + std::to_string(def_line) + ",\"character\":" + std::to_string(def_col) + "},"
+                       "\"end\":{\"line\":" + std::to_string(def_line) + ",\"character\":" + std::to_string(def_col + (int)word.size()) + "}}"
+                       "}}";
+            } else {
+                resp = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":null}";
+            }
+            lsp_send(resp);
         } else if (method == "textDocument/hover") {
             std::string uri = lsp_find_key(payload, "uri");
             std::string line_s = lsp_find_key(payload, "line");
@@ -3523,15 +3958,39 @@ static int cmd_lsp() {
                             while (e < static_cast<int>(line_str.size()) && (isalnum(line_str[e]) || line_str[e] == '_')) e++;
                             std::string word = line_str.substr(s, e - s);
                             if (word == "defer") hover_text = "**defer <stmt>**\\n\\nSchedules statement execution for when the enclosing function or block exits (LIFO order).";
+                            else if (word == "try") hover_text = "**try <expr>**\\n\\nEvaluates an expression returning an error code (<0 indicates error). Bubbles negative error up to caller immediately; otherwise unwraps value.";
                             else if (word == "fn") hover_text = "**fn <name>(<params>): <ret>**\\n\\nDefines a Demonic C function.";
                             else if (word == "let") hover_text = "**let <name>[: <type>] = <expr>**\\n\\nDeclares an immutable variable.";
                             else if (word == "var") hover_text = "**var <name>[: <type>] = <expr>**\\n\\nDeclares a mutable variable.";
+                            else if (word == "arena") hover_text = "**arena**\\n\\nFirst-class bump-allocator handle. Fast O(1) allocation with bulk cleanup via `a.reset()` and `a.free()`.";
+                            else if (word == "Vector") hover_text = "**Vector<T>**\\n\\nMonomorphized type-safe dynamic array with zero runtime overhead.";
+                            else if (word == "#embed") hover_text = "**#embed(\"path\")**\\n\\nEmbeds file contents at compile time as a static byte array literal.";
+                            else if (word == "#embed_str") hover_text = "**#embed_str(\"path\")**\\n\\nEmbeds file contents at compile time as an escaped UTF-8 string literal.";
+                            else if (word == "#embed_size") hover_text = "**#embed_size(\"path\")**\\n\\nReturns the byte size of an embedded file at compile time.";
+                            else if (word == "comptime") hover_text = "**comptime { <expr> }**\\n\\nCompile-time constant evaluation.";
                             else if (word == "match") hover_text = "**match <expr> { <pattern> => <expr>, ... }**\\n\\nPattern matches over values or tagged union variants.";
                             else if (word == "struct") hover_text = "**struct <Name> { <field>: <type>, ... }**\\n\\nDefines a structured record type.";
                             else if (word == "enum") hover_text = "**enum <Name> { <Variant>[(<Type>)], ... }**\\n\\nDefines an enumeration or tagged union.";
                             else if (word == "string") hover_text = "**string**\\n\\nDemonic C UTF-8 string type backed by runtime string helpers.";
                             else if (word == "print" || word == "println") hover_text = "**" + word + "(value)**\\n\\nStandard output printing helper.";
-                            else if (!word.empty()) hover_text = "`" + word + "` (Demonic C symbol)";
+                            else if (!word.empty()) {
+                                std::string sig;
+                                std::istringstream iss2(it->second);
+                                std::string lstr;
+                                while (std::getline(iss2, lstr)) {
+                                    if (lstr.find("fn " + word + "(") != std::string::npos) {
+                                        size_t bpos = lstr.find("{");
+                                        sig = bpos != std::string::npos ? lstr.substr(0, bpos) : lstr;
+                                        break;
+                                    }
+                                }
+                                if (!sig.empty()) {
+                                    while (!sig.empty() && (sig.back() == ' ' || sig.back() == '	')) sig.pop_back();
+                                    hover_text = "```dmc\n" + sig + "\n```";
+                                } else {
+                                    hover_text = "`" + word + "` (Demonic C symbol)";
+                                }
+                            }
                         }
                         break;
                     }
@@ -3584,6 +4043,7 @@ static void print_usage() {
               << "  lint [--fix]    lint .dmc files for issues\n"
               << "  doc             generate documentation\n\n"
               << "pkg commands:\n"
+              << "  pkg add <git-url>   clone Git package and add to dependencies\n"
               << "  pkg install <pkg>   install package from registry\n"
               << "  pkg uninstall <pkg> remove installed package\n"
               << "  pkg update <pkg>    update package to latest version\n"

@@ -234,6 +234,81 @@ fn test_string_slice() -> int {
 
 Run tests with `dmc test test-files`.
 
+### 5. Compile-Time Null Safety (`?*T`)
+Pointers marked with `?*T` cannot be dereferenced directly without verifying they are not null:
+
+```dmc
+struct Entity {
+    id: int;
+}
+
+fn inspect(e: ?*Entity) {
+    // e.id = 1; // Compile error: cannot dereference nullable pointer 'e' without null check
+    if (e != null) {
+        println(e.id); // Valid: narrowed to '*Entity' in this scope
+    }
+}
+```
+
+### 6. Error Propagation (`try`)
+Systems functions returning negative integer error codes can be handled ergonomically with `try`:
+
+```dmc
+fn init_network() -> int {
+    let sock = try tcp_connect("127.0.0.1", 8080);
+    try tcp_send(sock, "PING");
+    return 0;
+}
+```
+
+### 7. Monomorphized Generics (`Vector<T>`)
+Type-safe generic vector with specialized C representation:
+
+```dmc
+let nums: Vector<int> = Vector<int>::new();
+nums.push(10);
+nums.push(20);
+println(nums[0]); // 10
+println(nums.len()); // 2
+nums.free();
+```
+
+### 8. Direct C Headers & Asset Embedding
+Include raw C headers directly without generating warnings, and embed binary assets at compile time:
+
+```dmc
+import "stdio.h";
+import "math.h";
+
+let data = #embed("assets/icon.png");
+let sz = #embed_size("assets/icon.png");
+let msg = #embed_str("assets/notice.txt");
+let magic = comptime { 1024 * 1024 };
+
+fn main() {
+    puts(msg);
+}
+```
+
+### 9. First-Class Arenas
+Fast bump-allocation with instant reset:
+
+```dmc
+let a: arena = arena_new(65536);
+let offset = a.alloc_bytes(128);
+a.write(offset, 0, 99);
+println(a.read(offset, 0)); // 99
+a.reset();
+a.free();
+```
+
+### 10. Git-Based Package Manager (`dmc pkg add`)
+Add GitHub repositories as project dependencies:
+
+```bash
+dmc pkg add https://github.com/user/dmc-json.git
+```
+
 ---
 
 ## Language Reference
@@ -253,7 +328,10 @@ Run tests with `dmc test test-files`.
 | `bool` | `int` | Boolean (0 or 1) |
 | `string` | `const char*` | Null-terminated UTF-8 string |
 | `void` | `void` | Empty return type |
-| `*T` | `T*` | Direct raw pointer |
+| `*T` | `T*` | Direct raw pointer (non-nullable) |
+| `?*T` | `T*` | Nullable pointer (requires null check before dereference) |
+| `Vector<T>` | `Vector_T*` | Monomorphized type-safe dynamic array |
+| `arena` | `long long` | Bump-allocator handle for fast bulk allocation |
 
 ### Variable Declarations
 

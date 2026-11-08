@@ -1,0 +1,119 @@
+import "stdio.h";
+
+struct Vec2 {
+    x: int;
+    y: int;
+}
+
+fn fallible_calculate(mode: int) -> int {
+    if (mode == 0) {
+        return -5;
+    }
+    return mode * 10;
+}
+
+fn try_runner(mode: int) -> int {
+    let res = try fallible_calculate(mode);
+    return res + 1;
+}
+
+fn try_standalone(mode: int) -> int {
+    try fallible_calculate(mode);
+    return 100;
+}
+
+#[test]
+fn test_null_safety_and_pointers() -> int {
+    let pt = Vec2 { x: 50, y: 100 };
+    let p: ?*Vec2 = &pt;
+    if (p != null) {
+        if (p.x != 50) { return 1; }
+        if (p.y != 100) { return 2; }
+    }
+    return 0;
+}
+
+#[test]
+fn test_try_error_propagation() -> int {
+    let ok_val = try_runner(4);
+    if (ok_val != 41) { return 11; }
+
+    let err_val = try_runner(0);
+    if (err_val != -5) { return 12; }
+
+    let st_ok = try_standalone(2);
+    if (st_ok != 100) { return 13; }
+
+    let st_err = try_standalone(0);
+    if (st_err != -5) { return 14; }
+
+    return 0;
+}
+
+#[test]
+fn test_monomorphized_generics() -> int {
+    let v: Vector<int> = Vector<int>::new();
+    v.push(111);
+    v.push(222);
+    v.push(333);
+
+    if (v.len() != 3) { return 21; }
+    if (v.get(0) != 111) { return 22; }
+    if (v.get(1) != 222) { return 23; }
+    if (v.get(2) != 333) { return 24; }
+    if (v[1] != 222) { return 25; }
+
+    let popped = v.pop();
+    if (popped != 333) { return 26; }
+    if (v.len() != 2) { return 27; }
+    v.free();
+
+    let vp: Vector<Vec2> = Vector<Vec2>::new();
+    vp.push(Vec2 { x: 10, y: 20 });
+    vp.push(Vec2 { x: 30, y: 40 });
+    if (vp.len() != 2) { return 28; }
+    let pt0 = vp.get(0);
+    if (pt0.x != 10) { return 29; }
+    vp.free();
+
+    return 0;
+}
+
+#[test]
+fn test_arena_allocator() -> int {
+    let a: arena = arena_new(1024);
+    let off1 = a.alloc_bytes(64);
+    if (off1 != 0) { return 31; }
+    let off2 = a.alloc_bytes(128);
+    if (off2 != 64) { return 32; }
+    if (a.used() != 192) { return 33; }
+
+    a.write(off1, 0, 42);
+    let val = a.read(off1, 0);
+    if (val != 42) { return 34; }
+
+    a.reset();
+    if (a.used() != 0) { return 35; }
+    let off3 = a.alloc_bytes(32);
+    if (off3 != 0) { return 36; }
+
+    a.free();
+    return 0;
+}
+
+#[test]
+fn test_embed_and_comptime() -> int {
+    let sz = #embed_size("embedded_asset.txt");
+    if (sz < 20) { return 41; }
+
+    let s = #embed_str("embedded_asset.txt");
+    if (text_len(s) < 20) { return 42; }
+
+    let data = #embed("embedded_asset.txt");
+    if (data[0] != 68) { return 43; }
+
+    let comp = comptime { 10 + 20 * 3 };
+    if (comp != 70) { return 44; }
+
+    return 0;
+}

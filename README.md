@@ -49,14 +49,18 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ### Core Capabilities
 
+- **Compile-Time Null Safety**: Strict `?*T` (nullable) vs `*T` (non-nullable) pointer types with static verification and scope narrowing in `if (p != null)`.
+- **Ergonomic Error Propagation**: Zero-cost systems error bubbling with the `try` keyword (`let val = try expr;` and `try expr;`).
+- **Monomorphized Lightweight Generics**: Type-safe generic `Vector<T>` with zero `void*` overhead, compiling down to specialized C structs (`Vector_int`, `Vector_Point`).
+- **Compile-Time Execution & Asset Embedding**: `#embed("file")` static byte arrays, `#embed_str("file")` escaped strings, `#embed_size("file")`, and `comptime { ... }`.
+- **Direct C Header Ingestion**: First-class C interoperability (`import "stdio.h";`, `import <math.h>;`) emitting native `#include` and suppressing symbol warnings.
+- **First-Class Arena Allocators**: Built-in bump allocation (`arena_new`, `a.alloc_bytes(sz)`, `a.reset()`, `a.used()`, `a.free()`).
+- **LSP 2.0 & Editor Intelligence**: Full LSP server with Go to Definition (`textDocument/definition`), Markdown tooltips (`textDocument/hover`), and inline diagnostics.
+- **Git-Based Package Manager**: Install dependencies directly from GitHub via `dmc pkg add <git-url>` with automatic `dmc.toml` tracking.
 - **Modern Ergonomics**: LIFO `defer` cleanup, tagged unions / payload enums, string slicing (`s[0..5]`), and zero-cost method call syntax (`val.method(...)`).
 - **Instant Build Caching**: Content-hashed build cache in `~/.dmc/cache` gives sub-5ms repeated execution speeds.
 - **Interactive REPL & Watch Mode**: Interactive REPL (`dmc repl`) and file watcher (`dmc watch`) for ultra-fast iteration.
-- **Zero-Overhead Memory Control & Sanitizers**: Direct pointers, byte-level primitives, arena allocators, plus one-flag AddressSanitizer/UBSan verification (`--sanitize`).
 - **Hardware & OS Access**: Low-level port I/O (`port_in_b`, `port_out_b`), inline assembly, process control, and system calls.
-- **Networking & I/O**: High-speed TCP sockets, HTTP client, and buffered file I/O.
-- **Rich Standard Library**: Filesystem (`fs`), operating system (`os`), SHA-256 and Base64 cryptography (`crypto`), JSON parsing/serialization, regular expressions, SQLite database interface, date/time utilities, and dynamic collections (vectors, queues, hash maps).
-- **Batteries-Included Toolchain**: Direct runner (`dmc file.dmc`), compiler (`dmc build`), test runner (`dmc test`), REPL (`dmc repl`), watcher (`dmc watch`), LSP daemon and one-command VS Code setup (`dmc lsp --install-vscode`), formatter (`dmc fmt`), linter (`dmc lint`), and package manager (`dmc pkg`).
 
 ---
 
@@ -196,6 +200,78 @@ Run the entire test suite across your codebase:
 dmc test test-files
 ```
 
+### 7. Compile-Time Null Safety
+Nullable pointers (`?*T`) prevent null dereference errors at compile time. Pointers are safely narrowed within `if (ptr != null)` blocks:
+
+```dmc
+struct Node {
+    val: int;
+}
+
+fn process_node(node: ?*Node) {
+    // node.val = 10; // Compile-time ERROR: cannot dereference nullable pointer 'node' without null check
+
+    if (node != null) {
+        // Safe: 'node' is promoted to '*Node' inside this block
+        node.val = 42;
+    }
+}
+```
+
+### 8. Ergonomic Error Bubbling (`try`)
+Systems error codes (< 0) are automatically bubbled up to the caller with zero runtime overhead:
+
+```dmc
+fn read_config(path: string) -> int {
+    let fd = try file_open(path, "r");
+    try file_write(fd, "test");
+    return 0;
+}
+```
+
+### 9. Monomorphized Lightweight Generics (`Vector<T>`)
+Zero-cost, type-safe dynamically sized arrays specializing to native C structs:
+
+```dmc
+let v: Vector<int> = Vector<int>::new();
+v.push(10);
+v.push(20);
+println(v[1]);        // 20
+println(v.len());      // 2
+let popped = v.pop(); // 20
+v.free();
+```
+
+### 10. Compile-Time Asset Embedding & Direct C Headers
+Embed files directly into the compiled executable at compile time, and import raw C headers without boilerplate:
+
+```dmc
+import "stdio.h";
+import "math.h";
+
+let banner = #embed_str("banner.txt");
+let raw_bytes = #embed("icon.png");
+let icon_sz = #embed_size("icon.png");
+let hash_init = comptime { 0x6a09e667 };
+
+fn main() {
+    puts(banner); // Direct C standard library call
+}
+```
+
+### 11. First-Class Bump Arenas
+Fast $O(1)$ allocation with bulk cleanup:
+
+```dmc
+let a: arena = arena_new(1024 * 1024); // 1 MB arena
+let buf1 = a.alloc_bytes(256);
+let buf2 = a.alloc_bytes(512);
+
+println(a.used()); // Current allocation watermark
+a.reset();         // Instant O(1) reset
+a.free();          // Bulk free
+```
+
 ---
 
 ## CLI Toolchain Usage
@@ -242,7 +318,8 @@ dmc lint src/main.dmc
 # Create a new project scaffold
 dmc new my-project
 
-# Package management
+# Package management: Git-based or registry
+dmc pkg add https://github.com/user/dmc-pkg.git
 dmc pkg search json
 dmc pkg install json
 ```
