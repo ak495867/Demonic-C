@@ -1,0 +1,19 @@
+fn log_info(msg: string) {
+    print("[INFO]  ");
+    println(msg);
+}
+
+fn log_warn(msg: string) {
+    print("[WARN]  ");
+    println(msg);
+}
+
+fn log_error(msg: string) {
+    print("[ERROR] ");
+    println(msg);
+}
+
+fn log_debug(msg: string) {
+    print("[DEBUG] ");
+    println(msg);
+}

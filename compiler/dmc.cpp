@@ -128,6 +128,9 @@ static std::string ctype(const std::string& type) {
     if (type == "string") return "const char*";
     if (type == "const unsigned char*") return "const unsigned char*";
     if (type == "u8") return "unsigned char";
+    if (type == "i32") return "int";
+    if (type == "u32") return "unsigned int";
+    if (type == "i64" || type == "u64") return "long long";
     if (type == "bool") return "bool";
     if (type == "void") return "void";
     if (type == "f32") return "float";
@@ -186,6 +189,11 @@ public:
         out << "#define _GNU_SOURCE\n";
         out << "#define _POSIX_C_SOURCE 200112L\n";
         out << "#ifndef null\n#define null ((void*)0)\n#endif\n";
+        out << "typedef long long i64;\n";
+        out << "typedef unsigned long long u64;\n";
+        out << "typedef int i32;\n";
+        out << "typedef unsigned int u32;\n";
+        out << "typedef unsigned char u8;\n";
         out << "#ifdef _WIN32\n";
         out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <io.h>\n#include <direct.h>\n";
         out << "#define NSCLOSE closesocket\n";
@@ -194,7 +202,7 @@ public:
         out << "#include <sys/types.h>\n#include <sys/socket.h>\n#include <netdb.h>\n#include <unistd.h>\n";
         out << "#define NSCLOSE close\n";
         out << "#endif\n\n";
-        out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#ifndef _WIN32\n#include <regex.h>\n#endif\n\n";
+        out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <sys/timeb.h>\n#ifndef _WIN32\n#include <regex.h>\n#endif\n\n";
         out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#ifdef DMC_SQLITE\ntypedef struct sqlite3 sqlite3;\ntypedef struct sqlite3_stmt sqlite3_stmt;\nextern int sqlite3_open(const char *, sqlite3 **);\nextern int sqlite3_close(sqlite3 *);\nextern int sqlite3_prepare_v2(sqlite3 *, const char *, int, sqlite3_stmt **, const char **);\nextern int sqlite3_step(sqlite3_stmt *);\nextern int sqlite3_finalize(sqlite3_stmt *);\nextern int sqlite3_column_count(sqlite3_stmt *);\nextern const unsigned char *sqlite3_column_text(sqlite3_stmt *, int);\n#define SQLITE_OK 0\n#define SQLITE_ROW 100\n#endif\n\n";
         emit_runtime(out);
         for (const auto& s : structs_) {
@@ -750,6 +758,37 @@ long long http_status(const char *url) { if (!_dmc_http_url_ok(url)) return -1; 
         out << "long long datetime_now(void) { return (long long)time(NULL); }\n";
         out << "const char *datetime_format(long long value, const char *format) { static char buf[128]; time_t t = (time_t)value; struct tm *tmv = localtime(&t); if (!tmv) { buf[0] = 0; return buf; } strftime(buf, sizeof(buf), format ? format : \"%Y-%m-%d %H:%M:%S\", tmv); return buf; }\n";
         out << "long long datetime_unix(void) { return (long long)time(NULL); }\n";
+        out << "long long time_now_ms(void) {\n";
+        out << "#ifdef _WIN32\n";
+        out << "    struct _timeb tb; _ftime(&tb); return (long long)tb.time * 1000 + (long long)tb.millitm;\n";
+        out << "#else\n";
+        out << "    struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts); return (long long)ts.tv_sec * 1000 + (long long)ts.tv_nsec / 1000000;\n";
+        out << "#endif\n";
+        out << "}\n";
+        out << "void time_sleep_ms(long long ms) {\n";
+        out << "#ifdef _WIN32\n";
+        out << "    Sleep((DWORD)(ms < 0 ? 0 : ms));\n";
+        out << "#else\n";
+        out << "    usleep((useconds_t)(ms < 0 ? 0 : ms * 1000));\n";
+        out << "#endif\n";
+        out << "}\n";
+        out << "static unsigned long long _dmc_rand_state = 88172645463325252ULL;\n";
+        out << "void rand_seed(long long s) { _dmc_rand_state = s ? (unsigned long long)s : 88172645463325252ULL; }\n";
+        out << "long long rand_int(long long min_val, long long max_val) {\n";
+        out << "    if (min_val >= max_val) return min_val;\n";
+        out << "    _dmc_rand_state ^= _dmc_rand_state << 13;\n";
+        out << "    _dmc_rand_state ^= _dmc_rand_state >> 7;\n";
+        out << "    _dmc_rand_state ^= _dmc_rand_state << 17;\n";
+        out << "    unsigned long long diff = (unsigned long long)(max_val - min_val + 1);\n";
+        out << "    return min_val + (long long)(_dmc_rand_state % diff);\n";
+        out << "}\n";
+        out << "long long proc_pid(void) {\n";
+        out << "#ifdef _WIN32\n";
+        out << "    return (long long)GetCurrentProcessId();\n";
+        out << "#else\n";
+        out << "    return (long long)getpid();\n";
+        out << "#endif\n";
+        out << "}\n";
         out << "#ifndef _WIN32\n";
         out << "int regex_new(const char *pattern) { regex_t *r = (regex_t*)malloc(sizeof(regex_t)); if (!r || regcomp(r, pattern ? pattern : \"\", REG_EXTENDED) != 0) { free(r); return -1; } int h = _dmc_next++; if (_dmc_ensure(h) != 0) { regfree(r); free(r); return -1; } _dmc_mem[h] = (unsigned char*)r; _dmc_mem_sz[h] = 0; return h; }\n";
         out << "int regex_match(long long h, const char *text) { regex_t *r = (regex_t*)_dmc_mem[h]; return r && text && regexec(r, text, 0, NULL, 0) == 0; }\n";
@@ -2215,7 +2254,8 @@ const char *sha256(const char *str) {
             "fs_read", "fs_write", "fs_append", "fs_exists", "fs_remove", "fs_size",
             "os_env", "os_set_env", "os_cwd", "os_platform", "os_arch",
             "sha256", "base64_encode", "base64_decode",
-            "proc_arg_count", "proc_exit", "syscall", "interrupt", "arena_new", "arena_alloc", "arena_alloc_bytes", "arena_write", "arena_read", "arena_reset", "arena_top", "arena_used", "arena_free"
+            "proc_arg_count", "proc_exit", "syscall", "interrupt", "arena_new", "arena_alloc", "arena_alloc_bytes", "arena_write", "arena_read", "arena_reset", "arena_top", "arena_used", "arena_free",
+            "time_now_ms", "time_sleep_ms", "rand_seed", "rand_int", "proc_pid", "datetime_now", "datetime_format", "datetime_unix"
         };
         for (auto& f : fns) if (f == name) return true;
         return false;
@@ -3350,7 +3390,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v1.1.0)\n"
+              << "Demonic C Interactive REPL (v1.2.0)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -3425,7 +3465,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.1.0";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.2.0";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -4075,7 +4115,7 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 1.1.0 (Demonic C -> C)\n";
+        std::cout << "dmc 1.2.0 (Demonic C -> C)\n";
         return 0;
     }
 
@@ -4167,7 +4207,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 1.1.0 (Demonic C -> C)\n";
+            std::cout << "dmc 1.2.0 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {

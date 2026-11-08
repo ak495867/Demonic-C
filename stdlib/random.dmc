@@ -1,0 +1,11 @@
+fn random_seed(s: int) {
+    rand_seed(s);
+}
+
+fn random_range(min_val: int, max_val: int) -> int {
+    return rand_int(min_val, max_val);
+}
+
+fn random_bool() -> int {
+    return rand_int(0, 1);
+}

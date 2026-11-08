@@ -1,0 +1,93 @@
+fn str_len(s: string) -> int {
+    return text_len(s);
+}
+
+fn str_compare(a: string, b: string) -> int {
+    return text_cmp(a, b);
+}
+
+fn str_equals(a: string, b: string) -> int {
+    if (text_cmp(a, b) == 0) { return 1; }
+    return 0;
+}
+
+fn str_concat(a: string, b: string) -> string {
+    return text_concat(a, b);
+}
+
+fn str_slice(s: string, start: int, len: int) -> string {
+    return string_slice(s, start, len);
+}
+
+fn str_starts_with(s: string, prefix: string) -> int {
+    let slen = text_len(s);
+    let plen = text_len(prefix);
+    if (plen > slen) { return 0; }
+    let sub = string_slice(s, 0, plen);
+    if (text_cmp(sub, prefix) == 0) { return 1; }
+    return 0;
+}
+
+fn str_ends_with(s: string, suffix: string) -> int {
+    let slen = text_len(s);
+    let flen = text_len(suffix);
+    if (flen > slen) { return 0; }
+    let sub = string_slice(s, slen - flen, flen);
+    if (text_cmp(sub, suffix) == 0) { return 1; }
+    return 0;
+}
+
+fn str_contains(s: string, needle: string) -> int {
+    let slen = text_len(s);
+    let nlen = text_len(needle);
+    if (nlen > slen) { return 0; }
+    if (nlen == 0) { return 1; }
+    var i: int = 0;
+    while (i + nlen <= slen) {
+        let sub = string_slice(s, i, nlen);
+        if (text_cmp(sub, needle) == 0) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn str_index_of(s: string, needle: string) -> int {
+    let slen = text_len(s);
+    let nlen = text_len(needle);
+    if (nlen > slen) { return -1; }
+    if (nlen == 0) { return 0; }
+    var i: int = 0;
+    while (i + nlen <= slen) {
+        let sub = string_slice(s, i, nlen);
+        if (text_cmp(sub, needle) == 0) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn str_trim(s: string) -> string {
+    let len = text_len(s);
+    if (len == 0) { return ""; }
+    var start: int = 0;
+    while (start < len) {
+        let c = text_char_at(s, start);
+        if (c != 32 && c != 9 && c != 10 && c != 13) {
+            break;
+        }
+        start = start + 1;
+    }
+    if (start == len) { return ""; }
+    var end: int = len - 1;
+    while (end > start) {
+        let c = text_char_at(s, end);
+        if (c != 32 && c != 9 && c != 10 && c != 13) {
+            break;
+        }
+        end = end - 1;
+    }
+    return string_slice(s, start, end - start + 1);
+}

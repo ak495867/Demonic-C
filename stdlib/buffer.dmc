@@ -1,0 +1,39 @@
+struct Buffer {
+    handle: int;
+    len: int;
+    cap: int;
+}
+
+fn buffer_new(initial_cap: int) -> Buffer {
+    var cap = initial_cap;
+    if (cap <= 0) { cap = 64; }
+    let h = mem_alloc(cap);
+    return Buffer { handle: h, len: 0, cap: cap };
+}
+
+fn buffer_append_byte(b: *Buffer, byte_val: int) {
+    if (b.len >= b.cap) {
+        let new_cap = b.cap * 2;
+        let new_h = mem_alloc(new_cap);
+        var i: int = 0;
+        while (i < b.len) {
+            let v = mem_read(b.handle, i);
+            mem_write(new_h, i, v);
+            i = i + 1;
+        }
+        mem_free(b.handle);
+        b.handle = new_h;
+        b.cap = new_cap;
+    }
+    mem_write(b.handle, b.len, byte_val);
+    b.len = b.len + 1;
+}
+
+fn buffer_free(b: *Buffer) {
+    if (b.handle > 0) {
+        mem_free(b.handle);
+        b.handle = 0;
+        b.len = 0;
+        b.cap = 0;
+    }
+}

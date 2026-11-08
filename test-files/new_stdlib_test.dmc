@@ -1,0 +1,94 @@
+import "strings.dmc";
+import "path.dmc";
+import "time.dmc";
+import "random.dmc";
+import "buffer.dmc";
+import "testing.dmc";
+
+#[test]
+fn test_strings_library() -> int {
+    let s = "  hello demonic c world  ";
+    let trimmed = str_trim(s);
+    if (str_equals(trimmed, "hello demonic c world") != 1) { return 1; }
+
+    if (str_starts_with(trimmed, "hello") != 1) { return 2; }
+    if (str_starts_with(trimmed, "demonic") != 0) { return 3; }
+
+    if (str_ends_with(trimmed, "world") != 1) { return 4; }
+    if (str_ends_with(trimmed, "demonic") != 0) { return 5; }
+
+    if (str_contains(trimmed, "demonic") != 1) { return 6; }
+    if (str_contains(trimmed, "galaxy") != 0) { return 7; }
+
+    let idx = str_index_of(trimmed, "demonic");
+    if (idx != 6) { return 8; }
+
+    return 0;
+}
+
+#[test]
+fn test_path_library() -> int {
+    let joined = path_join("usr/local", "bin");
+    if (str_equals(joined, "usr/local/bin") != 1) { return 11; }
+
+    let base = path_basename("/home/user/document.txt");
+    if (str_equals(base, "document.txt") != 1) { return 12; }
+
+    let dir = path_dirname("/home/user/document.txt");
+    if (str_equals(dir, "/home/user") != 1) { return 13; }
+
+    let ext = path_extension("archive.tar.gz");
+    if (str_equals(ext, ".gz") != 1) { return 14; }
+
+    if (path_has_extension("index.html", ".html") != 1) { return 15; }
+    if (path_has_extension("index.html", ".css") != 0) { return 16; }
+
+    return 0;
+}
+
+#[test]
+fn test_time_and_random_library() -> int {
+    let s = time_sec();
+    if (s <= 1000000000) { return 21; }
+
+    let ms = time_millis();
+    if (ms <= 1000000000000) { return 22; }
+
+    random_seed(42);
+    let r1 = random_range(10, 50);
+    if (r1 < 10 || r1 > 50) { return 23; }
+
+    let r2 = random_range(10, 50);
+    if (r2 < 10 || r2 > 50) { return 24; }
+
+    let b = random_bool();
+    if (b != 0 && b != 1) { return 25; }
+
+    return 0;
+}
+
+#[test]
+fn test_buffer_library() -> int {
+    var buf = buffer_new(4);
+    if (buf.cap < 4) { return 31; }
+    if (buf.len != 0) { return 32; }
+
+    buffer_append_byte(&buf, 65); // 'A'
+    buffer_append_byte(&buf, 66); // 'B'
+    buffer_append_byte(&buf, 67); // 'C'
+    buffer_append_byte(&buf, 68); // 'D'
+    buffer_append_byte(&buf, 69); // 'E' - triggers growth!
+
+    if (buf.len != 5) { return 33; }
+    if (buf.cap < 8) { return 34; }
+
+    let b0 = mem_read(buf.handle, 0);
+    if (b0 != 65) { return 35; }
+    let b4 = mem_read(buf.handle, 4);
+    if (b4 != 69) { return 36; }
+
+    buffer_free(&buf);
+    if (buf.handle != 0) { return 37; }
+
+    return 0;
+}

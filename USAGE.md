@@ -430,29 +430,56 @@ m.free();
 
 ### High-Level Standard Library Modules
 
+Demonic C provides a rich suite of built-in standard modules in `stdlib/`:
+
+| Module | Description | Key Functions / Structs |
+|---|---|---|
+| `strings` | High-level string operations | `str_trim`, `str_starts_with`, `str_ends_with`, `str_contains`, `str_index_of`, `str_equals` |
+| `path` | Filesystem path utilities | `path_join`, `path_basename`, `path_dirname`, `path_extension`, `path_has_extension` |
+| `time` | Clock and duration tools | `time_sec`, `time_millis`, `time_sleep`, `time_format` |
+| `random` | Pseudorandom generation | `random_seed`, `random_range`, `random_bool` |
+| `buffer` | Dynamic growable byte buffer | `Buffer`, `buffer_new`, `buffer_append_byte`, `buffer_free` |
+| `log` | Structured console logging | `log_info`, `log_warn`, `log_error`, `log_debug` |
+| `testing` | Unit test assertions | `assert_eq`, `assert_str_eq`, `assert_true`, `assert_false` |
+| `fs` | Filesystem I/O helpers | `fs_read_to_string`, `fs_write_string`, `fs_append_string`, `fs_file_exists` |
+| `os` | Operating system metadata | `os_system_platform`, `os_cpu_arch`, `os_current_dir` |
+| `crypto` | Cryptographic hashing | `hash_sha256`, `to_base64`, `from_base64` |
+
 ```dmc
+import "strings";
+import "path";
+import "time";
+import "random";
+import "log";
 import "fs";
 import "os";
 import "crypto";
 
 fn main() -> int {
-    // 1. Filesystem
+    log_info("Starting Demonic C application...");
+
+    // 1. Strings and Paths
+    let p = path_join("logs", "app.log");
+    if (str_ends_with(p, ".log") == 1) {
+        log_info("Log file target verified.");
+    }
+
+    // 2. High-Resolution Time & Random
+    random_seed(time_sec());
+    let roll = random_range(1, 100);
+    log_info(text_from_int(roll));
+
+    // 3. Filesystem & Crypto
     fs_write("sample.txt", "Demonic Systems");
     if (fs_file_exists("sample.txt") == 1) {
         let content = fs_read_to_string("sample.txt");
-        println(content);
+        let hash = hash_sha256(content);
+        println(hash);
         fs_remove_file("sample.txt");
     }
 
-    // 2. Operating System
-    println(os_system_platform());
-    println(os_cpu_arch());
-    println(os_current_dir());
-
-    // 3. Cryptography
-    let hash = hash_sha256("Demonic");
-    let b64 = to_base64("hello");
-    let orig = from_base64(b64);
+    return 0;
+}
     println(hash);
     return 0;
 }

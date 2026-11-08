@@ -154,22 +154,26 @@ fn main() {
 ```
 
 ### 4. High-Level Standard Library Modules
-Clean, modern standard library modules for OS, Filesystem, and Cryptography:
+Clean, modern standard library modules for Strings, Paths, Time, Randomness, Buffers, Logging, Filesystem, OS, and Cryptography:
 
 ```dmc
+import "strings";
+import "path";
+import "time";
+import "random";
 import "fs";
 import "os";
 import "crypto";
+import "log";
 
 fn main() {
-    fs_write("demo.txt", "Demonic speed!");
-    let content = fs_read("demo.txt");
+    log_info("Demonic C starting up...");
+    let target = path_join("data", "output.txt");
+    fs_write(target, "Demonic speed!");
+    let content = fs_read(target);
     let hash = sha256(content);
-    let b64 = to_base64("Secure");
-
-    println(content);
     println(hash);
-    println(os_platform());
+    println(time_millis());
 }
 ```
 

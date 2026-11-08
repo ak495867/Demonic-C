@@ -1,0 +1,15 @@
+fn time_sec() -> i64 {
+    return datetime_now();
+}
+
+fn time_millis() -> i64 {
+    return time_now_ms();
+}
+
+fn time_sleep(ms: int) {
+    time_sleep_ms(ms);
+}
+
+fn time_format(timestamp: int, fmt: string) -> string {
+    return datetime_format(timestamp, fmt);
+}

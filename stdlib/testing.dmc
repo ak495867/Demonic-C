@@ -1,0 +1,45 @@
+fn assert_eq(actual: int, expected: int, msg: string) -> int {
+    if (actual != expected) {
+        print("Assertion failed: ");
+        print(msg);
+        print(" (expected ");
+        print(expected);
+        print(", got ");
+        print(actual);
+        println(")");
+        return 1;
+    }
+    return 0;
+}
+
+fn assert_str_eq(actual: string, expected: string, msg: string) -> int {
+    if (text_cmp(actual, expected) != 0) {
+        print("Assertion failed: ");
+        print(msg);
+        print(" (expected '");
+        print(expected);
+        print("', got '");
+        print(actual);
+        println("')");
+        return 1;
+    }
+    return 0;
+}
+
+fn assert_true(cond: int, msg: string) -> int {
+    if (cond == 0) {
+        print("Assertion failed: ");
+        println(msg);
+        return 1;
+    }
+    return 0;
+}
+
+fn assert_false(cond: int, msg: string) -> int {
+    if (cond != 0) {
+        print("Assertion failed: ");
+        println(msg);
+        return 1;
+    }
+    return 0;
+}
