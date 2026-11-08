@@ -2446,6 +2446,100 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     return result == 0 ? 0 : 1;
 }
 
+static void print_diagnostic(const std::string& filepath, const std::string& source, const Diagnostic& d, const std::string& severity);
+
+static int cmd_run(const std::string& source_path, const std::vector<std::string>& program_args, const char* argv0) {
+    (void)argv0;
+    if (!std::filesystem::exists(source_path)) {
+        std::cerr << "dmc: source file not found: " << source_path << "\n";
+        return 1;
+    }
+    uint64_t ts = static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+    std::string tmp_stem = "_dmc_run_" + std::to_string(ts);
+    std::string gen_c = tmp_stem + ".c";
+    std::string gen_bin = tmp_stem;
+#ifdef _WIN32
+    gen_bin += ".exe";
+#endif
+
+    try {
+        std::ifstream input(source_path);
+        if (!input) {
+            std::cerr << "dmc: cannot open source file: " << source_path << "\n";
+            return 1;
+        }
+        std::ostringstream source;
+        source << input.rdbuf();
+        Parser parser(lex(source.str()), source_path);
+        parser.add_include_dir(".");
+        parser.add_include_dir("stdlib");
+        std::filesystem::path sp(source_path);
+        if (sp.has_parent_path()) {
+            parser.add_include_dir(sp.parent_path().string());
+        }
+        std::string generated = parser.emit();
+        for (const auto& d : parser.diagnostics()) {
+            print_diagnostic(source_path, source.str(), d, "error");
+        }
+        for (const auto& w : parser.type_warnings()) {
+            print_diagnostic(source_path, source.str(), w, "warning");
+        }
+        if (parser.has_errors()) return 1;
+
+        std::ofstream out(gen_c);
+        if (!out) {
+            std::cerr << "dmc: cannot write temporary source file\n";
+            return 1;
+        }
+        out << generated;
+        out.close();
+    } catch (const std::exception& e) {
+        std::cerr << "dmc: " << e.what() << "\n";
+        return 1;
+    }
+
+    const char* cc = std::getenv("CC");
+    std::string c_compiler = cc ? cc : "clang";
+#ifdef _WIN32
+    if (!cc) {
+        if (std::system("clang --version > nul 2>&1") != 0 && std::system("gcc --version > nul 2>&1") == 0) {
+            c_compiler = "gcc";
+        }
+    }
+    std::string compile_cmd = "\"" + c_compiler + " -O0 -w \"" + gen_c + "\" -o \"" + gen_bin + "\" -lws2_32 -lm\"";
+#else
+    if (!cc) c_compiler = "cc";
+    std::string compile_cmd = c_compiler + " -O0 -w \"" + gen_c + "\" -o \"" + gen_bin + "\" -lm";
+#endif
+    int c_res = std::system(compile_cmd.c_str());
+    std::filesystem::remove(gen_c);
+    if (c_res != 0) {
+        std::cerr << "dmc: compilation failed\n";
+        return 1;
+    }
+
+    std::string run_cmd;
+#ifdef _WIN32
+    run_cmd = "\"\"" + gen_bin + "\"";
+    for (const auto& arg : program_args) {
+        run_cmd += " \"" + arg + "\"";
+    }
+    run_cmd += "\"";
+#else
+    run_cmd = "./" + gen_bin;
+    for (const auto& arg : program_args) {
+        run_cmd += " \"" + arg + "\"";
+    }
+#endif
+    int run_res = std::system(run_cmd.c_str());
+    std::filesystem::remove(gen_bin);
+#ifdef _WIN32
+    return run_res;
+#else
+    return (run_res >> 8) & 0xff;
+#endif
+}
+
 static int cmd_bundle() {
     std::filesystem::create_directories("dist");
     std::ofstream manifest("dist/manifest.txt");
@@ -2865,25 +2959,27 @@ static int cmd_lsp() {
 }
 
 static void print_usage() {
-    std::cout << "usage: dmc <source.dmc> [options]\n"
-              << "compile Demonic C source to C.\n\n"
+    std::cout << "usage: dmc <source.dmc> [args...]       compile and run Demonic C program\n"
+              << "       dmc run <source.dmc> [args...]   compile and run Demonic C program\n"
+              << "       dmc build <source.dmc> [options] compile to executable binary\n"
+              << "       dmc <source.dmc> -o <file.c>     transpile to C code\n\n"
               << "options:\n"
-              << "  -o <file>       write generated C to <file> (default: stdout)\n"
+              << "  -o <file>       write generated C to <file>\n"
+              << "  --emit-c        transpile to C on stdout\n"
               << "  -I <dir>        add import search directory (repeatable)\n"
               << "  --lsp           start Language Server Protocol daemon\n"
               << "  --version       print version and exit\n"
               << "  --help          print this message and exit\n\n"
               << "commands:\n"
+              << "  run <src>       compile and run Demonic C source directly\n"
               << "  build [src]     compile Demonic C source directly to executable binary\n"
+              << "  test [dir]      run test suite\n"
               << "  lsp             run Demonic C Language Server Protocol (LSP) daemon\n"
               << "  pkg             package manager commands\n"
               << "  new <name>      create new project\n"
               << "  init            initialize project in current directory\n"
-              << "  fmt [--check] <file.dmc>\n"
-              << "                  format or check .dmc files\n"
-              << "  lint [--fix] <file.dmc>\n"
-              << "                  lint .dmc files for issues\n"
-              << "  test            run test suite\n"
+              << "  fmt [--check]   format or check .dmc files\n"
+              << "  lint [--fix]    lint .dmc files for issues\n"
               << "  doc             generate documentation\n\n"
               << "pkg commands:\n"
               << "  pkg install <pkg>   install package from registry\n"
@@ -2960,6 +3056,33 @@ int main(int argc, char** argv) {
     if (!args.empty() && args[0] == "login") return cmd_login();
     if (!args.empty() && args[0] == "deprecate") return cmd_deprecate(argc - 1, argv + 1);
     if (!args.empty() && args[0] == "publish") { publish_package(); return 0; }
+    
+    if (!args.empty() && args[0] == "run") {
+        if (args.size() < 2) {
+            std::cerr << "dmc run: source file required\nusage: dmc run <file.dmc> [args...]\n";
+            return 1;
+        }
+        std::string source = args[1];
+        std::vector<std::string> prog_args(args.begin() + 2, args.end());
+        return cmd_run(source, prog_args, argv[0]);
+    }
+
+    bool has_dash_o = false;
+    bool has_emit_c = false;
+    for (const auto& a : args) {
+        if (a == "-o") has_dash_o = true;
+        if (a == "--emit-c") has_emit_c = true;
+    }
+
+    auto is_dmc_file = [](const std::string& s) {
+        return s.size() >= 4 && s.compare(s.size() - 4, 4, ".dmc") == 0;
+    };
+
+    if (!args.empty() && !has_dash_o && !has_emit_c && is_dmc_file(args[0])) {
+        std::string source = args[0];
+        std::vector<std::string> prog_args(args.begin() + 1, args.end());
+        return cmd_run(source, prog_args, argv[0]);
+    }
     
     std::string source_path;
     std::string output_path = "-";

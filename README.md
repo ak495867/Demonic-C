@@ -151,11 +151,20 @@ dmc test test-files
 The unified `dmc` executable provides a complete development toolkit:
 
 ```bash
-# Check version
-dmc --version
+# Run any DMC program directly (compiles & runs in one instant step!)
+dmc app.dmc
 
-# Build a DMC program directly to a native executable
+# Pass runtime arguments directly to your program
+dmc app.dmc arg1 arg2
+
+# Or use the explicit run command
+dmc run app.dmc
+
+# Build a DMC program directly to a permanent native binary
 dmc build app.dmc -o bin/app
+
+# Transpile to C code without running
+dmc app.dmc -o app.c
 
 # Run all #[test] functions in a folder
 dmc test test-files

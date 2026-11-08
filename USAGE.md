@@ -37,15 +37,26 @@ fn main() -> int {
 }
 ```
 
-### 2. Building Directly to Executable
+### 2. Running Directly (One Step)
 
-Use `dmc build` to transpile and link directly in one command:
+Run any `.dmc` file immediately:
+```bash
+dmc hello.dmc
+```
+Or pass runtime arguments directly:
+```bash
+dmc hello.dmc arg1 arg2
+```
+
+### 3. Building Directly to Executable Binary
+
+Use `dmc build` to transpile and link directly into a permanent binary:
 ```bash
 dmc build hello.dmc -o hello
 ./hello
 ```
 
-### 3. Compiling to C Code Only
+### 4. Compiling to C Code Only
 
 If you wish to inspect the generated C99/C11 code:
 ```bash
