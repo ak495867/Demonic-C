@@ -2219,7 +2219,7 @@ const char *sha256(const char *str) {
                 std::string lt = infer_type(left);
                 std::string rt = infer_type(right);
                 if (lt == "string" || rt == "string") {
-                    if (!(op == "==" || op == "!=")) {
+                    if (!(op == "==" || op == "!=" || op == "+")) {
                         type_warn("operator '" + op + "' applied to string operand");
                     }
                 }
