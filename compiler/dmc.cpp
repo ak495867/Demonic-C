@@ -29,6 +29,39 @@
 #else
 #include <unistd.h>
 #endif
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
+static std::string get_executable_dir() {
+#if defined(_WIN32)
+    char buf[MAX_PATH];
+    DWORD len = GetModuleFileNameA(NULL, buf, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        return std::filesystem::path(buf).parent_path().string();
+    }
+#elif defined(__APPLE__)
+    char buf[1024];
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) == 0) {
+        std::error_code ec;
+        auto p = std::filesystem::canonical(buf, ec);
+        if (!ec) return p.parent_path().string();
+        return std::filesystem::path(buf).parent_path().string();
+    }
+#else
+    char buf[1024];
+    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len > 0) {
+        buf[len] = '\0';
+        std::error_code ec;
+        auto p = std::filesystem::canonical(buf, ec);
+        if (!ec) return p.parent_path().string();
+        return std::filesystem::path(buf).parent_path().string();
+    }
+#endif
+    return "";
+}
 
 struct Token { std::string text; int line; int col; };
 struct Diagnostic { int line; int col; std::string message; };
@@ -858,6 +891,26 @@ private:
         candidates.push_back(std::filesystem::path(pkg_dir()) / name / (name + ".dmc"));
         candidates.push_back(std::filesystem::path("stdlib") / name);
         candidates.push_back(std::filesystem::path("stdlib") / (name + ".dmc"));
+        const char* dmc_stdlib_env = std::getenv("DMC_STDLIB");
+        if (dmc_stdlib_env && *dmc_stdlib_env) {
+            candidates.push_back(std::filesystem::path(dmc_stdlib_env) / name);
+            candidates.push_back(std::filesystem::path(dmc_stdlib_env) / (name + ".dmc"));
+        }
+        const char* home = std::getenv("USERPROFILE");
+        if (!home) home = std::getenv("HOME");
+        if (home && *home) {
+            std::filesystem::path hp = std::filesystem::path(home) / ".dmc" / "stdlib";
+            candidates.push_back(hp / name);
+            candidates.push_back(hp / (name + ".dmc"));
+        }
+        std::string exe_dir = get_executable_dir();
+        if (!exe_dir.empty()) {
+            std::filesystem::path ep(exe_dir);
+            candidates.push_back(ep / "stdlib" / name);
+            candidates.push_back(ep / "stdlib" / (name + ".dmc"));
+            candidates.push_back(ep.parent_path() / "stdlib" / name);
+            candidates.push_back(ep.parent_path() / "stdlib" / (name + ".dmc"));
+        }
         for (auto& candidate : candidates) {
             std::error_code error;
             if (std::filesystem::is_regular_file(candidate, error)) return candidate.string();
@@ -906,7 +959,8 @@ private:
         out << "static int _dmc_arena_next = 1;\n";
         out << "static int _dmc_db_next = 1;\n";
         out << "static int _dmc_regex_next = 1;\n";
-        out << "const char *arg_text(long long i) { if (!__dmc_argv || i < 0 || i >= __dmc_argc) return \"\"; return __dmc_argv[i]; }\n\n";
+        out << "const char *arg_text(long long i) { if (!__dmc_argv || i < 0 || i >= __dmc_argc) return \"\"; return __dmc_argv[i]; }\n";
+        out << "long long arg_count(void) { return (long long)__dmc_argc; }\n\n";
         out << "static int _dmc_resize_mem(int need) {\n";
         out << "  if (need <= _dmc_mem_cap) return 0;\n";
         out << "  int new_cap = _dmc_mem_cap ? _dmc_mem_cap * 2 : 128;\n";
@@ -1205,7 +1259,7 @@ int db_close(long long connection) { (void)connection; return 0; }
         out << "double text_to_float(const char *s) { return atof(s); }\n";
         out << "const char *string_copy(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *b = (char*)malloc(n + 1); if (n) memcpy(b, s, n); b[n] = 0; return b; }\n";
         out << "const char *string_slice(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen || len <= 0) return string_copy(\"\"); if (start + len > slen) len = slen - start; char *b = (char*)malloc((size_t)len + 1); if (len) memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n\n";
-        out << "long long proc_arg_count(long long argc) { return argc; }\n";
+        out << "long long proc_arg_count(long long argc) { return argc ? argc : (long long)__dmc_argc; }\n";
         out << "const char *proc_exit(long long code) { exit((int)code); return \"\"; }\n\n";
 
         out << R"DMC_SYSTEM(
@@ -2701,7 +2755,7 @@ const char *sha256(const char *str) {
                 return enum_variant_expr("", name);
             }
             if (peek() != "(") {
-                if (lookup_type(name).empty() && !is_user_function(name) && !is_stdlib_fn(name)) {
+                if (lookup_type(name).empty() && !is_user_function(name) && !is_stdlib_fn(name) && name != "__dmc_argc" && name != "__dmc_argv") {
                     if (c_headers_.empty()) {
                         type_warn("use of undeclared identifier '" + name + "'");
                     }
@@ -3065,7 +3119,7 @@ const char *sha256(const char *str) {
             "ffi_call_v_0", "ffi_call_v_1", "ffi_call_v_2", "ffi_call_v_s",
             "py_init", "py_finalize", "py_run", "py_eval", "py_call", "py_import",
             "js_run", "js_eval",
-            "proc_arg_count", "proc_exit", "syscall", "interrupt", "arena_new", "arena_alloc", "arena_alloc_bytes", "arena_write", "arena_read", "arena_reset", "arena_top", "arena_used", "arena_free",
+            "proc_arg_count", "arg_count", "proc_exit", "syscall", "interrupt", "arena_new", "arena_alloc", "arena_alloc_bytes", "arena_write", "arena_read", "arena_reset", "arena_top", "arena_used", "arena_free",
             "time_now_ms", "time_sleep_ms", "rand_seed", "rand_int", "proc_pid", "datetime_now", "datetime_format", "datetime_unix"
         };
         for (auto& f : fns) if (f == name) return true;
@@ -3579,7 +3633,7 @@ static void generate_project_files(const std::filesystem::path& proj_path, const
         main_src << "    println(\"  --help, -h    Display this help message\");\n";
         main_src << "}\n\n";
         main_src << "fn main() -> int {\n";
-        main_src << "    let argc = proc_arg_count(__dmc_argc);\n";
+        main_src << "    let argc = arg_count();\n";
         main_src << "    if (argc > 1) {\n";
         main_src << "        let arg1 = arg_text(1);\n";
         main_src << "        if (text_cmp(arg1, \"--help\") == 0 || text_cmp(arg1, \"-h\") == 0) {\n";
@@ -5653,24 +5707,32 @@ static int cmd_new(int argc, char** argv) {
     std::string tmpl = "cli";
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        if (a.rfind("--template=", 0) == 0) {
+        if (a == "--game") {
+            tmpl = "game";
+        } else if (a == "--polyglot") {
+            tmpl = "polyglot";
+        } else if (a == "--lib" || a == "--library") {
+            tmpl = "lib";
+        } else if (a == "--cli") {
+            tmpl = "cli";
+        } else if (a.rfind("--template=", 0) == 0) {
             tmpl = a.substr(11);
         } else if ((a == "-t" || a == "--template") && i + 1 < argc) {
             tmpl = argv[++i];
         } else if (a == "--help" || a == "-h") {
-            std::cout << "usage: dmc new <project-name> [--template=<cli|polyglot|game|lib>]\n\n"
+            std::cout << "usage: dmc new <project-name> [--game|--polyglot|--lib|--cli|--template=<name>]\n\n"
                       << "templates:\n"
                       << "  cli       Command-line application starter (default)\n"
-                      << "  game      Interactive terminal game using prompt() & term styling\n"
-                      << "  polyglot  Multi-language project using Python, JS, and C FFI\n"
-                      << "  lib       Reusable library with exported modules and unit tests\n";
+                      << "  game      Interactive terminal game using prompt() & term styling (--game)\n"
+                      << "  polyglot  Multi-language project using Python, JS, and C FFI (--polyglot)\n"
+                      << "  lib       Reusable library with exported modules and unit tests (--lib)\n";
             return 0;
-        } else if (name.empty()) {
+        } else if (a[0] != '-' && name.empty()) {
             name = a;
         }
     }
     if (name.empty()) {
-        std::cerr << "dmc new: project name required\nusage: dmc new <project-name> [--template=<cli|polyglot|game|lib>]\n";
+        std::cerr << "dmc new: project name required\nusage: dmc new <project-name> [--game|--polyglot|--lib|--cli|--template=<name>]\n";
         return 1;
     }
     new_project(name, tmpl);
@@ -5681,12 +5743,20 @@ static int cmd_init(int argc, char** argv) {
     std::string tmpl = "cli";
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        if (a.rfind("--template=", 0) == 0) {
+        if (a == "--game") {
+            tmpl = "game";
+        } else if (a == "--polyglot") {
+            tmpl = "polyglot";
+        } else if (a == "--lib" || a == "--library") {
+            tmpl = "lib";
+        } else if (a == "--cli") {
+            tmpl = "cli";
+        } else if (a.rfind("--template=", 0) == 0) {
             tmpl = a.substr(11);
         } else if ((a == "-t" || a == "--template") && i + 1 < argc) {
             tmpl = argv[++i];
         } else if (a == "--help" || a == "-h") {
-            std::cout << "usage: dmc init [--template=<cli|polyglot|game|lib>]\n";
+            std::cout << "usage: dmc init [--game|--polyglot|--lib|--cli|--template=<name>]\n";
             return 0;
         }
     }
