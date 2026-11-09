@@ -159,7 +159,6 @@ jobs:
           find artifacts -name "dmc-*" -type f -exec cp {} release-assets/ \;
           cd release-assets
           cat *.sha256 > checksums.txt
-          rm -f *.sha256
           cd ..
           cp install.sh install.ps1 release-assets/
           ls -la release-assets

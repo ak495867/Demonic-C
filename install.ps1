@@ -134,6 +134,67 @@ try {
         }
     }
 
+    # Checksum Verification
+    if ($LocalZip -eq "") {
+        Write-Host "Fetching published SHA-256 checksum..." -ForegroundColor Cyan
+        $ChecksumUrl = "$DownloadUrl.sha256"
+        $ExpectedHash = ""
+
+        try {
+            $rawSha = (Invoke-WebRequest -Uri $ChecksumUrl -UseBasicParsing -Headers @{ "User-Agent" = "DMC-Installer" } -TimeoutSec 15).Content
+            if ($rawSha) {
+                $ExpectedHash = ($rawSha.Trim() -split '\s+')[0].ToLower()
+            }
+        } catch {
+            if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+                $rawSha = (curl.exe -f -s -L $ChecksumUrl)
+                if ($LASTEXITCODE -eq 0 -and $rawSha) {
+                    $ExpectedHash = ($rawSha.Trim() -split '\s+')[0].ToLower()
+                }
+            }
+        }
+
+        # Fallback to consolidated checksums.txt if individual .sha256 is not found
+        if (-not $ExpectedHash) {
+            $lastSlash = $DownloadUrl.LastIndexOf('/')
+            if ($lastSlash -gt 0) {
+                $ConsolidatedUrl = $DownloadUrl.Substring(0, $lastSlash) + "/checksums.txt"
+                $rawSums = ""
+                try {
+                    $rawSums = (Invoke-WebRequest -Uri $ConsolidatedUrl -UseBasicParsing -Headers @{ "User-Agent" = "DMC-Installer" } -TimeoutSec 15).Content
+                } catch {
+                    if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+                        $rawSums = (curl.exe -f -s -L $ConsolidatedUrl)
+                    }
+                }
+                if ($rawSums) {
+                    foreach ($line in ($rawSums -split "`r?`n")) {
+                        if ($line -match "$AssetPrefix.*\.zip") {
+                            $ExpectedHash = ($line.Trim() -split '\s+')[0].ToLower()
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($ExpectedHash) {
+            Write-Host "Verifying archive SHA-256 checksum..." -ForegroundColor Cyan
+            $ActualHash = (Get-FileHash -Path $TempZip -Algorithm SHA256).Hash.ToLower()
+            if ($ActualHash -ne $ExpectedHash) {
+                Remove-Item -LiteralPath $TempZip -Force -ErrorAction SilentlyContinue
+                throw "SHA-256 checksum verification failed! Expected: $ExpectedHash, Actual: $ActualHash. The downloaded archive may be corrupted or compromised."
+            }
+            Write-Host "SHA-256 checksum verified: $ActualHash" -ForegroundColor Green
+        } else {
+            if ($env:DMC_REQUIRE_CHECKSUM -eq "1") {
+                Remove-Item -LiteralPath $TempZip -Force -ErrorAction SilentlyContinue
+                throw "Published checksum could not be retrieved and DMC_REQUIRE_CHECKSUM=1."
+            }
+            Write-Host "Warning: Published SHA-256 checksum could not be retrieved; continuing installation." -ForegroundColor Yellow
+        }
+    }
+
     # Prepare installation directory
     if (Test-Path $InstallDir) {
         Write-Host "Updating existing installation in $InstallDir..." -ForegroundColor Yellow

@@ -74,7 +74,7 @@ fn test_channels() -> int {
 #[test]
 fn test_thread_spawning() -> int {
     let tid = thread_id();
-    if (tid <= 0) { return 1; }
+    if (tid == 0) { return 1; }
 
     thread_sleep(1);
     thread_yield();

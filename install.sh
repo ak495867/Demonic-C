@@ -117,6 +117,73 @@ else
     fi
 fi
 
+# Checksum Verification
+if [ -z "${LOCAL_ARCHIVE}" ]; then
+    CHECKSUM_URL="${DOWNLOAD_URL}.sha256"
+    CHECKSUM_FILE="${TEMP_DIR}/${ASSET_PREFIX}.${ARCHIVE_EXT}.sha256"
+    HAVE_CHECKSUM=false
+
+    printf "${CYAN}Fetching published SHA-256 checksum...${NC}\n"
+    if [ "${DOWNLOADER}" = "curl" ]; then
+        if curl -fsSL --retry 2 "${CHECKSUM_URL}" -o "${CHECKSUM_FILE}" 2>/dev/null; then
+            HAVE_CHECKSUM=true
+        fi
+    else
+        if wget -q --tries=2 "${CHECKSUM_URL}" -O "${CHECKSUM_FILE}" 2>/dev/null; then
+            HAVE_CHECKSUM=true
+        fi
+    fi
+
+    EXPECTED_HASH=""
+    if [ "${HAVE_CHECKSUM}" = "true" ] && [ -s "${CHECKSUM_FILE}" ]; then
+        EXPECTED_HASH="$(awk '{print $1}' "${CHECKSUM_FILE}" | tr -d '\r\n')"
+    else
+        # Try fetching consolidated checksums.txt (e.g. from existing/older releases)
+        CONSOLIDATED_URL="$(dirname "${DOWNLOAD_URL}")/checksums.txt"
+        CONSOLIDATED_FILE="${TEMP_DIR}/checksums.txt"
+        if [ "${DOWNLOADER}" = "curl" ]; then
+            curl -fsSL --retry 2 "${CONSOLIDATED_URL}" -o "${CONSOLIDATED_FILE}" 2>/dev/null || true
+        else
+            wget -q --tries=2 "${CONSOLIDATED_URL}" -O "${CONSOLIDATED_FILE}" 2>/dev/null || true
+        fi
+        if [ -s "${CONSOLIDATED_FILE}" ]; then
+            EXPECTED_HASH="$(grep "${ASSET_PREFIX}\.${ARCHIVE_EXT}" "${CONSOLIDATED_FILE}" | awk '{print $1}' | tr -d '\r\n' || true)"
+        fi
+    fi
+
+    if [ -n "${EXPECTED_HASH}" ]; then
+        printf "${CYAN}Verifying archive SHA-256 checksum...${NC}\n"
+        ACTUAL_HASH=""
+        if command -v sha256sum >/dev/null 2>&1; then
+            ACTUAL_HASH="$(sha256sum "${ARCHIVE_PATH}" | awk '{print $1}')"
+        elif command -v shasum >/dev/null 2>&1; then
+            ACTUAL_HASH="$(shasum -a 256 "${ARCHIVE_PATH}" | awk '{print $1}')"
+        elif command -v openssl >/dev/null 2>&1; then
+            ACTUAL_HASH="$(openssl dgst -sha256 "${ARCHIVE_PATH}" | awk '{print $NF}')"
+        fi
+
+        if [ -n "${ACTUAL_HASH}" ]; then
+            if [ "${ACTUAL_HASH}" != "${EXPECTED_HASH}" ]; then
+                printf "${RED}Error: SHA-256 checksum verification failed!${NC}\n"
+                printf "${RED}Expected: ${EXPECTED_HASH}${NC}\n"
+                printf "${RED}Actual:   ${ACTUAL_HASH}${NC}\n"
+                printf "${RED}The downloaded archive may be corrupted or compromised. Aborting installation.${NC}\n"
+                exit 1
+            fi
+            printf "${GREEN}✓ SHA-256 checksum verified: ${ACTUAL_HASH}${NC}\n"
+        else
+            printf "${YELLOW}Warning: Neither sha256sum, shasum, nor openssl found; skipping checksum verification.${NC}\n"
+        fi
+    else
+        if [ "${DMC_REQUIRE_CHECKSUM:-0}" = "1" ]; then
+            printf "${RED}Error: Published checksum file could not be retrieved and DMC_REQUIRE_CHECKSUM=1.${NC}\n"
+            exit 1
+        else
+            printf "${YELLOW}Warning: Published checksum file not found; proceeding without verification.${NC}\n"
+        fi
+    fi
+fi
+
 # Ensure install directory exists
 mkdir -p "${INSTALL_DIR}"
 printf "${CYAN}Extracting to ${INSTALL_DIR}...${NC}\n"

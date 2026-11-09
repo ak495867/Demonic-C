@@ -264,7 +264,7 @@ public:
             out << "#include <sys/types.h>\n#include <sys/stat.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n#include <dlfcn.h>\n#include <pthread.h>\n#include <sched.h>\n";
             out << "#define NSCLOSE close\n";
             out << "#endif\n";
-            out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <ctype.h>\n#include <errno.h>\n\n";
+            out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <ctype.h>\n#include <errno.h>\n\n";
         }
         out << "#if defined(_WIN32)\n#define DMC_EXPORT __declspec(dllexport)\n#elif defined(__GNUC__) || defined(__clang__)\n#define DMC_EXPORT __attribute__((visibility(\"default\")))\n#else\n#define DMC_EXPORT\n#endif\n\n";
         out << "/* Demonic C SIMD 128-bit Vector Extensions */\n";
@@ -1994,7 +1994,8 @@ long long thread_id(void) {
 #ifdef _WIN32
     return (long long)GetCurrentThreadId();
 #else
-    return (long long)(uintptr_t)pthread_self();
+    uintptr_t id = (uintptr_t)pthread_self();
+    return (long long)(id & 0x7FFFFFFFFFFFFFFFULL);
 #endif
 }
 
