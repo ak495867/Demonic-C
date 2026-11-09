@@ -123,9 +123,9 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
-## 🚀 Beginner & Developer Ergonomics (v1.7.0)
+## 🚀 Universal Ergonomics & Polyglot Tooling (v1.8.0)
 
-Demonic C v1.7.0 introduces first-class developer tooling designed to make systems programming delightful, fast, and accessible for everyone from beginners to seasoned engineers.
+Demonic C v1.8.0 introduces universal standard library resolution from any directory, direct project scaffolding flags (including `--game`, `--polyglot`, `--lib`, `--cli`), first-class CLI argument inspection (`arg_count()`), polyglot bindings aliases (`dmc bindings` / `dmc --py`), and macOS Apple Clang universal compatibility.
 
 ### Instant One-Liner Scratchpad (`dmc eval` / `dmc -e`)
 Test snippets, run math, or inspect system state right from your terminal without creating temporary files:
