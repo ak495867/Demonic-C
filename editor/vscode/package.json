@@ -17,7 +17,17 @@
     "Formatters",
     "Snippets"
   ],
-  "icon": "../../assets/logo.png",
+  "icon": "assets/logo.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ak495867/Demonic-C.git",
+    "directory": "editor/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/ak495867/Demonic-C/issues"
+  },
+  "homepage": "https://github.com/ak495867/Demonic-C",
   "contributes": {
     "languages": [
       {
