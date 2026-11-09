@@ -231,7 +231,7 @@ public:
             out << "#include <sys/types.h>\n#include <sys/stat.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n#include <dlfcn.h>\n";
             out << "#define NSCLOSE close\n";
             out << "#endif\n";
-            out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n\n";
+            out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <ctype.h>\n#include <errno.h>\n\n";
         }
         out << "#if defined(_WIN32)\n#define DMC_EXPORT __declspec(dllexport)\n#elif defined(__GNUC__) || defined(__clang__)\n#define DMC_EXPORT __attribute__((visibility(\"default\")))\n#else\n#define DMC_EXPORT\n#endif\n\n";
         out << "/* Demonic C SIMD 128-bit Vector Extensions */\n";
@@ -1280,11 +1280,11 @@ long long fs_mkdir(const char *path) {
     if (!path || !*path) return -1;
 #ifdef _WIN32
     int r = _mkdir(path);
-    if (r == 0 || errno == 17) return 0;
+    if (r == 0 || errno == EEXIST) return 0;
     return -1;
 #else
     int r = mkdir(path, 0755);
-    if (r == 0 || errno == 17) return 0;
+    if (r == 0 || errno == EEXIST) return 0;
     return -1;
 #endif
 }
