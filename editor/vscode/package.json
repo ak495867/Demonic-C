@@ -1,16 +1,21 @@
 {
   "name": "demonic-c",
   "displayName": "Demonic C Language Support",
-  "description": "Rich language support, syntax highlighting, and LSP integration for the Demonic C systems programming language.",
-  "version": "1.4.0",
+  "description": "Rich language support, syntax highlighting, LSP client, runner, snippets, and diagnostics for the Demonic C systems programming language.",
+  "version": "1.9.0",
   "publisher": "ak495867",
   "engines": {
     "vscode": ">=1.75.0"
   },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:dmc"
+  ],
   "categories": [
     "Programming Languages",
     "Linters",
-    "Formatters"
+    "Formatters",
+    "Snippets"
   ],
   "icon": "../../assets/logo.png",
   "contributes": {
@@ -27,6 +32,132 @@
         "language": "dmc",
         "scopeName": "source.dmc",
         "path": "./syntaxes/dmc.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "dmc",
+        "path": "./snippets/dmc.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "demonic-c.run",
+        "title": "Demonic C: Run Current File",
+        "icon": "$(play)"
+      },
+      {
+        "command": "demonic-c.build",
+        "title": "Demonic C: Build Current File",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "demonic-c.test",
+        "title": "Demonic C: Run Tests",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "demonic-c.format",
+        "title": "Demonic C: Format Document"
+      },
+      {
+        "command": "demonic-c.lint",
+        "title": "Demonic C: Lint Document"
+      },
+      {
+        "command": "demonic-c.explain",
+        "title": "Demonic C: Explain Concept / Code"
+      },
+      {
+        "command": "demonic-c.repl",
+        "title": "Demonic C: Launch REPL"
+      },
+      {
+        "command": "demonic-c.newProject",
+        "title": "Demonic C: Create New Project"
+      },
+      {
+        "command": "demonic-c.doctor",
+        "title": "Demonic C: Toolchain Doctor (Heal)"
+      },
+      {
+        "command": "demonic-c.restartServer",
+        "title": "Demonic C: Restart Language Server"
+      },
+      {
+        "command": "demonic-c.showMenu",
+        "title": "Demonic C: Show Quick Menu"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "demonic-c.run",
+          "when": "resourceLangId == dmc",
+          "group": "navigation@1"
+        },
+        {
+          "command": "demonic-c.build",
+          "when": "resourceLangId == dmc",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "demonic-c.run",
+          "when": "resourceLangId == dmc",
+          "group": "1_dmc"
+        },
+        {
+          "command": "demonic-c.build",
+          "when": "resourceLangId == dmc",
+          "group": "1_dmc"
+        },
+        {
+          "command": "demonic-c.explain",
+          "when": "resourceLangId == dmc",
+          "group": "2_dmc"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Demonic C",
+      "properties": {
+        "demonic-c.compilerPath": {
+          "type": "string",
+          "default": "dmc",
+          "description": "Path or command name for the Demonic C compiler binary."
+        },
+        "demonic-c.enableLsp": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the built-in Demonic C Language Server Protocol daemon."
+        },
+        "demonic-c.lintOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically run compiler syntax & semantic checks on save."
+        },
+        "demonic-c.formatOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically format Demonic C files on save using 'dmc fmt'."
+        }
+      }
+    },
+    "problemMatchers": [
+      {
+        "name": "dmc",
+        "owner": "dmc",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+):\\s+(error|warning):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        }
       }
     ]
   }

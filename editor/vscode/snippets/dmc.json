@@ -1,0 +1,208 @@
+{
+  "Function Declaration": {
+    "prefix": "fn",
+    "body": [
+      "fn ${1:name}(${2:params}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Declare a Demonic C function"
+  },
+  "Function with Return Type": {
+    "prefix": "fnm",
+    "body": [
+      "fn ${1:name}(${2:params}) -> ${3:int} {",
+      "\t$0",
+      "\treturn ${4:0};",
+      "}"
+    ],
+    "description": "Declare a Demonic C function with return type"
+  },
+  "Main Function": {
+    "prefix": "main",
+    "body": [
+      "fn main() -> int {",
+      "\tprintln(\"${1:Hello, Demonic C!}\");",
+      "\t$0",
+      "\treturn 0;",
+      "}"
+    ],
+    "description": "Standard main entry point"
+  },
+  "Unit Test": {
+    "prefix": "test",
+    "body": [
+      "#[test]",
+      "fn test_${1:feature}() -> int {",
+      "\t$0",
+      "\treturn 0;",
+      "}"
+    ],
+    "description": "Define a unit test function"
+  },
+  "Struct Declaration": {
+    "prefix": "struct",
+    "body": [
+      "struct ${1:Name} {",
+      "\t${2:field}: ${3:int},",
+      "\t$0",
+      "}"
+    ],
+    "description": "Declare a struct"
+  },
+  "Enum Declaration": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name} {",
+      "\t${2:VariantOne},",
+      "\t${3:VariantTwo},",
+      "\t$0",
+      "}"
+    ],
+    "description": "Declare an enum or tagged union"
+  },
+  "Thread Worker & Spawn": {
+    "prefix": "thread",
+    "body": [
+      "fn ${1:worker_task}() {",
+      "\t$0",
+      "}",
+      "",
+      "let ${2:th} = thread_spawn(${1:worker_task});",
+      "thread_join(${2:th});"
+    ],
+    "description": "Spawn and join an OS thread"
+  },
+  "Thread with Argument": {
+    "prefix": "thread_arg",
+    "body": [
+      "fn ${1:worker_with_arg}(${2:arg}: string) {",
+      "\t$0",
+      "}",
+      "",
+      "let ${3:th} = thread_spawn_arg(${1:worker_with_arg}, \"${4:payload}\");",
+      "thread_join(${3:th});"
+    ],
+    "description": "Spawn a thread with a payload argument"
+  },
+  "Go-Style Channel": {
+    "prefix": "channel",
+    "body": [
+      "let ${1:ch} = channel_new(${2:16});",
+      "defer channel_free(${1:ch});",
+      "",
+      "channel_send(${1:ch}, \"${3:data}\");",
+      "let ${4:msg} = channel_recv(${1:ch});",
+      "$0"
+    ],
+    "description": "Create and operate a thread-safe message channel"
+  },
+  "Mutex Lock": {
+    "prefix": "mutex",
+    "body": [
+      "let ${1:m} = mutex_new();",
+      "defer mutex_free(${1:m});",
+      "",
+      "mutex_lock(${1:m});",
+      "$0",
+      "mutex_unlock(${1:m});"
+    ],
+    "description": "Synchronize with a mutual exclusion lock"
+  },
+  "Hardware Atomics": {
+    "prefix": "atomic",
+    "body": [
+      "var ${1:counter}: int = 0;",
+      "atomic_add(&${1:counter}, 1);",
+      "let ${2:current} = atomic_load(&${1:counter});",
+      "$0"
+    ],
+    "description": "Perform lock-free atomic memory operations"
+  },
+  "SIMD 128-bit Vector": {
+    "prefix": "simd",
+    "body": [
+      "let ${1:va} = f32x4(${2:1.0}, ${3:2.0}, ${4:3.0}, ${5:4.0});",
+      "let ${6:vb} = f32x4(${7:5.0}, ${8:6.0}, ${9:7.0}, ${10:8.0});",
+      "let ${11:sum} = ${1:va}.add(${6:vb});",
+      "$0"
+    ],
+    "description": "Declare and operate on 128-bit SIMD hardware vectors"
+  },
+  "Bump Arena Allocator": {
+    "prefix": "arena",
+    "body": [
+      "let ${1:a} = arena_new(${2:65536});",
+      "defer arena_free(${1:a});",
+      "",
+      "let ${3:ptr} = arena_alloc_bytes(${1:a}, ${4:1024});",
+      "$0"
+    ],
+    "description": "Allocate high-speed linear bump memory arena"
+  },
+  "HTTP Response": {
+    "prefix": "http_res",
+    "body": [
+      "let ${1:res} = http_response(${2:200}, \"${3:application/json}\", \"${4:{\\\"status\\\": \\\"ok\\\"}}\");",
+      "$0"
+    ],
+    "description": "Construct standard HTTP protocol response"
+  },
+  "Defer Cleanup": {
+    "prefix": "defer",
+    "body": [
+      "defer ${1:cleanup_action()};",
+      "$0"
+    ],
+    "description": "Schedule LIFO cleanup at scope exit"
+  },
+  "Try Error Bubbling": {
+    "prefix": "try",
+    "body": [
+      "let ${1:result} = try ${2:fallible_operation()};",
+      "$0"
+    ],
+    "description": "Bubble error with zero-cost try expression"
+  },
+  "Match Statement": {
+    "prefix": "match",
+    "body": [
+      "match ${1:expr} {",
+      "\t${2:PatternOne} => {",
+      "\t\t$3",
+      "\t},",
+      "\t_ => {",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Pattern matching expression"
+  },
+  "Inline C Code Block": {
+    "prefix": "c_code",
+    "body": [
+      "c_code {",
+      "\t${1:// raw inline C code}",
+      "\t$0",
+      "}"
+    ],
+    "description": "Embed raw C code in Demonic C source"
+  },
+  "External C Function": {
+    "prefix": "extern",
+    "body": [
+      "extern fn ${1:c_function}(${2:arg}: ${3:int}) -> ${4:int};",
+      "$0"
+    ],
+    "description": "Declare an external C library function"
+  },
+  "Embed Binary Asset": {
+    "prefix": "embed",
+    "body": [
+      "let ${1:asset_data} = #embed(\"${2:assets/file.bin}\");",
+      "let ${1:asset_data}_sz = #embed_size(\"${2:assets/file.bin}\");",
+      "$0"
+    ],
+    "description": "Statically embed a file into the binary at compile time"
+  }
+}

@@ -19,41 +19,80 @@
       "patterns": [
         {
           "name": "constant.character.escape.dmc",
-          "match": "\\\\."
+          "match": "\\\\(?:[nrt\\\\\"0]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4})"
+        }
+      ]
+    },
+    {
+      "name": "string.quoted.single.dmc",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.dmc",
+          "match": "\\\\(?:[nrt\\\\'0]|x[0-9a-fA-F]{2})"
         }
       ]
     },
     {
       "name": "keyword.control.dmc",
-      "match": "\\b(fn|let|var|return|defer|if|else|while|for|in|match|do|until|break|continue|import|export)\\b"
+      "match": "\\b(fn|let|var|return|defer|if|else|while|for|in|match|do|until|break|continue|import|export|try|comptime|extern|include)\\b"
     },
     {
       "name": "keyword.declaration.dmc",
-      "match": "\\b(struct|enum)\\b"
+      "match": "\\b(struct|enum|type|const)\\b"
     },
     {
       "name": "storage.type.dmc",
-      "match": "\\b(int|i32|i64|u8|u32|u64|float|f32|f64|bool|string|void)\\b"
+      "match": "\\b(int|i8|i16|i32|i64|u8|u16|u32|u64|float|f32|f64|bool|string|void|char|byte|f32x4|i32x4|Vector|Option|Result)\\b"
     },
     {
       "name": "constant.language.dmc",
       "match": "\\b(true|false|null)\\b"
     },
     {
+      "name": "support.function.concurrency.dmc",
+      "match": "\\b(thread_spawn|thread_spawn_arg|thread_join|thread_id|thread_sleep|thread_yield|mutex_new|mutex_lock|mutex_unlock|mutex_free|channel_new|channel_send|channel_recv|channel_try_recv|channel_close|channel_free|atomic_add|atomic_sub|atomic_load|atomic_store)\\b"
+    },
+    {
       "name": "support.function.builtin.dmc",
-      "match": "\\b(print|println|eprintln|assert|panic|len|sizeof|mem_alloc|mem_free|file_open|file_read|file_write|file_close|tcp_connect|tcp_send|tcp_recv|tcp_close|fs_read|fs_write|os_env|sha256)\\b"
+      "match": "\\b(print|println|eprintln|assert|panic|len|sizeof|prompt|term_bold|term_dim|term_italic|term_underline|term_red|term_green|term_yellow|term_blue|term_magenta|term_cyan|term_white|term_reset|arena_new|arena_alloc|arena_alloc_bytes|arena_write|arena_read|arena_reset|arena_top|arena_used|arena_free|http_response|http_response_json|http_req_method|http_req_path|http_req_header|text_len|text_cmp|text_sub|text_dup|text_upper|text_lower|text_trim|str_contains|str_starts_with|str_ends_with|str_replace|str_repeat|str_split|mem_alloc|mem_free|file_open|file_read|file_write|file_close|fs_read|fs_write|os_env|proc_pid|time_now_ms|time_sleep_ms|rand_seed|rand_int|sha256)\\b"
+    },
+    {
+      "name": "support.function.polyglot.dmc",
+      "match": "\\b(ffi_open|ffi_symbol|ffi_close|ffi_call_i_0|ffi_call_i_1|ffi_call_i_2|ffi_call_i_s|ffi_call_p_0|ffi_call_p_1|ffi_call_p_s|ffi_call_f_1|ffi_call_f_2|ffi_call_v_0|ffi_call_v_1|ffi_call_v_2|ffi_call_v_s|py_init|py_finalize|py_run|py_eval|py_call|py_import|js_run|js_eval)\\b"
+    },
+    {
+      "name": "keyword.operator.attribute.dmc",
+      "match": "#\\[[a-zA-Z0-9_]+(?:\\([^)]*\\))?\\]"
+    },
+    {
+      "name": "keyword.control.directive.dmc",
+      "match": "#(embed|embed_str|embed_size|link)\\b"
+    },
+    {
+      "name": "constant.numeric.hex.dmc",
+      "match": "\\b0x[0-9a-fA-F]+\\b"
+    },
+    {
+      "name": "constant.numeric.binary.dmc",
+      "match": "\\b0b[01]+\\b"
+    },
+    {
+      "name": "constant.numeric.float.dmc",
+      "match": "\\b[0-9]+\\.[0-9]+(?:[eE][+-]?[0-9]+)?f?\\b"
+    },
+    {
+      "name": "constant.numeric.integer.dmc",
+      "match": "\\b[0-9]+(?:[uUlL]+)?\\b"
     },
     {
       "name": "entity.name.function.dmc",
       "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()"
     },
     {
-      "name": "constant.numeric.dmc",
-      "match": "\\b[0-9]+(?:\\.[0-9]+)?\\b"
-    },
-    {
-      "name": "keyword.operator.attribute.dmc",
-      "match": "#\\[[a-zA-Z0-9_]+\\]"
+      "name": "keyword.operator.dmc",
+      "match": "(&&|\\|\\||==|!=|<=|>=|=>|->|\\+=|-=|\\*=|/=|%=|<<|>>|[+\\-*/%<>&|^!=~])"
     }
   ]
 }
