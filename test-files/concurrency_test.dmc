@@ -5,6 +5,7 @@ import task;
 import strings;
 
 var g_worker_ran: int = 0;
+var g_worker_arg_ok: int = 0;
 var g_worker_arg_received: string = "";
 
 fn thread_worker_fn() {
@@ -12,7 +13,10 @@ fn thread_worker_fn() {
 }
 
 fn thread_worker_with_arg(arg: string) {
-    g_worker_arg_received = arg;
+    if (text_cmp(arg, "dmc-worker-payload") == 0) {
+        g_worker_arg_ok = 1;
+        g_worker_arg_received = "dmc-worker-payload";
+    }
 }
 
 #[test]
@@ -94,7 +98,8 @@ fn test_thread_with_arg() -> int {
     if (th < 0) { return 1; }
 
     thread_join(th);
-    if (text_cmp(g_worker_arg_received, "dmc-worker-payload") != 0) { return 2; }
+    if (g_worker_arg_ok != 1) { return 2; }
+    if (text_cmp(g_worker_arg_received, "dmc-worker-payload") != 0) { return 3; }
 
     return 0;
 }
