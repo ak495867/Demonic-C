@@ -111,9 +111,9 @@ else
 
     printf "${CYAN}Downloading ${DOWNLOAD_URL}...${NC}\n"
     if [ "${DOWNLOADER}" = "curl" ]; then
-        curl -fsSL "${DOWNLOAD_URL}" -o "${ARCHIVE_PATH}"
+        curl -fsSL --retry 3 --retry-delay 2 "${DOWNLOAD_URL}" -o "${ARCHIVE_PATH}"
     else
-        wget -q "${DOWNLOAD_URL}" -O "${ARCHIVE_PATH}"
+        wget -q --tries=3 --waitretry=2 "${DOWNLOAD_URL}" -O "${ARCHIVE_PATH}"
     fi
 fi
 

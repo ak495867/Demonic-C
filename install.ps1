@@ -57,34 +57,81 @@ try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
 
         $DownloadUrl = ""
+        $ApiAssetUrl = ""
         $ResolvedVersion = $Version
 
         if ($Version -eq "latest") {
             Write-Host "Fetching latest release metadata from GitHub..." -ForegroundColor Cyan
             $ApiUrl = "https://api.github.com/repos/$Repo/releases/latest"
-            try {
-                $Release = Invoke-RestMethod -Uri $ApiUrl -Headers @{ "User-Agent" = "DMC-Installer" }
-                $ResolvedVersion = $Release.tag_name
-                $Asset = $Release.assets | Where-Object { $_.name -like "$AssetPrefix*.zip" } | Select-Object -First 1
-                if ($Asset) {
-                    $DownloadUrl = $Asset.browser_download_url
-                }
-            } catch {
-                Write-Warning "Could not query GitHub API (rate limit or network): $_"
-                Write-Host "Falling back to release redirect..." -ForegroundColor Yellow
-                $DownloadUrl = "https://github.com/$Repo/releases/latest/download/$AssetPrefix.zip"
-            }
         } else {
-            $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$AssetPrefix.zip"
+            Write-Host "Fetching release metadata for $Version from GitHub..." -ForegroundColor Cyan
+            $ApiUrl = "https://api.github.com/repos/$Repo/releases/tags/$Version"
+        }
+
+        try {
+            $Release = Invoke-RestMethod -Uri $ApiUrl -Headers @{ "User-Agent" = "DMC-Installer" }
+            $ResolvedVersion = $Release.tag_name
+            $Asset = $Release.assets | Where-Object { $_.name -like "$AssetPrefix*.zip" } | Select-Object -First 1
+            if ($Asset) {
+                $DownloadUrl = $Asset.browser_download_url
+                $ApiAssetUrl = $Asset.url
+            }
+        } catch {
+            Write-Warning "Could not query GitHub API (rate limit or network): $_"
         }
 
         if (-not $DownloadUrl) {
-            $DownloadUrl = "https://github.com/$Repo/releases/latest/download/$AssetPrefix.zip"
+            if ($Version -eq "latest") {
+                $DownloadUrl = "https://github.com/$Repo/releases/latest/download/$AssetPrefix.zip"
+            } else {
+                $DownloadUrl = "https://github.com/$Repo/releases/download/$Version/$AssetPrefix.zip"
+            }
         }
 
         Write-Host "Downloading Demonic C ($ResolvedVersion)..." -ForegroundColor Cyan
         Write-Host "URL: $DownloadUrl" -ForegroundColor DarkGray
-        Invoke-WebRequest -Uri $DownloadUrl -OutFile $TempZip -UseBasicParsing
+
+        $downloadSuccess = $false
+
+        # Strategy 1: Fast direct download via Invoke-WebRequest with custom User-Agent
+        try {
+            Invoke-WebRequest -Uri $DownloadUrl -OutFile $TempZip -UseBasicParsing -Headers @{ "User-Agent" = "DMC-Installer" } -TimeoutSec 30
+            if ((Test-Path $TempZip) -and (Get-Item $TempZip).Length -gt 1000) {
+                $downloadSuccess = $true
+            }
+        } catch {
+            Write-Host "Direct download encountered an issue ($($_.Exception.Message)). Trying fallback mirrors..." -ForegroundColor Yellow
+        }
+
+        # Strategy 2: curl.exe with automatic redirect following and retries
+        if (-not $downloadSuccess -and (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
+            curl.exe -f -s -L --retry 3 --retry-delay 2 -o $TempZip $DownloadUrl
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $TempZip) -and (Get-Item $TempZip).Length -gt 1000) {
+                $downloadSuccess = $true
+            }
+        }
+
+        # Strategy 3: GitHub API raw asset stream (bypasses CDN / edge gateway timeouts completely)
+        if (-not $downloadSuccess -and $ApiAssetUrl) {
+            Write-Host "Downloading via direct GitHub API asset stream..." -ForegroundColor Cyan
+            try {
+                Invoke-WebRequest -Uri $ApiAssetUrl -Headers @{ "Accept" = "application/octet-stream"; "User-Agent" = "DMC-Installer" } -OutFile $TempZip -UseBasicParsing -TimeoutSec 60
+                if ((Test-Path $TempZip) -and (Get-Item $TempZip).Length -gt 1000) {
+                    $downloadSuccess = $true
+                }
+            } catch {
+                if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
+                    curl.exe -f -s -L -H "Accept: application/octet-stream" -H "User-Agent: DMC-Installer" -o $TempZip $ApiAssetUrl
+                    if ($LASTEXITCODE -eq 0 -and (Test-Path $TempZip) -and (Get-Item $TempZip).Length -gt 1000) {
+                        $downloadSuccess = $true
+                    }
+                }
+            }
+        }
+
+        if (-not $downloadSuccess) {
+            throw "Failed to download Demonic C package ($DownloadUrl). Please check your internet connection or GitHub status."
+        }
     }
 
     # Prepare installation directory
