@@ -216,6 +216,7 @@ public:
             out << "typedef uint8_t u8;\n\n";
         } else {
             out << "#define _GNU_SOURCE\n";
+            out << "#define _DARWIN_C_SOURCE\n";
             out << "#define _POSIX_C_SOURCE 200809L\n";
             out << "#ifndef null\n#define null ((void*)0)\n#endif\n";
             out << "typedef long long i64;\n";
@@ -1457,6 +1458,13 @@ const char *sha256(const char *str) {
         out << "#endif\n\n";
 
         /* Demonic C Polyglot Dynamic FFI */
+        out << "#ifndef RTLD_DEFAULT\n";
+        out << "#if defined(__APPLE__) || defined(__MACH__)\n";
+        out << "#define RTLD_DEFAULT ((void*)-2)\n";
+        out << "#else\n";
+        out << "#define RTLD_DEFAULT ((void*)0)\n";
+        out << "#endif\n";
+        out << "#endif\n";
         out << "static void *_dmc_ffi_handles[512] = {NULL};\n";
         out << "static int _dmc_ffi_next = 1;\n";
         out << "static char _dmc_ffi_err[1024] = {0};\n";
