@@ -49,8 +49,10 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ### Core Capabilities
 
+- **Beginner Ergonomics & Interactive Developer Tools**: Instant scratchpad execution with `dmc eval <expr>` and `dmc -e`, built-in educational interactive explainer with `dmc explain <topic|code>`, and beginner-friendly project scaffolding with `dmc new <name> [--template=<cli|polyglot|game|lib>]`.
 - **Universal Polyglot Interoperability Engine**: Dynamic runtime FFI (`import ffi;`, `ffi_open`, `ffi_symbol`, `ffi_call_*`) to load and invoke any native library on the fly, native Python bridge (`import py;`, `py_eval`, `py_run`, `py_call`) with auto-import and package access, JavaScript engine bridge (`import js;`, `js_eval`, `js_run`), and expanded `dmc bindgen` for C headers, Rust crates, and Python packages.
 - **Hardware SIMD Vector Extensions**: Native 128-bit vector types (`f32x4`, `i32x4`) compiling directly to SSE, AVX, or ARM NEON hardware registers with lane accessors (`.x`, `.y`, `[i]`), lane-wise arithmetic, and dot products (`simd_dot`).
+- **Interactive Terminal I/O & Styling (`stdlib/term`)**: Interactive user input with `prompt(msg: string) -> string`, full ANSI color and text styling (`term_bold`, `term_green`, `term_cyan`, etc.), and terminal controls.
 - **Polyglot Binding Generator (`dmc bindgen`)**: Auto-extract function prototypes, structs, enums, and constants from standard C headers, Rust crates (`--rust`), or introspect Python modules (`--py`) into clean Demonic C bindings.
 - **Shared Libraries & Dynamic Plugins**: Compile `.dll` (Windows), `.so` (Linux), or `.dylib` (macOS) with `dmc build --shared` and exported symbol attributes (`#[export]` / `export fn`).
 - **Bare-Metal & Freestanding Target**: Compile for OS kernels, bootloaders, and microcontrollers without standard library headers or runtime overhead (`--freestanding` / `--no-std`).
@@ -75,6 +77,10 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 | Command | Description |
 |---|---|
 | `dmc <file.dmc>` | Instant compile and cached native execution (`< 5ms`) |
+| `dmc eval <expr>` / `dmc -e` | Evaluates one-liner expression or code directly without saving to file |
+| `dmc explain [topic]` | Interactive learner and diagnostic explainer for concepts and error codes |
+| `dmc new <name> [--template]` | Generates structured project from templates (`cli`, `polyglot`, `game`, `lib`) |
+| `dmc init [--template]` | Initializes a Demonic C project in current directory |
 | `dmc build <file.dmc>` | Directly compiles to optimized executable binary |
 | `dmc build <file.dmc> --shared` | Builds dynamic shared library (`.dll`, `.so`, `.dylib`) |
 | `dmc build <file.dmc> --freestanding` | Compiles for bare-metal / embedded without libc |
@@ -114,6 +120,77 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 | `editor/` | VS Code extension foundation and language syntax definitions |
 | `playground/` | Interactive web playground |
 | `examples/` | Standalone example programs |
+
+---
+
+## 🚀 Beginner & Developer Ergonomics (v1.7.0)
+
+Demonic C v1.7.0 introduces first-class developer tooling designed to make systems programming delightful, fast, and accessible for everyone from beginners to seasoned engineers.
+
+### Instant One-Liner Scratchpad (`dmc eval` / `dmc -e`)
+Test snippets, run math, or inspect system state right from your terminal without creating temporary files:
+
+```bash
+# Instant expression evaluation
+dmc eval "40 + 2"
+# -> 42
+
+# Format and uppercase text
+dmc -e "println(text_upper('demonic c') + ' is fast!')"
+# -> DEMONIC C is fast!
+
+# Inspect platform details
+dmc eval "os_platform()"
+# -> windows
+```
+
+### Interactive Concept & Diagnostic Explainer (`dmc explain`)
+Get immediate, interactive explanations and before/after code fixes directly in your terminal:
+
+```bash
+# Browse all available topics
+dmc explain
+
+# Learn about guaranteed cleanup
+dmc explain defer
+
+# Understand pointers and memory addresses
+dmc explain pointers
+
+# Troubleshoot compiler warnings or errors
+dmc explain W001
+```
+
+### Project Scaffolding Templates (`dmc new`)
+Jumpstart production-ready projects with tests, configs, and starter code:
+
+```bash
+# Interactive terminal game with colors and prompt input
+dmc new --template=game my_quest
+
+# Polyglot project integrating Python, JS, and C FFI
+dmc new --template=polyglot my_bridge
+
+# Reusable library with exported functions and unit tests
+dmc new --template=lib my_math_lib
+
+# Standard command-line application (default)
+dmc new my_cli_app
+```
+
+### Interactive Terminal I/O & Styling (`prompt` & `import term`)
+Create rich, interactive command-line apps with zero boilerplate:
+
+```dmc
+import term;
+
+fn main() -> int {
+    println(term_bold(term_cyan("=== ADVENTURE GUILD ===")));
+    let hero = prompt("Enter your character's name: ");
+    println("Welcome, " + term_green(hero) + "!");
+    return 0;
+}
+```
 
 ---
 

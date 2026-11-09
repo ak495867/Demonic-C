@@ -91,3 +91,26 @@ fn str_trim(s: string) -> string {
     }
     return string_slice(s, start, end - start + 1);
 }
+
+fn str_to_upper(s: string) -> string {
+    return text_upper(s);
+}
+
+fn str_to_lower(s: string) -> string {
+    return text_lower(s);
+}
+
+fn str_replace(s: string, old_sub: string, new_sub: string) -> string {
+    return text_replace(s, old_sub, new_sub);
+}
+
+fn str_repeat(s: string, count: int) -> string {
+    if (count <= 0) { return ""; }
+    var res = "";
+    var i = 0;
+    while (i < count) {
+        res = text_concat(res, s);
+        i = i + 1;
+    }
+    return res;
+}

@@ -141,8 +141,10 @@ commands:
   tokens <src>    dump lexed syntax token stream
   lsp             run LSP daemon (--install-vscode to setup editor)
   pkg             package manager commands
-  new <name>      create new project
+  new <name>      create new project (--template=<cli|polyglot|game|lib>)
   init            initialize project in current directory
+  eval <expr>     evaluate one-liner expression or code (or 'dmc -e <expr>')
+  explain [topic] interactive explainer for language topics and diagnostics
   fmt [--check]   format or check .dmc files
   lint [--fix]    lint .dmc files for issues
   doc             generate documentation
@@ -153,6 +155,21 @@ commands:
 ```bash
 # Instant run with caching
 dmc src/main.dmc
+
+# One-liner scratchpad evaluation
+dmc eval "100 * 5 + 42"
+dmc -e "println(text_upper('hello demonic c'))"
+
+# Interactive learner & diagnostic explainer
+dmc explain
+dmc explain defer
+dmc explain W001
+
+# Scaffold projects with beginner templates
+dmc new --template=game my_game
+dmc new --template=polyglot my_bridge
+dmc new --template=lib my_lib
+dmc new my_cli_app
 
 # Watch mode for live dev
 dmc watch src/main.dmc

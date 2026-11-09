@@ -168,7 +168,7 @@ static std::string ctype(const std::string& type) {
     return type.empty() ? "long long" : type;
 }
 
-static const std::vector<std::string> BUILTIN_MODULES = {"io", "text", "math", "mem", "core", "process", "fs", "collections", "low", "json", "http", "datetime", "regex", "db", "ffi", "py", "js"};
+static const std::vector<std::string> BUILTIN_MODULES = {"io", "text", "math", "mem", "core", "process", "collections", "low", "json", "http", "datetime", "regex", "db", "ffi", "py", "js"};
 
 static bool is_builtin_module(const std::string& name) {
     for (auto& m : BUILTIN_MODULES) if (m == name) return true;
@@ -228,7 +228,7 @@ public:
             out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <windows.h>\n#include <io.h>\n#include <direct.h>\n#include <sys/timeb.h>\n";
             out << "#define NSCLOSE closesocket\n";
             out << "#else\n";
-            out << "#include <sys/types.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n#include <dlfcn.h>\n";
+            out << "#include <sys/types.h>\n#include <sys/stat.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n#include <dlfcn.h>\n";
             out << "#define NSCLOSE close\n";
             out << "#endif\n";
             out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n\n";
@@ -836,6 +836,12 @@ private:
             candidates.push_back(importer_dir / "packages" / name / "src" / (name + ".dmc"));
             candidates.push_back(importer_dir / "stdlib" / name);
             candidates.push_back(importer_dir / "stdlib" / (name + ".dmc"));
+            candidates.push_back(importer_dir.parent_path() / name);
+            candidates.push_back(importer_dir.parent_path() / (name + ".dmc"));
+            candidates.push_back(importer_dir.parent_path() / "lib" / name);
+            candidates.push_back(importer_dir.parent_path() / "lib" / (name + ".dmc"));
+            candidates.push_back(importer_dir.parent_path() / "src" / name);
+            candidates.push_back(importer_dir.parent_path() / "src" / (name + ".dmc"));
             candidates.push_back(importer_dir.parent_path() / "stdlib" / name);
             candidates.push_back(importer_dir.parent_path() / "stdlib" / (name + ".dmc"));
         }
@@ -1060,6 +1066,9 @@ private:
         out << "const char *text_from_int(long long x) { static char buf[32]; snprintf(buf, sizeof(buf), \"%lld\", x); return buf; }\n";
         out << "const char *text_from_float(double x) { static char buf[64]; snprintf(buf, sizeof(buf), \"%g\", x); return buf; }\n";
         out << "long long text_to_int(const char *s) { return atoll(s); }\n";
+        out << "const char *text_upper(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = (char*)malloc(n + 1); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)toupper((unsigned char)s[i]); res[n] = 0; return res; }\n";
+        out << "const char *text_lower(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = (char*)malloc(n + 1); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)tolower((unsigned char)s[i]); res[n] = 0; return res; }\n";
+        out << "const char *text_replace(const char *s, const char *sub, const char *rep) { if (!s) return \"\"; if (!sub || !*sub) return text_concat(s, \"\"); if (!rep) rep = \"\"; size_t sub_len = strlen(sub); size_t rep_len = strlen(rep); size_t count = 0; const char *p = s; while ((p = strstr(p, sub)) != NULL) { count++; p += sub_len; } size_t new_len = strlen(s) + count * (rep_len >= sub_len ? (rep_len - sub_len) : 0); char *res = (char*)malloc(new_len + 1); if (!res) return \"\"; char *dst = res; p = s; while (*p) { if (strncmp(p, sub, sub_len) == 0) { memcpy(dst, rep, rep_len); dst += rep_len; p += sub_len; } else { *dst++ = *p++; } } *dst = 0; return res; }\n";
         out << R"DMC_JSON(
 static char _dmc_json_value[65536];
 const char *json_parse(const char *s) { return s ? s : ""; }
@@ -1251,6 +1260,67 @@ long long fs_size(const char *path) {
     long sz = ftell(f);
     fclose(f);
     return sz >= 0 ? (long long)sz : -1;
+}
+long long fs_copy(const char *src, const char *dst) {
+    if (!src || !dst) return -1;
+    FILE *in = fopen(src, "rb");
+    if (!in) return -1;
+    FILE *out = fopen(dst, "wb");
+    if (!out) { fclose(in); return -1; }
+    char buf[16384];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) { fclose(in); fclose(out); return -1; }
+    }
+    fclose(in);
+    fclose(out);
+    return 0;
+}
+long long fs_mkdir(const char *path) {
+    if (!path || !*path) return -1;
+#ifdef _WIN32
+    int r = _mkdir(path);
+    if (r == 0 || errno == 17) return 0;
+    return -1;
+#else
+    int r = mkdir(path, 0755);
+    if (r == 0 || errno == 17) return 0;
+    return -1;
+#endif
+}
+long long fs_rmdir(const char *path) {
+    if (!path || !*path) return -1;
+#ifdef _WIN32
+    return _rmdir(path) == 0 ? 0 : -1;
+#else
+    return rmdir(path) == 0 ? 0 : -1;
+#endif
+}
+static char _dmc_prompt_buf[4096];
+const char *prompt(const char *msg) {
+    if (msg && *msg) { fputs(msg, stdout); fflush(stdout); }
+    _dmc_prompt_buf[0] = 0;
+    if (!fgets(_dmc_prompt_buf, sizeof(_dmc_prompt_buf), stdin)) return "";
+    size_t n = strlen(_dmc_prompt_buf);
+    while (n > 0 && (_dmc_prompt_buf[n-1] == '\r' || _dmc_prompt_buf[n-1] == '\n')) { _dmc_prompt_buf[--n] = 0; }
+    return _dmc_prompt_buf;
+}
+void term_clear(void) {
+#ifdef _WIN32
+    system("cls");
+#else
+    fputs("\033[2J\033[H", stdout); fflush(stdout);
+#endif
+}
+const char *term_color(const char *code, const char *text) {
+    if (!text) return "";
+    if (!code || !*code) return text;
+    size_t lc = strlen(code);
+    size_t lt = strlen(text);
+    char *res = (char*)malloc(lc + lt + 12);
+    if (!res) return text;
+    sprintf(res, "\033[%sm%s\033[0m", code, text);
+    return res;
 }
 const char *os_env(const char *key) {
     if (!key) return "";
@@ -2802,7 +2872,7 @@ const char *sha256(const char *str) {
                 }
             }
         }
-        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval"}) {
+        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "text_upper", "text_lower", "text_replace", "proc_exit", "string_copy", "string_slice", "arg_text", "prompt", "term_color", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval"}) {
             if (arg.rfind(std::string(fn) + "(", 0) == 0) return true;
         }
         auto open = arg.find('(');
@@ -2884,7 +2954,7 @@ const char *sha256(const char *str) {
                 return s.name;
             }
         }
-        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval"}) {
+        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "text_upper", "text_lower", "text_replace", "proc_exit", "string_copy", "string_slice", "arg_text", "prompt", "term_color", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval"}) {
             if (val.rfind(std::string(fn) + "(", 0) == 0) return "string";
         }
         auto open = val.find('(');
@@ -2982,8 +3052,10 @@ const char *sha256(const char *str) {
             "math_sin", "math_cos", "math_tan", "math_sqrt", "math_floor", "math_ceil", "math_abs_f", "math_pi", "math_e",
             "text_len", "text_concat", "text_sub", "text_char_at", "text_cmp",
             "text_from_int", "text_from_float", "text_to_int", "text_to_float",
+            "text_upper", "text_lower", "text_replace",
             "string_copy", "string_slice",
-            "fs_read", "fs_write", "fs_append", "fs_exists", "fs_remove", "fs_size",
+            "fs_read", "fs_write", "fs_append", "fs_exists", "fs_remove", "fs_size", "fs_copy", "fs_mkdir", "fs_rmdir",
+            "prompt", "term_color", "term_clear",
             "os_env", "os_set_env", "os_cwd", "os_platform", "os_arch",
             "sha256", "base64_encode", "base64_decode",
             "ffi_open", "ffi_symbol", "ffi_close", "ffi_error",
@@ -3378,45 +3450,26 @@ static void publish_package() {
     
 }
 
-static void new_project(const std::string& name) {
-    std::filesystem::path proj_path = name;
-    if (std::filesystem::exists(proj_path)) {
-        std::cerr << "dmc new: directory '" << name << "' already exists\n";
-        return;
-    }
-    
+static void generate_project_files(const std::filesystem::path& proj_path, const std::string& name, const std::string& template_type) {
     std::filesystem::create_directories(proj_path / "src");
-    std::filesystem::create_directories(proj_path / "lib");
     std::filesystem::create_directories(proj_path / "tests");
-    
+
     std::ofstream toml(proj_path / "dmc.toml");
     toml << "[package]\n";
     toml << "name = \"" << name << "\"\n";
     toml << "version = \"0.1.0\"\n";
-    toml << "description = \"A Demonic C project\"\n";
-    toml << "\n";
+    toml << "description = \"A Demonic C project (" << template_type << ")\"\n\n";
     toml << "[build]\n";
     toml << "output = \"bin/" << name << "\"\n";
-    toml << "type = \"executable\"\n";
-    toml << "\n";
+    toml << "type = \"" << (template_type == "lib" ? "library" : "executable") << "\"\n\n";
     toml << "[dependencies]\n";
-    toml << "# json = \"^2.0\"\n";
-    toml << "# http = \"^1.0\"\n";
+    if (template_type == "polyglot") {
+        toml << "# py = \"*\"\n";
+        toml << "# js = \"*\"\n";
+        toml << "# ffi = \"*\"\n";
+    }
     toml.close();
-    
-    std::ofstream main_src(proj_path / "src" / "main.dmc");
-    main_src << "fn main() -> int {\n";
-    main_src << "    println(\"Hello from " << name << "!\");\n";
-    main_src << "    return 0;\n";
-    main_src << "}\n";
-    main_src.close();
-    
-    std::ofstream test_main(proj_path / "tests" / "test_main.dmc");
-    test_main << "fn test_basic() -> int {\n";
-    test_main << "    return 0;\n";
-    test_main << "}\n";
-    test_main.close();
-    
+
     std::ofstream gitignore(proj_path / ".gitignore");
     gitignore << "bin/\n";
     gitignore << "*.o\n";
@@ -3424,43 +3477,159 @@ static void new_project(const std::string& name) {
     gitignore << ".dmc/\n";
     gitignore << "*.c\n";
     gitignore.close();
-    
-    std::cout << "Created new Demonic C project: " << name << "\n";
-    std::cout << "\nTo get started:\n";
-    std::cout << "  cd " << name << "\n";
-    std::cout << "  dmc run src/main.dmc\n";
-    std::cout << "\nProject structure:\n";
-    std::cout << "  " << name << "/\n";
-    std::cout << "  ├── dmc.toml\n";
-    std::cout << "  ├── src/\n";
-    std::cout << "  │   └── main.dmc\n";
-    std::cout << "  ├── lib/\n";
-    std::cout << "  ├── test-files/\n";
-    std::cout << "  │   └── test_main.dmc\n";
-    std::cout << "  └── .gitignore\n";
+
+    if (template_type == "game") {
+        std::ofstream main_src(proj_path / "src" / "main.dmc");
+        main_src << "// " << name << " - Demonic C Interactive Terminal Game\n";
+        main_src << "import term;\n";
+        main_src << "import random;\n\n";
+        main_src << "fn main() -> int {\n";
+        main_src << "    println(term_bold(term_cyan(\"=== GUESS THE SECRET NUMBER ===\")));\n";
+        main_src << "    println(\"I have picked a secret number between 1 and 50.\");\n";
+        main_src << "    println(\"Can you guess it within 7 tries?\\n\");\n\n";
+        main_src << "    let secret = random_range(1, 50);\n";
+        main_src << "    var attempts = 0;\n";
+        main_src << "    let max_tries = 7;\n";
+        main_src << "    var won = 0;\n\n";
+        main_src << "    while (attempts < max_tries) {\n";
+        main_src << "        attempts = attempts + 1;\n";
+        main_src << "        let input_str = prompt(\"Attempt [\" + text_from_int(attempts) + \"/\" + text_from_int(max_tries) + \"] Enter guess: \");\n";
+        main_src << "        let guess = text_to_int(input_str);\n";
+        main_src << "        if (guess == secret) {\n";
+        main_src << "            println(term_bold(term_green(\"\\n*** VICTORY! You guessed it in \" + text_from_int(attempts) + \" tries! ***\")));\n";
+        main_src << "            won = 1;\n";
+        main_src << "            break;\n";
+        main_src << "        } else if (guess < secret) {\n";
+        main_src << "            println(term_yellow(\"Higher!\\n\"));\n";
+        main_src << "        } else {\n";
+        main_src << "            println(term_red(\"Lower!\\n\"));\n";
+        main_src << "        }\n";
+        main_src << "    }\n";
+        main_src << "    if (won == 0) {\n";
+        main_src << "        println(term_red(\"Game Over! The secret number was: \" + text_from_int(secret)));\n";
+        main_src << "    }\n";
+        main_src << "    return 0;\n";
+        main_src << "}\n";
+        main_src.close();
+
+        std::ofstream test_src(proj_path / "tests" / "test_main.dmc");
+        test_src << "import random;\n\n#[test]\nfn test_rng_bound() -> int {\n";
+        test_src << "    let r = random_range(1, 50);\n";
+        test_src << "    if (r < 1 || r > 50) { return 1; }\n";
+        test_src << "    return 0;\n";
+        test_src << "}\n";
+        test_src.close();
+    } else if (template_type == "polyglot") {
+        std::ofstream main_src(proj_path / "src" / "main.dmc");
+        main_src << "// " << name << " - Demonic C Universal Polyglot Application\n";
+        main_src << "import py;\n";
+        main_src << "import js;\n\n";
+        main_src << "fn main() -> int {\n";
+        main_src << "    println(\"=== Universal Polyglot Runner ===\");\n\n";
+        main_src << "    // 1. Python Bridge\n";
+        main_src << "    println(\"Calling Python 3:\");\n";
+        main_src << "    let py_val = py_eval(\"'Python says: 2 ** 8 = ' + str(2 ** 8)\");\n";
+        main_src << "    println(\"  -> \" + py_val);\n\n";
+        main_src << "    // 2. JavaScript Bridge\n";
+        main_src << "    println(\"Calling JavaScript (Node/Bun/Deno):\");\n";
+        main_src << "    let js_val = js_eval(\"`JS says: Math.sqrt(1764) = ${Math.sqrt(1764)}`\");\n";
+        main_src << "    println(\"  -> \" + js_val);\n\n";
+        main_src << "    return 0;\n";
+        main_src << "}\n";
+        main_src.close();
+
+        std::ofstream test_src(proj_path / "tests" / "test_main.dmc");
+        test_src << "import py;\n\n#[test]\nfn test_polyglot() -> int {\n";
+        test_src << "    let res = py_eval(\"100 + 42\");\n";
+        test_src << "    if (text_cmp(res, \"142\") != 0) { return 1; }\n";
+        test_src << "    return 0;\n";
+        test_src << "}\n";
+        test_src.close();
+    } else if (template_type == "lib") {
+        std::filesystem::create_directories(proj_path / "lib");
+        std::ofstream lib_src(proj_path / "lib" / (name + ".dmc"));
+        lib_src << "// " << name << " - Demonic C Library Module\n\n";
+        lib_src << "export fn " << name << "_add(a: int, b: int) -> int {\n";
+        lib_src << "    return a + b;\n";
+        lib_src << "}\n\n";
+        lib_src << "export fn " << name << "_greet(user: string) -> string {\n";
+        lib_src << "    return \"Greetings, \" + user + \"!\";\n";
+        lib_src << "}\n";
+        lib_src.close();
+
+        std::ofstream test_src(proj_path / "tests" / ("test_" + name + ".dmc"));
+        test_src << "import \"../lib/" << name << ".dmc\";\n\n#[test]\nfn test_math() -> int {\n";
+        test_src << "    if (" << name << "_add(10, 32) != 42) { return 1; }\n";
+        test_src << "    return 0;\n";
+        test_src << "}\n\n#[test]\nfn test_greeting() -> int {\n";
+        test_src << "    let g = " << name << "_greet(\"Antigravity\");\n";
+        test_src << "    if (text_cmp(g, \"Greetings, Antigravity!\") != 0) { return 1; }\n";
+        test_src << "    return 0;\n";
+        test_src << "}\n";
+        test_src.close();
+    } else {
+        // Default "cli" template
+        std::filesystem::create_directories(proj_path / "lib");
+        std::ofstream main_src(proj_path / "src" / "main.dmc");
+        main_src << "// " << name << " - Demonic C Application\n";
+        main_src << "import term;\n\n";
+        main_src << "fn print_help() {\n";
+        main_src << "    println(term_bold(\"Usage: \") + \"" << name << " [options]\");\n";
+        main_src << "    println(\"\\nOptions:\");\n";
+        main_src << "    println(\"  --help, -h    Display this help message\");\n";
+        main_src << "}\n\n";
+        main_src << "fn main() -> int {\n";
+        main_src << "    let argc = proc_arg_count(__dmc_argc);\n";
+        main_src << "    if (argc > 1) {\n";
+        main_src << "        let arg1 = arg_text(1);\n";
+        main_src << "        if (text_cmp(arg1, \"--help\") == 0 || text_cmp(arg1, \"-h\") == 0) {\n";
+        main_src << "            print_help();\n";
+        main_src << "            return 0;\n";
+        main_src << "        }\n";
+        main_src << "    }\n";
+        main_src << "    println(term_bold(term_green(\"Welcome to " << name << "!\")));\n";
+        main_src << "    println(\"Built with Demonic C - Fast, expressive systems programming.\");\n";
+        main_src << "    return 0;\n";
+        main_src << "}\n";
+        main_src.close();
+
+        std::ofstream test_main(proj_path / "tests" / "test_main.dmc");
+        test_main << "#[test]\nfn test_basic() -> int {\n";
+        test_main << "    let a = 10;\n";
+        test_main << "    let b = 32;\n";
+        test_main << "    if (a + b == 42) { return 0; }\n";
+        test_main << "    return 1;\n";
+        test_main << "}\n";
+        test_main.close();
+    }
 }
 
-static void init_project() {
+static void new_project(const std::string& name, const std::string& template_type = "cli") {
+    std::filesystem::path proj_path = name;
+    if (std::filesystem::exists(proj_path)) {
+        std::cerr << "dmc new: directory '" << name << "' already exists\n";
+        return;
+    }
+    generate_project_files(proj_path, name, template_type);
+    std::cout << "Created new Demonic C project (" << template_type << "): " << name << "\n";
+    std::cout << "\nTo get started:\n";
+    std::cout << "  cd " << name << "\n";
+    if (template_type == "lib") {
+        std::cout << "  dmc test tests\n";
+    } else {
+        std::cout << "  dmc run src/main.dmc\n";
+    }
+}
+
+static void init_project(const std::string& template_type = "cli") {
     if (std::filesystem::exists("dmc.toml")) {
         std::cerr << "dmc init: dmc.toml already exists\n";
         return;
     }
-    
-    std::ofstream toml("dmc.toml");
-    toml << "[package]\n";
-    toml << "name = \"my-project\"\n";
-    toml << "version = \"0.1.0\"\n";
-    toml << "description = \"A Demonic C project\"\n";
-    toml << "\n";
-    toml << "[build]\n";
-    toml << "output = \"bin/my-project\"\n";
-    toml << "type = \"executable\"\n";
-    toml << "\n";
-    toml << "[dependencies]\n";
-    toml << "# json = \"^2.0\"\n";
-    toml.close();
-    
-    std::cout << "Initialized Demonic C project in current directory\n";
+    std::string current_name = std::filesystem::current_path().filename().string();
+    if (current_name.empty()) current_name = "my-project";
+    generate_project_files(".", current_name, template_type);
+    std::cout << "Initialized Demonic C project (" << template_type << ") in current directory\n";
 }
 
 static std::string format_dmc_code(const std::string& source) {
@@ -3991,7 +4160,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
         std::ostringstream out;
         out << "// Auto-generated Demonic C bindings for Python module: " << py_module << "\n";
-        out << "// Generated by dmc bindgen v1.6.0\n\n";
+        out << "// Generated by dmc bindgen v1.7.0\n\n";
         out << "import py;\n\n";
         out << "fn py_" << py_module << "_init() -> int {\n";
         out << "    return py_import(\"" << py_module << "\");\n";
@@ -4108,7 +4277,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
         std::ostringstream out;
         out << "// Auto-generated Demonic C bindings for Rust crate/source: " << hp.filename().string() << "\n";
-        out << "// Generated by dmc bindgen v1.6.0\n\n";
+        out << "// Generated by dmc bindgen v1.7.0\n\n";
         for (const auto& lib : link_libs) {
             out << "#[link(\"" << lib << "\")]\n";
         }
@@ -4369,7 +4538,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
     std::ostringstream out;
     out << "// Auto-generated Demonic C bindings for " << hp.filename().string() << "\n";
-    out << "// Generated by dmc bindgen v1.6.0\n\n";
+    out << "// Generated by dmc bindgen v1.7.0\n\n";
     out << "#include <" << hp.filename().string() << ">\n";
     for (const auto& lib : link_libs) {
         out << "#link \"" << lib << "\"\n";
@@ -4962,7 +5131,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v1.6.0)\n"
+              << "Demonic C Interactive REPL (v1.7.0)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -5028,6 +5197,356 @@ static int cmd_repl(const char* argv0) {
     return 0;
 }
 
+static int cmd_eval(int argc, char** argv, const char* argv0) {
+    if (argc < 2) {
+        std::cerr << "dmc eval: expression or code snippet required\n"
+                  << "usage: dmc eval <expr> or dmc -e <expr>\n\n"
+                  << "examples:\n"
+                  << "  dmc eval 'println(\"Hello World!\")'\n"
+                  << "  dmc eval '40 + 2'\n"
+                  << "  dmc eval 'println(os_platform())'\n";
+        return 1;
+    }
+    std::string snippet;
+    for (int i = 1; i < argc; ++i) {
+        if (!snippet.empty()) snippet += " ";
+        snippet += argv[i];
+    }
+    while (!snippet.empty() && (snippet.front() == ' ' || snippet.front() == '\t')) snippet.erase(snippet.begin());
+    while (!snippet.empty() && (snippet.back() == ' ' || snippet.back() == '\t' || snippet.back() == '\r' || snippet.back() == '\n')) snippet.pop_back();
+
+    // Convert multi-character single-quoted strings 'hello' to "hello" for shell ergonomics
+    std::string converted;
+    bool in_single = false;
+    size_t sq_start = 0;
+    for (size_t i = 0; i < snippet.size(); ++i) {
+        if (snippet[i] == '\'') {
+            if (!in_single) {
+                in_single = true;
+                sq_start = converted.size();
+                converted += '\'';
+            } else {
+                in_single = false;
+                size_t inner_len = converted.size() - sq_start - 1;
+                if (inner_len > 1 && !(inner_len == 2 && converted[sq_start + 1] == '\\')) {
+                    converted[sq_start] = '"';
+                    converted += '"';
+                } else {
+                    converted += '\'';
+                }
+            }
+        } else {
+            converted += snippet[i];
+        }
+    }
+    snippet = converted;
+
+    std::string full_code;
+    if (snippet.find("fn main") != std::string::npos) {
+        full_code = snippet;
+    } else {
+        std::string imports_block;
+        std::string body = snippet;
+        while (true) {
+            while (!body.empty() && (body.front() == ' ' || body.front() == '\t' || body.front() == '\r' || body.front() == '\n')) body.erase(body.begin());
+            if (body.rfind("import ", 0) == 0 || body.rfind("summon ", 0) == 0) {
+                size_t semi = body.find(';');
+                if (semi != std::string::npos) {
+                    imports_block += body.substr(0, semi + 1) + "\n";
+                    body = body.substr(semi + 1);
+                    continue;
+                }
+            }
+            break;
+        }
+        while (!body.empty() && (body.front() == ' ' || body.front() == '\t' || body.front() == '\r' || body.front() == '\n')) body.erase(body.begin());
+
+        full_code = imports_block;
+        full_code += "fn main() -> int {\n";
+        if (body.find(';') == std::string::npos &&
+            body.find("println(") == std::string::npos &&
+            body.rfind("let ", 0) != 0 &&
+            body.rfind("var ", 0) != 0 &&
+            body.rfind("return ", 0) != 0) {
+            full_code += "    println(" + body + ");\n";
+        } else {
+            full_code += "    " + body + "\n";
+            if (!body.empty() && body.back() != ';' && body.back() != '}') {
+                full_code += ";\n";
+            }
+        }
+        full_code += "    return 0;\n}\n";
+    }
+
+#ifdef _WIN32
+    unsigned long cur_pid = (unsigned long)GetCurrentProcessId();
+#else
+    unsigned long cur_pid = (unsigned long)getpid();
+#endif
+    std::string tmp_file = ".dmc_eval_" + std::to_string(cur_pid) + ".dmc";
+    {
+        std::ofstream out(tmp_file);
+        if (!out) {
+            std::cerr << "dmc eval: failed to create temporary file\n";
+            return 1;
+        }
+        out << full_code;
+    }
+
+    int res = cmd_run(tmp_file, {}, argv0, true /* no-cache */);
+    std::error_code ec;
+    std::filesystem::remove(tmp_file, ec);
+    return res;
+}
+
+static int cmd_explain(int argc, char** argv) {
+    if (argc < 2 || std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h" || std::string(argv[1]) == "list") {
+        std::cout << "Demonic C Interactive Topic & Diagnostic Explainer (v1.7.0)\n\n"
+                  << "usage: dmc explain <topic|code>\n\n"
+                  << "Available Topics:\n"
+                  << "  pointers   - Raw memory addresses, dereferencing (*p), and address-of (&x)\n"
+                  << "  nullable   - Null-safety with '?T' types and safe unwrapping\n"
+                  << "  defer      - Guaranteed resource cleanup before function exit\n"
+                  << "  ffi        - Dynamic polyglot FFI to C, C++, Python, JavaScript & Rust\n"
+                  << "  simd       - Hardware 128-bit SIMD vector types (f32x4, i32x4)\n"
+                  << "  match      - Pattern matching on enums and algebraic variants\n"
+                  << "  memory     - Raw heap buffers (mem_alloc) & zero-alloc arena rotators\n"
+                  << "  struct     - Custom data structures, fields, and method receivers\n"
+                  << "  prompt     - Interactive terminal stdin input with automatic trimming\n"
+                  << "  term       - ANSI terminal styling, colors, and screen controls\n"
+                  << "  fs         - Modern filesystem utilities (fs_read, fs_write, fs_copy, fs_mkdir)\n"
+                  << "  strings    - String manipulation, concatenation (+), and text helpers\n\n"
+                  << "Diagnostic Error & Warning Codes:\n"
+                  << "  E001       - Syntax errors, unexpected tokens, missing semicolons/braces\n"
+                  << "  W001       - Unused variable or unread parameter warning\n"
+                  << "  W002       - Type mismatch or implicit conversion warning\n";
+        return 0;
+    }
+
+    std::string topic = argv[1];
+    std::transform(topic.begin(), topic.end(), topic.begin(), ::tolower);
+
+    if (topic == "pointers" || topic == "ptr" || topic == "pointer") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Pointers (*T, &x, *p)\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  Pointers hold the direct memory address of a value in RAM.\n"
+                  << "  In Demonic C, pointers give you full bare-metal control with zero overhead.\n\n"
+                  << "Syntax:\n"
+                  << "  let p: *int = &x;     // Address-of operator '&' gets memory location\n"
+                  << "  println(*p);          // Dereference operator '*' reads the value at address\n"
+                  << "  *p = 100;             // Mutate the value stored at that address\n\n"
+                  << "Example:\n"
+                  << "  var number: int = 42;\n"
+                  << "  let ptr: *int = &number;\n"
+                  << "  *ptr = 99;\n"
+                  << "  println(number);      // Prints 99!\n"
+                  << "================================================================================\n";
+    } else if (topic == "nullable" || topic == "null" || topic == "null-safety") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Null-Safety (?T, null)\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  Demonic C protects your programs from null-pointer crashes (segfaults).\n"
+                  << "  Normal types cannot be null. To allow null, prefix the type with '?' (e.g. ?string, ?*int).\n\n"
+                  << "Best Practices:\n"
+                  << "  Always verify that a nullable variable is not null before using it:\n\n"
+                  << "Example:\n"
+                  << "  var greeting: ?string = null;\n"
+                  << "  if (greeting != null) {\n"
+                  << "      println(greeting);\n"
+                  << "  } else {\n"
+                  << "      println(\"greeting is currently unset!\");\n"
+                  << "  }\n"
+                  << "================================================================================\n";
+    } else if (topic == "defer") {
+        std::cout << "================================================================================\n"
+                  << "Topic: defer\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  'defer' schedules a statement or block to execute right before the current\n"
+                  << "  function exits, regardless of whether it returns early or normally.\n\n"
+                  << "Why use it:\n"
+                  << "  Never forget to close files, free memory, or release locks again!\n\n"
+                  << "Example:\n"
+                  << "  fn read_config(path: string) -> string {\n"
+                  << "      let f = file_open(path, \"r\");\n"
+                  << "      if (f < 0) { return \"\"; }\n"
+                  << "      defer file_close(f); // Guaranteed to run when read_config() returns\n\n"
+                  << "      let content = file_read(f);\n"
+                  << "      return content;\n"
+                  << "  }\n"
+                  << "================================================================================\n";
+    } else if (topic == "ffi" || topic == "polyglot" || topic == "bindgen") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Polyglot Interop & Dynamic FFI\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  Demonic C seamlessly integrates with C, C++, Python, JavaScript, and Rust.\n\n"
+                  << "Options:\n"
+                  << "  1. Dynamic C FFI:\n"
+                  << "     import ffi;\n"
+                  << "     let lib = ffi_open(\"raylib.dll\");\n"
+                  << "     let fn_ptr = ffi_symbol(lib, \"InitWindow\");\n\n"
+                  << "  2. Python Bridge:\n"
+                  << "     import py;\n"
+                  << "     let math_val = py_eval(\"math.sin(1.5)\");\n\n"
+                  << "  3. JavaScript Bridge:\n"
+                  << "     import js;\n"
+                  << "     let js_val = js_eval(\"new Date().toISOString()\");\n\n"
+                  << "  4. Auto-Generating Bindings:\n"
+                  << "     dmc bindgen header.h -o header_bindings.dmc\n"
+                  << "     dmc bindgen --py numpy\n"
+                  << "     dmc bindgen --rust my_crate.rs\n"
+                  << "================================================================================\n";
+    } else if (topic == "simd" || topic == "vectors") {
+        std::cout << "================================================================================\n"
+                  << "Topic: 128-bit Hardware SIMD Vectors (f32x4, i32x4)\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  Single Instruction Multiple Data (SIMD) lets the CPU compute 4 operations\n"
+                  << "  in parallel in a single clock cycle using x86 SSE/AVX or ARM NEON registers.\n\n"
+                  << "Example:\n"
+                  << "  let v1 = f32x4(1.0, 2.0, 3.0, 4.0);\n"
+                  << "  let v2 = f32x4(10.0, 20.0, 30.0, 40.0);\n"
+                  << "  let sum = v1.add(v2);   // [11.0, 22.0, 33.0, 44.0]\n"
+                  << "  let dot = v1.dot(v2);   // 300.0\n"
+                  << "================================================================================\n";
+    } else if (topic == "match" || topic == "enum") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Pattern Matching & Enums\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  Type-safe algebraic data types (tagged unions) with pattern matching.\n\n"
+                  << "Example:\n"
+                  << "  enum Result { Ok(int), Err(string) }\n\n"
+                  << "  fn handle_result(r: Result) {\n"
+                  << "      match r {\n"
+                  << "          Result::Ok(val) => println(\"Success: \" + text_from_int(val)),\n"
+                  << "          Result::Err(msg) => println(\"Error: \" + msg),\n"
+                  << "      }\n"
+                  << "  }\n"
+                  << "================================================================================\n";
+    } else if (topic == "prompt" || topic == "cli" || topic == "input") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Terminal Input (prompt)\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  'prompt(msg)' prints the message prompt to stdout, flushes the stream,\n"
+                  << "  and reads a line from stdin, automatically trimming trailing newlines.\n\n"
+                  << "Example:\n"
+                  << "  let name = prompt(\"What is your name? \");\n"
+                  << "  println(\"Hello, \" + name + \"!\");\n"
+                  << "================================================================================\n";
+    } else if (topic == "term" || topic == "color" || topic == "colors") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Terminal Utilities & ANSI Styling (stdlib/term)\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  The 'term' module provides standard terminal styling and color helpers.\n\n"
+                  << "Example:\n"
+                  << "  import term;\n\n"
+                  << "  println(term_bold(term_green(\"Build successful!\")));\n"
+                  << "  println(term_red(\"Warning: deprecated API\"));\n"
+                  << "  println(term_cyan(\"Server listening on port 8080\"));\n"
+                  << "================================================================================\n";
+    } else if (topic == "fs" || topic == "files") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Filesystem Utilities (stdlib/fs)\n"
+                  << "================================================================================\n"
+                  << "Functions:\n"
+                  << "  fs_read(path)          - Read entire file as string\n"
+                  << "  fs_write(path, text)   - Overwrite file with content\n"
+                  << "  fs_append(path, text)  - Append content to file\n"
+                  << "  fs_copy(src, dst)      - Fast binary file copy\n"
+                  << "  fs_mkdir(path)         - Create directory\n"
+                  << "  fs_exists(path)        - Check if file exists (returns 1 or 0)\n"
+                  << "  fs_remove(path)        - Delete file\n"
+                  << "  fs_size(path)          - Get file size in bytes\n"
+                  << "================================================================================\n";
+    } else if (topic == "strings" || topic == "text") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Strings & Text Helpers (stdlib/strings)\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  Demonic C supports UTF-8 strings, automatic '+' concatenation, and rich helpers.\n\n"
+                  << "Functions:\n"
+                  << "  str_len(s)             - String length\n"
+                  << "  str_starts_with(s, p)  - Check if string starts with prefix\n"
+                  << "  str_ends_with(s, suf)  - Check if string ends with suffix\n"
+                  << "  str_contains(s, sub)   - Check if string contains substring\n"
+                  << "  str_index_of(s, sub)   - Find first index of substring\n"
+                  << "  str_trim(s)            - Strip leading and trailing whitespace\n"
+                  << "  str_to_upper(s)        - Convert to uppercase\n"
+                  << "  str_to_lower(s)        - Convert to lowercase\n"
+                  << "  str_replace(s, o, n)   - Replace occurrences of substring\n"
+                  << "  str_repeat(s, n)       - Repeat string n times\n"
+                  << "================================================================================\n";
+    } else if (topic == "memory" || topic == "arena") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Memory & Bump Arenas\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  Demonic C provides both direct heap memory management and lightning-fast\n"
+                  << "  bump arenas for zero-fragmentation bulk allocations.\n\n"
+                  << "Example:\n"
+                  << "  let arena = arena_new(1048576); // 1MB arena\n"
+                  << "  let offset = arena_alloc(arena, 256);\n"
+                  << "  arena_reset(arena);             // Instant O(1) reset of all allocations!\n"
+                  << "  arena_free(arena);\n"
+                  << "================================================================================\n";
+    } else if (topic == "struct" || topic == "structs") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Structs and Methods\n"
+                  << "================================================================================\n"
+                  << "Example:\n"
+                  << "  struct Player {\n"
+                  << "      name: string,\n"
+                  << "      score: int;\n"
+                  << "  }\n\n"
+                  << "  fn (self: Player) display() {\n"
+                  << "      println(self.name + \": \" + text_from_int(self.score));\n"
+                  << "  }\n"
+                  << "================================================================================\n";
+    } else if (topic == "e001" || topic == "syntax") {
+        std::cout << "================================================================================\n"
+                  << "Diagnostic: E001 - Syntax Error\n"
+                  << "================================================================================\n"
+                  << "Common Causes:\n"
+                  << "  1. Missing semicolon ';' at the end of a statement.\n"
+                  << "  2. Unclosed parenthesis ')' or brace '}'.\n"
+                  << "  3. Typo in keywords (e.g. 'function' instead of 'fn').\n\n"
+                  << "Fix:\n"
+                  << "  Check the line and column number shown in the error diagnostic.\n"
+                  << "================================================================================\n";
+    } else if (topic == "w001" || topic == "unused") {
+        std::cout << "================================================================================\n"
+                  << "Diagnostic: W001 - Unused Variable Warning\n"
+                  << "================================================================================\n"
+                  << "What it means:\n"
+                  << "  A variable was declared with 'let' or 'var' but never read or referenced.\n\n"
+                  << "Fix:\n"
+                  << "  - Remove the unused variable, or\n"
+                  << "  - Prefix the variable name with an underscore '_' (e.g. let _unused = 0;)\n"
+                  << "================================================================================\n";
+    } else if (topic == "w002" || topic == "type") {
+        std::cout << "================================================================================\n"
+                  << "Diagnostic: W002 - Type Mismatch Warning\n"
+                  << "================================================================================\n"
+                  << "What it means:\n"
+                  << "  Assigning a value of one type to a variable of a different type without\n"
+                  << "  an explicit cast.\n\n"
+                  << "Fix:\n"
+                  << "  Use the 'as' casting operator: 'let x: int = float_val as int;'\n"
+                  << "================================================================================\n";
+    } else {
+        std::cout << "Unknown topic '" << topic << "'. Run 'dmc explain' to see all available topics.\n";
+        return 1;
+    }
+    return 0;
+}
+
 static int cmd_install_vscode() {
     const char* home = std::getenv("USERPROFILE");
 #ifndef _WIN32
@@ -5037,7 +5556,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.6.0";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.7.0";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -5096,18 +5615,48 @@ static int cmd_deprecate(int argc, char** argv) {
 }
 
 static int cmd_new(int argc, char** argv) {
-    std::vector<std::string> args(argv + 1, argv + argc);
-    if (args.empty()) {
-        std::cerr << "dmc new: usage: dmc new <project-name>\n";
+    std::string name;
+    std::string tmpl = "cli";
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a.rfind("--template=", 0) == 0) {
+            tmpl = a.substr(11);
+        } else if ((a == "-t" || a == "--template") && i + 1 < argc) {
+            tmpl = argv[++i];
+        } else if (a == "--help" || a == "-h") {
+            std::cout << "usage: dmc new <project-name> [--template=<cli|polyglot|game|lib>]\n\n"
+                      << "templates:\n"
+                      << "  cli       Command-line application starter (default)\n"
+                      << "  game      Interactive terminal game using prompt() & term styling\n"
+                      << "  polyglot  Multi-language project using Python, JS, and C FFI\n"
+                      << "  lib       Reusable library with exported modules and unit tests\n";
+            return 0;
+        } else if (name.empty()) {
+            name = a;
+        }
+    }
+    if (name.empty()) {
+        std::cerr << "dmc new: project name required\nusage: dmc new <project-name> [--template=<cli|polyglot|game|lib>]\n";
         return 1;
     }
-    new_project(args[0]);
+    new_project(name, tmpl);
     return 0;
 }
 
 static int cmd_init(int argc, char** argv) {
-    (void)argc; (void)argv;
-    init_project();
+    std::string tmpl = "cli";
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a.rfind("--template=", 0) == 0) {
+            tmpl = a.substr(11);
+        } else if ((a == "-t" || a == "--template") && i + 1 < argc) {
+            tmpl = argv[++i];
+        } else if (a == "--help" || a == "-h") {
+            std::cout << "usage: dmc init [--template=<cli|polyglot|game|lib>]\n";
+            return 0;
+        }
+    }
+    init_project(tmpl);
     return 0;
 }
 
@@ -5710,7 +6259,7 @@ static int cmd_check(int argc, char** argv) {
 
 static int cmd_info() {
     std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
-    std::cout << "  Version:       1.6.0\n";
+    std::cout << "  Version:       1.7.0\n";
     std::cout << "  Features:      Polyglot FFI (C/Rust/Python/JS), SIMD (f32x4/i32x4), #line source maps, bindgen, shared libs, freestanding, wasm\n";
     std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
 #ifdef _WIN32
@@ -5904,7 +6453,7 @@ static int cmd_update(int argc, char** argv) {
         return 1;
     }
     
-    std::string current_ver = "v1.6.0";
+    std::string current_ver = "v1.7.0";
     std::cout << "Current version: " << current_ver << "\n";
     std::cout << "Latest version:  " << latest_tag << "\n";
     
@@ -6035,6 +6584,8 @@ static void print_usage() {
               << "  c_code { ... }                  embed raw inline C code snippets\n\n"
               << "commands:\n"
               << "  run <src>       compile and run Demonic C source directly (or 'dmc <src>')\n"
+              << "  eval <expr>     evaluate one-liner expression or code (or 'dmc -e <expr>')\n"
+              << "  explain [topic] interactive explainer for language topics and diagnostics\n"
               << "  watch <src>     watch source file and rerun on save\n"
               << "  repl            interactive Demonic C read-eval-print loop\n"
               << "  build [src]     compile Demonic C source directly to executable binary\n"
@@ -6050,7 +6601,7 @@ static void print_usage() {
               << "  tokens <src>    dump lexed syntax token stream\n"
               << "  lsp             run LSP daemon (--install-vscode to setup editor)\n"
               << "  pkg             package manager commands\n"
-              << "  new <name>      create new project\n"
+              << "  new <name>      create new project (--template=<cli|polyglot|game|lib>)\n"
               << "  init            initialize project in current directory\n"
               << "  fmt [--check]   format or check .dmc files\n"
               << "  lint [--fix]    lint .dmc files for issues\n"
@@ -6088,13 +6639,21 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 1.6.0 (Demonic C -> C)\n";
+        std::cout << "dmc 1.7.0 (Demonic C -> C)\n";
         return 0;
     }
 
     if (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
         print_usage();
         return 0;
+    }
+
+    if (args[0] == "eval" || args[0] == "-e") {
+        return cmd_eval(argc - 1, argv + 1, argv[0]);
+    }
+
+    if (args[0] == "explain") {
+        return cmd_explain(argc - 1, argv + 1);
     }
 
     if (args[0] == "lsp" || args[0] == "--lsp") {
@@ -6121,7 +6680,7 @@ int main(int argc, char** argv) {
     }
     
     if (!args.empty() && args[0] == "init") {
-        return cmd_init(0, nullptr);
+        return cmd_init(argc - 1, argv + 1);
     }
     
     if (!args.empty() && args[0] == "fmt") {
@@ -6213,7 +6772,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 1.6.0 (Demonic C -> C)\n";
+            std::cout << "dmc 1.7.0 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {

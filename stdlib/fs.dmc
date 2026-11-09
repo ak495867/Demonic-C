@@ -1,4 +1,3 @@
-
 fn fs_read_to_string(path: string) -> string {
     return fs_read(path);
 }
@@ -21,4 +20,16 @@ fn fs_remove_file(path: string) -> int {
 
 fn fs_file_size(path: string) -> int {
     return fs_size(path);
+}
+
+fn fs_copy_file(src: string, dst: string) -> int {
+    return fs_copy(src, dst);
+}
+
+fn fs_create_dir(path: string) -> int {
+    return fs_mkdir(path);
+}
+
+fn fs_remove_dir(path: string) -> int {
+    return fs_rmdir(path);
 }

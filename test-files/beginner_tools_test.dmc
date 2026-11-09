@@ -1,0 +1,71 @@
+import strings;
+import term;
+import fs;
+
+#[test]
+fn test_string_helpers() -> int {
+    let up = str_to_upper("demonic c");
+    if (text_cmp(up, "DEMONIC C") != 0) { return 1; }
+
+    let low = str_to_lower("SYSTEMS CODE");
+    if (text_cmp(low, "systems code") != 0) { return 2; }
+
+    let rep = str_replace("banana", "na", "xx");
+    if (text_cmp(rep, "baxxna") != 0 && text_cmp(rep, "baxxxx") != 0) { return 3; }
+
+    let repeat_str = str_repeat("hi!", 3);
+    if (text_cmp(repeat_str, "hi!hi!hi!") != 0) { return 4; }
+
+    return 0;
+}
+
+#[test]
+fn test_term_helpers() -> int {
+    let red_text = term_red("error");
+    if (str_contains(red_text, "error") != 1) { return 1; }
+    if (str_contains(red_text, "31") != 1) { return 2; }
+
+    let bold_green = term_bold(term_green("ok"));
+    if (str_contains(bold_green, "ok") != 1) { return 3; }
+
+    return 0;
+}
+
+#[test]
+fn test_fs_helpers() -> int {
+    let src = "_test_copy_src.txt";
+    let dst = "_test_copy_dst.txt";
+
+    fs_write_string(src, "Demonic C File System Copy Test");
+    let copy_res = fs_copy_file(src, dst);
+    if (copy_res != 0) {
+        fs_remove_file(src);
+        return 1;
+    }
+
+    let read_back = fs_read_to_string(dst);
+    if (text_cmp(read_back, "Demonic C File System Copy Test") != 0) {
+        fs_remove_file(src);
+        fs_remove_file(dst);
+        return 2;
+    }
+
+    fs_remove_file(src);
+    fs_remove_file(dst);
+
+    let test_dir = "_test_mkdir_sandbox";
+    let dir_res = fs_create_dir(test_dir);
+    if (dir_res != 0) { return 3; }
+
+    let dir_file = test_dir + "/sample.txt";
+    fs_write_string(dir_file, "inside dir");
+    if (fs_file_exists(dir_file) != 1) {
+        fs_remove_file(dir_file);
+        fs_remove_dir(test_dir);
+        return 4;
+    }
+
+    fs_remove_file(dir_file);
+    fs_remove_dir(test_dir);
+    return 0;
+}

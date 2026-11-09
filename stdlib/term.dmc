@@ -1,0 +1,61 @@
+// stdlib/term.dmc - Demonic C Terminal Utilities & Colors
+
+fn term_clear_screen() {
+    term_clear();
+}
+
+fn term_style(code: string, text: string) -> string {
+    return term_color(code, text);
+}
+
+fn term_red(text: string) -> string {
+    return term_color("31", text);
+}
+
+fn term_green(text: string) -> string {
+    return term_color("32", text);
+}
+
+fn term_yellow(text: string) -> string {
+    return term_color("33", text);
+}
+
+fn term_blue(text: string) -> string {
+    return term_color("34", text);
+}
+
+fn term_magenta(text: string) -> string {
+    return term_color("35", text);
+}
+
+fn term_cyan(text: string) -> string {
+    return term_color("36", text);
+}
+
+fn term_white(text: string) -> string {
+    return term_color("37", text);
+}
+
+fn term_bold(text: string) -> string {
+    return term_color("1", text);
+}
+
+fn term_dim(text: string) -> string {
+    return term_color("2", text);
+}
+
+fn term_italic(text: string) -> string {
+    return term_color("3", text);
+}
+
+fn term_underline(text: string) -> string {
+    return term_color("4", text);
+}
+
+fn term_reset() -> string {
+    return "\033[0m";
+}
+
+fn term_prompt(msg: string) -> string {
+    return prompt(msg);
+}
