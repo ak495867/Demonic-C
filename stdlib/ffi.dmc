@@ -1,0 +1,29 @@
+// Demonic C Standard Library: Dynamic Foreign Function Interface (FFI)
+
+extern "C" {
+    fn ffi_open(path: string) -> int;
+    fn ffi_symbol(handle: int, symbol: string) -> *void;
+    fn ffi_close(handle: int) -> int;
+    fn ffi_error() -> string;
+
+    fn ffi_call_0(fn_ptr: *void) -> int;
+    fn ffi_call_1(fn_ptr: *void, a1: int) -> int;
+    fn ffi_call_2(fn_ptr: *void, a1: int, a2: int) -> int;
+    fn ffi_call_3(fn_ptr: *void, a1: int, a2: int, a3: int) -> int;
+    fn ffi_call_4(fn_ptr: *void, a1: int, a2: int, a3: int, a4: int) -> int;
+    fn ffi_call_5(fn_ptr: *void, a1: int, a2: int, a3: int, a4: int, a5: int) -> int;
+    fn ffi_call_6(fn_ptr: *void, a1: int, a2: int, a3: int, a4: int, a5: int, a6: int) -> int;
+
+    fn ffi_call_str_0(fn_ptr: *void) -> string;
+    fn ffi_call_str_1(fn_ptr: *void, a1: int) -> string;
+    fn ffi_call_str_2(fn_ptr: *void, a1: int, a2: int) -> string;
+    fn ffi_call_str_s(fn_ptr: *void, a1: string) -> string;
+
+    fn ffi_call_f_1(fn_ptr: *void, a1: float) -> float;
+    fn ffi_call_f_2(fn_ptr: *void, a1: float, a2: float) -> float;
+
+    fn ffi_call_v_0(fn_ptr: *void) -> void;
+    fn ffi_call_v_1(fn_ptr: *void, a1: int) -> void;
+    fn ffi_call_v_2(fn_ptr: *void, a1: int, a2: int) -> void;
+    fn ffi_call_v_s(fn_ptr: *void, a1: string) -> void;
+}

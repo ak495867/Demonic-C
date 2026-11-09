@@ -1,0 +1,38 @@
+// Polyglot Python Bridge Test Suite for Demonic C
+
+import py;
+
+#[test]
+fn test_python_eval_math() -> int {
+    py_init();
+    let res = py_eval("10 * 4 + 2");
+    if (res != "42") {
+        return 1;
+    }
+    return 0;
+}
+
+#[test]
+fn test_python_eval_strings() -> int {
+    let s = py_eval("'demonic ' + 'c'");
+    if (s != "demonic c") {
+        return 1;
+    }
+    return 0;
+}
+
+#[test]
+fn test_python_run_and_eval() -> int {
+    let rc = py_run("x = 42\n");
+    if (rc != 0) {
+        return 101;
+    }
+
+    let sqrt_res = py_eval("math.isqrt(144)");
+    if (sqrt_res != "12") {
+        return 102;
+    }
+
+    py_finalize();
+    return 0;
+}

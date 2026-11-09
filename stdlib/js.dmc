@@ -1,0 +1,6 @@
+// Demonic C Standard Library: JavaScript Polyglot Bridge
+
+extern "C" {
+    fn js_run(code: string) -> int;
+    fn js_eval(expr: string) -> string;
+}

@@ -1,0 +1,30 @@
+// Polyglot JavaScript Bridge Test Suite for Demonic C
+
+import js;
+
+#[test]
+fn test_js_eval_arithmetic() -> int {
+    let res = js_eval("10 * 4 + 2");
+    if (res != "42") {
+        return 1;
+    }
+    return 0;
+}
+
+#[test]
+fn test_js_eval_string() -> int {
+    let s = js_eval("'demonic ' + 'c'");
+    if (s != "demonic c") {
+        return 1;
+    }
+    return 0;
+}
+
+#[test]
+fn test_js_eval_json_array() -> int {
+    let arr = js_eval("[1, 2, 3].map(x => x * 2)");
+    if (arr != "[2,4,6]") {
+        return 1;
+    }
+    return 0;
+}

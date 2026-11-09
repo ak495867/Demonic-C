@@ -104,7 +104,7 @@ dmc hello.dmc -o hello.c
 usage: dmc <source.dmc> [args...]       compile and run Demonic C program
        dmc run <source.dmc> [args...]   compile and run Demonic C program
        dmc build <source.dmc> [options] compile to executable, shared lib, or wasm
-       dmc bindgen <header.h> [options] generate Demonic C bindings from C header
+       dmc bindgen <input> [options]    generate bindings from C header, Rust crate, or Python module
        dmc <source.dmc> -o <file.c>     transpile to C code
 
 options:
@@ -129,7 +129,7 @@ commands:
   watch <src>     watch source file and rerun on save
   repl            interactive Demonic C read-eval-print loop
   build [src]     compile Demonic C source directly to executable binary
-  bindgen <hdr.h> generate Demonic C bindings from C header
+  bindgen <input> generate Demonic C bindings from C header, Rust crate, or Python module
   check [src]     fast syntax & semantic check without compiling binary
   clean           clear build cache and temporary artifacts
   heal / doctor   diagnose toolchain health and self-heal issues
@@ -527,6 +527,61 @@ Demonic C transpiles code with accurate `#line <line> "<file>"` directives. When
 - Breakpoints and stack traces point directly to your `.dmc` source lines.
 - AddressSanitizer and UndefinedBehaviorSanitizer error reports highlight `.dmc` code.
 - Pass `--no-line-directives` if clean intermediate C output without preprocessor line tags is desired.
+
+### 18. Universal Polyglot Interoperability (FFI, Python, JavaScript, & Rust)
+Demonic C features a first-class, zero-friction polyglot interop runtime enabling developers to load, call, and orchestrate libraries written in any programming language:
+
+#### 1. Dynamic Runtime FFI (`import ffi;`)
+Load dynamic libraries (`.dll`, `.so`, `.dylib`) at runtime and invoke exported functions dynamically:
+```dmc
+import ffi;
+
+fn main() -> int {
+    let h = ffi_open(""); // Open current process / executable
+    let puts_ptr = ffi_symbol(h, "puts");
+    if (puts_ptr != null) {
+        ffi_call_str_s(puts_ptr, "Hello dynamic FFI!");
+    }
+    ffi_close(h);
+    return 0;
+}
+```
+
+#### 2. Python Bridge (`import py;`)
+Execute Python code, import packages (NumPy, SciPy, custom modules), and evaluate expressions directly from Demonic C:
+```dmc
+import py;
+
+fn main() -> int {
+    let res = py_eval("10 * 4 + 2");
+    println("Result: " + res); // 42
+
+    let sqrt_val = py_eval("math.isqrt(144)");
+    println("Square root: " + sqrt_val); // 12
+    return 0;
+}
+```
+
+#### 3. JavaScript Bridge (`import js;`)
+Execute JavaScript expressions and JSON transformations right inside Demonic C:
+```dmc
+import js;
+
+fn main() -> int {
+    let arr = js_eval("[1, 2, 3].map(x => x * 10)");
+    println("JS Array: " + arr); // [10,20,30]
+    return 0;
+}
+```
+
+#### 4. Polyglot `dmc bindgen` for Rust and Python
+```bash
+# Auto-generate type-safe Demonic C bindings from Rust sources:
+dmc bindgen lib.rs -o rust_bindings.dmc --link "my_rust_crate"
+
+# Auto-generate Demonic C wrappers for any installed Python module:
+dmc bindgen --py math -o math_bindings.dmc
+```
 
 ---
 

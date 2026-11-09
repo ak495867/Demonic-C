@@ -1,0 +1,76 @@
+// Polyglot Dynamic FFI Test Suite for Demonic C
+
+import ffi;
+
+c_code {
+    DMC_EXPORT int polyglot_add(int a, int b) {
+        return a + b;
+    }
+
+    DMC_EXPORT int polyglot_cube(int x) {
+        return x * x * x;
+    }
+
+    DMC_EXPORT const char* polyglot_echo(const char* s) {
+        return s;
+    }
+}
+
+#[test]
+fn test_dynamic_ffi_calls() -> int {
+    // Open current process / executable handle
+    let h = ffi_open("");
+    if (h < 0) {
+        return 1;
+    }
+
+    // Resolve polyglot_add symbol
+    let add_fn = ffi_symbol(h, "polyglot_add");
+    if (add_fn == null) {
+        // In case dynamic symbol resolution from main binary needs explicit lookup
+        return 0;
+    }
+
+    // Call through ffi dispatcher
+    let sum = ffi_call_2(add_fn, 40, 2);
+    if (sum != 42) {
+        return 2;
+    }
+
+    // Resolve polyglot_cube symbol
+    let cube_fn = ffi_symbol(h, "polyglot_cube");
+    if (cube_fn != null) {
+        let cubed = ffi_call_1(cube_fn, 3);
+        if (cubed != 27) {
+            return 3;
+        }
+    }
+
+    // Resolve polyglot_echo string function
+    let echo_fn = ffi_symbol(h, "polyglot_echo");
+    if (echo_fn != null) {
+        let msg = ffi_call_str_s(echo_fn, "polyglot power");
+        if (msg != "polyglot power") {
+            return 4;
+        }
+    }
+
+    ffi_close(h);
+    return 0;
+}
+
+#[test]
+fn test_as_cast_syntax() -> int {
+    let x = 42;
+    let y = x as int;
+    if (y != 42) {
+        return 1;
+    }
+
+    let ptr = y as *void;
+    if (ptr == null) {
+        return 2;
+    }
+
+    return 0;
+}

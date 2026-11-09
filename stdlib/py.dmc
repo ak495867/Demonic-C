@@ -1,0 +1,10 @@
+// Demonic C Standard Library: Python Polyglot Bridge
+
+extern "C" {
+    fn py_init() -> int;
+    fn py_finalize() -> int;
+    fn py_run(code: string) -> int;
+    fn py_eval(expr: string) -> string;
+    fn py_call(fn_name: string, arg: string) -> string;
+    fn py_import(module_name: string) -> int;
+}

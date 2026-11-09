@@ -140,6 +140,7 @@ static std::vector<Token> lex(const std::string& source) {
 static std::string ctype(const std::string& type) {
     if (type == "string") return "const char*";
     if (type == "const unsigned char*") return "const unsigned char*";
+    if (type == "void*" || type == "*void") return "void*";
     if (type == "u8") return "unsigned char";
     if (type == "i32" || type == "int") return "int";
     if (type == "u32") return "unsigned int";
@@ -167,7 +168,7 @@ static std::string ctype(const std::string& type) {
     return type.empty() ? "long long" : type;
 }
 
-static const std::vector<std::string> BUILTIN_MODULES = {"io", "text", "math", "mem", "core", "process", "fs", "collections", "low", "json", "http", "datetime", "regex", "db"};
+static const std::vector<std::string> BUILTIN_MODULES = {"io", "text", "math", "mem", "core", "process", "fs", "collections", "low", "json", "http", "datetime", "regex", "db", "ffi", "py", "js"};
 
 static bool is_builtin_module(const std::string& name) {
     for (auto& m : BUILTIN_MODULES) if (m == name) return true;
@@ -223,10 +224,10 @@ public:
             out << "typedef unsigned int u32;\n";
             out << "typedef unsigned char u8;\n";
             out << "#ifdef _WIN32\n";
-            out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <io.h>\n#include <direct.h>\n#include <sys/timeb.h>\n";
+            out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <windows.h>\n#include <io.h>\n#include <direct.h>\n#include <sys/timeb.h>\n";
             out << "#define NSCLOSE closesocket\n";
             out << "#else\n";
-            out << "#include <sys/types.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n";
+            out << "#include <sys/types.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n#include <dlfcn.h>\n";
             out << "#define NSCLOSE close\n";
             out << "#endif\n";
             out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n\n";
@@ -1454,6 +1455,233 @@ const char *sha256(const char *str) {
         out << "long long syscall_h(long long n, long long a1, long long a2) { (void)n; (void)a1; (void)a2; return -1; }\n";
         out << "long long interrupt(long long n) { (void)n; return -1; }\n";
         out << "#endif\n\n";
+
+        /* Demonic C Polyglot Dynamic FFI */
+        out << "static void *_dmc_ffi_handles[512] = {NULL};\n";
+        out << "static int _dmc_ffi_next = 1;\n";
+        out << "static char _dmc_ffi_err[1024] = {0};\n";
+        out << "static void _dmc_ffi_set_err(const char *err) {\n";
+        out << "  if (!err) { _dmc_ffi_err[0] = 0; return; }\n";
+        out << "  strncpy(_dmc_ffi_err, err, sizeof(_dmc_ffi_err) - 1);\n";
+        out << "  _dmc_ffi_err[sizeof(_dmc_ffi_err) - 1] = 0;\n";
+        out << "}\n";
+        out << "long long ffi_open(const char *path) {\n";
+        out << "  _dmc_ffi_set_err(NULL);\n";
+        out << "  if (!path || !path[0]) {\n";
+        out << "#ifdef _WIN32\n";
+        out << "    HMODULE h = GetModuleHandleA(NULL);\n";
+        out << "    if (!h) { _dmc_ffi_set_err(\"GetModuleHandle failed\"); return -1; }\n";
+        out << "    int id = _dmc_ffi_next++; _dmc_ffi_handles[id % 512] = (void*)h; return id;\n";
+        out << "#else\n";
+        out << "    void *h = dlopen(NULL, RTLD_LAZY | RTLD_GLOBAL);\n";
+        out << "    if (!h) { _dmc_ffi_set_err(dlerror()); return -1; }\n";
+        out << "    int id = _dmc_ffi_next++; _dmc_ffi_handles[id % 512] = h; return id;\n";
+        out << "#endif\n";
+        out << "  }\n";
+        out << "#ifdef _WIN32\n";
+        out << "  HMODULE h = LoadLibraryA(path);\n";
+        out << "  if (!h) { char b[256]; snprintf(b, sizeof(b), \"LoadLibrary failed for '%s' (code %lu)\", path, (unsigned long)GetLastError()); _dmc_ffi_set_err(b); return -1; }\n";
+        out << "  int id = _dmc_ffi_next++; _dmc_ffi_handles[id % 512] = (void*)h; return id;\n";
+        out << "#else\n";
+        out << "  void *h = dlopen(path, RTLD_LAZY | RTLD_GLOBAL);\n";
+        out << "  if (!h) { _dmc_ffi_set_err(dlerror()); return -1; }\n";
+        out << "  int id = _dmc_ffi_next++; _dmc_ffi_handles[id % 512] = h; return id;\n";
+        out << "#endif\n";
+        out << "}\n";
+        out << "void *ffi_symbol(long long handle, const char *symbol) {\n";
+        out << "  _dmc_ffi_set_err(NULL);\n";
+        out << "  if (!symbol) return NULL;\n";
+        out << "  void *lib = NULL;\n";
+        out << "  if (handle > 0) { lib = _dmc_ffi_handles[handle % 512]; }\n";
+        out << "  else {\n";
+        out << "#ifdef _WIN32\n";
+        out << "    lib = (void*)GetModuleHandleA(NULL);\n";
+        out << "#else\n";
+        out << "    lib = RTLD_DEFAULT;\n";
+        out << "#endif\n";
+        out << "  }\n";
+        out << "  if (!lib) { _dmc_ffi_set_err(\"Invalid library handle\"); return NULL; }\n";
+        out << "#ifdef _WIN32\n";
+        out << "  void *fn = (void*)GetProcAddress((HMODULE)lib, symbol);\n";
+        out << "  if (!fn) { char b[256]; snprintf(b, sizeof(b), \"GetProcAddress failed for '%s' (code %lu)\", symbol, (unsigned long)GetLastError()); _dmc_ffi_set_err(b); }\n";
+        out << "  return fn;\n";
+        out << "#else\n";
+        out << "  void *fn = dlsym(lib, symbol);\n";
+        out << "  if (!fn) { const char *e = dlerror(); _dmc_ffi_set_err(e ? e : \"Symbol not found\"); }\n";
+        out << "  return fn;\n";
+        out << "#endif\n";
+        out << "}\n";
+        out << "long long ffi_close(long long handle) {\n";
+        out << "  if (handle <= 0) return -1;\n";
+        out << "  void *lib = _dmc_ffi_handles[handle % 512];\n";
+        out << "  if (!lib) return -1;\n";
+        out << "  _dmc_ffi_handles[handle % 512] = NULL;\n";
+        out << "#ifdef _WIN32\n";
+        out << "  return FreeLibrary((HMODULE)lib) ? 0 : -1;\n";
+        out << "#else\n";
+        out << "  return dlclose(lib) == 0 ? 0 : -1;\n";
+        out << "#endif\n";
+        out << "}\n";
+        out << "const char *ffi_error(void) { return _dmc_ffi_err; }\n";
+        out << "long long ffi_call_0(void *fn) { if (!fn) return 0; typedef long long (*f)(void); return ((f)fn)(); }\n";
+        out << "long long ffi_call_1(void *fn, long long a1) { if (!fn) return 0; typedef long long (*f)(long long); return ((f)fn)(a1); }\n";
+        out << "long long ffi_call_2(void *fn, long long a1, long long a2) { if (!fn) return 0; typedef long long (*f)(long long, long long); return ((f)fn)(a1, a2); }\n";
+        out << "long long ffi_call_3(void *fn, long long a1, long long a2, long long a3) { if (!fn) return 0; typedef long long (*f)(long long, long long, long long); return ((f)fn)(a1, a2, a3); }\n";
+        out << "long long ffi_call_4(void *fn, long long a1, long long a2, long long a3, long long a4) { if (!fn) return 0; typedef long long (*f)(long long, long long, long long, long long); return ((f)fn)(a1, a2, a3, a4); }\n";
+        out << "long long ffi_call_5(void *fn, long long a1, long long a2, long long a3, long long a4, long long a5) { if (!fn) return 0; typedef long long (*f)(long long, long long, long long, long long, long long); return ((f)fn)(a1, a2, a3, a4, a5); }\n";
+        out << "long long ffi_call_6(void *fn, long long a1, long long a2, long long a3, long long a4, long long a5, long long a6) { if (!fn) return 0; typedef long long (*f)(long long, long long, long long, long long, long long, long long); return ((f)fn)(a1, a2, a3, a4, a5, a6); }\n";
+        out << "const char *ffi_call_str_0(void *fn) { if (!fn) return \"\"; typedef const char* (*f)(void); const char *r = ((f)fn)(); return r ? r : \"\"; }\n";
+        out << "const char *ffi_call_str_1(void *fn, long long a1) { if (!fn) return \"\"; typedef const char* (*f)(long long); const char *r = ((f)fn)(a1); return r ? r : \"\"; }\n";
+        out << "const char *ffi_call_str_2(void *fn, long long a1, long long a2) { if (!fn) return \"\"; typedef const char* (*f)(long long, long long); const char *r = ((f)fn)(a1, a2); return r ? r : \"\"; }\n";
+        out << "const char *ffi_call_str_s(void *fn, const char *a1) { if (!fn) return \"\"; typedef const char* (*f)(const char*); const char *r = ((f)fn)(a1); return r ? r : \"\"; }\n";
+        out << "double ffi_call_f_1(void *fn, double a1) { if (!fn) return 0.0; typedef double (*f)(double); return ((f)fn)(a1); }\n";
+        out << "double ffi_call_f_2(void *fn, double a1, double a2) { if (!fn) return 0.0; typedef double (*f)(double, double); return ((f)fn)(a1, a2); }\n";
+        out << "void ffi_call_v_0(void *fn) { if (!fn) return; typedef void (*f)(void); ((f)fn)(); }\n";
+        out << "void ffi_call_v_1(void *fn, long long a1) { if (!fn) return; typedef void (*f)(long long); ((f)fn)(a1); }\n";
+        out << "void ffi_call_v_2(void *fn, long long a1, long long a2) { if (!fn) return; typedef void (*f)(long long, long long); ((f)fn)(a1, a2); }\n";
+        out << "void ffi_call_v_s(void *fn, const char *a1) { if (!fn) return; typedef void (*f)(const char*); ((f)fn)(a1); }\n\n";
+
+        /* Demonic C Python Bridge */
+        out << "static char _dmc_py_buf[65536] = {0};\n";
+        out << "static char* _dmc_py_exec_capture(const char *cmd) {\n";
+        out << "  _dmc_py_buf[0] = 0;\n";
+        out << "#ifdef _WIN32\n";
+        out << "  FILE *p = _popen(cmd, \"r\");\n";
+        out << "#else\n";
+        out << "  FILE *p = popen(cmd, \"r\");\n";
+        out << "#endif\n";
+        out << "  if (!p) return _dmc_py_buf;\n";
+        out << "  size_t n = fread(_dmc_py_buf, 1, sizeof(_dmc_py_buf) - 1, p);\n";
+        out << "  _dmc_py_buf[n] = 0;\n";
+        out << "#ifdef _WIN32\n";
+        out << "  _pclose(p);\n";
+        out << "#else\n";
+        out << "  pclose(p);\n";
+        out << "#endif\n";
+        out << "  while (n > 0 && (_dmc_py_buf[n-1] == '\\r' || _dmc_py_buf[n-1] == '\\n')) { _dmc_py_buf[--n] = 0; }\n";
+        out << "  return _dmc_py_buf;\n";
+        out << "}\n";
+        out << "long long py_init(void) { return 0; }\n";
+        out << "long long py_finalize(void) { return 0; }\n";
+        out << "long long py_run(const char *code) {\n";
+        out << "  if (!code) return -1;\n";
+        out << "  char tmp[256];\n";
+        out << "#ifdef _WIN32\n";
+        out << "  snprintf(tmp, sizeof(tmp), \".dmc_py_tmp_%u.py\", (unsigned int)GetCurrentProcessId());\n";
+        out << "#else\n";
+        out << "  snprintf(tmp, sizeof(tmp), \"/tmp/.dmc_py_tmp_%d.py\", (int)getpid());\n";
+        out << "#endif\n";
+        out << "  FILE *f = fopen(tmp, \"w\");\n";
+        out << "  if (!f) return -1;\n";
+        out << "  fputs(code, f); fclose(f);\n";
+        out << "  char cmd[512];\n";
+        out << "#ifdef _WIN32\n";
+        out << "  snprintf(cmd, sizeof(cmd), \"python \\\"%s\\\"\", tmp);\n";
+        out << "#else\n";
+        out << "  snprintf(cmd, sizeof(cmd), \"python3 \\\"%s\\\" 2>/dev/null || python \\\"%s\\\"\", tmp, tmp);\n";
+        out << "#endif\n";
+        out << "  int res = system(cmd);\n";
+        out << "  remove(tmp);\n";
+        out << "  return res == 0 ? 0 : -1;\n";
+        out << "}\n";
+        out << "const char *py_eval(const char *expr) {\n";
+        out << "  if (!expr) return \"\";\n";
+        out << "  char tmp[256];\n";
+        out << "#ifdef _WIN32\n";
+        out << "  snprintf(tmp, sizeof(tmp), \".dmc_py_eval_%u.py\", (unsigned int)GetCurrentProcessId());\n";
+        out << "#else\n";
+        out << "  snprintf(tmp, sizeof(tmp), \"/tmp/.dmc_py_eval_%d.py\", (int)getpid());\n";
+        out << "#endif\n";
+        out << "  FILE *f = fopen(tmp, \"w\");\n";
+        out << "  if (!f) return \"\";\n";
+        out << "  fprintf(f, \"import sys, os, math, json\\ntry:\\n    res = %s\\n    if res is not None:\\n        print(res, end='')\\nexcept Exception as e:\\n    print('error:', e, end='')\\n\", expr);\n";
+        out << "  fclose(f);\n";
+        out << "  char cmd[512];\n";
+        out << "#ifdef _WIN32\n";
+        out << "  snprintf(cmd, sizeof(cmd), \"python \\\"%s\\\"\", tmp);\n";
+        out << "#else\n";
+        out << "  snprintf(cmd, sizeof(cmd), \"python3 \\\"%s\\\" 2>/dev/null || python \\\"%s\\\"\", tmp, tmp);\n";
+        out << "#endif\n";
+        out << "  char *out_str = _dmc_py_exec_capture(cmd);\n";
+        out << "  remove(tmp);\n";
+        out << "  return out_str;\n";
+        out << "}\n";
+        out << "const char *py_call(const char *fn_name, const char *arg) {\n";
+        out << "  if (!fn_name) return \"\";\n";
+        out << "  char expr[1024];\n";
+        out << "  snprintf(expr, sizeof(expr), \"%s(%s)\", fn_name, arg ? arg : \"\");\n";
+        out << "  return py_eval(expr);\n";
+        out << "}\n";
+        out << "long long py_import(const char *mod) {\n";
+        out << "  if (!mod) return -1;\n";
+        out << "  char code[256];\n";
+        out << "  snprintf(code, sizeof(code), \"import %s\", mod);\n";
+        out << "  return py_run(code);\n";
+        out << "}\n\n";
+
+        /* Demonic C JavaScript Bridge */
+        out << "static char _dmc_js_buf[65536] = {0};\n";
+        out << "static char* _dmc_js_exec_capture(const char *cmd) {\n";
+        out << "  _dmc_js_buf[0] = 0;\n";
+        out << "#ifdef _WIN32\n";
+        out << "  FILE *p = _popen(cmd, \"r\");\n";
+        out << "#else\n";
+        out << "  FILE *p = popen(cmd, \"r\");\n";
+        out << "#endif\n";
+        out << "  if (!p) return _dmc_js_buf;\n";
+        out << "  size_t n = fread(_dmc_js_buf, 1, sizeof(_dmc_js_buf) - 1, p);\n";
+        out << "  _dmc_js_buf[n] = 0;\n";
+        out << "#ifdef _WIN32\n";
+        out << "  _pclose(p);\n";
+        out << "#else\n";
+        out << "  pclose(p);\n";
+        out << "#endif\n";
+        out << "  while (n > 0 && (_dmc_js_buf[n-1] == '\\r' || _dmc_js_buf[n-1] == '\\n')) { _dmc_js_buf[--n] = 0; }\n";
+        out << "  return _dmc_js_buf;\n";
+        out << "}\n";
+        out << "long long js_run(const char *code) {\n";
+        out << "  if (!code) return -1;\n";
+        out << "  char tmp[256];\n";
+        out << "#ifdef _WIN32\n";
+        out << "  snprintf(tmp, sizeof(tmp), \".dmc_js_tmp_%u.js\", (unsigned int)GetCurrentProcessId());\n";
+        out << "#else\n";
+        out << "  snprintf(tmp, sizeof(tmp), \"/tmp/.dmc_js_tmp_%d.js\", (int)getpid());\n";
+        out << "#endif\n";
+        out << "  FILE *f = fopen(tmp, \"w\");\n";
+        out << "  if (!f) return -1;\n";
+        out << "  fputs(code, f); fclose(f);\n";
+        out << "  char cmd[512];\n";
+        out << "#ifdef _WIN32\n";
+        out << "  snprintf(cmd, sizeof(cmd), \"node \\\"%s\\\"\", tmp);\n";
+        out << "#else\n";
+        out << "  snprintf(cmd, sizeof(cmd), \"node \\\"%s\\\" 2>/dev/null || bun \\\"%s\\\" 2>/dev/null || deno run -A \\\"%s\\\"\", tmp, tmp, tmp);\n";
+        out << "#endif\n";
+        out << "  int res = system(cmd);\n";
+        out << "  remove(tmp);\n";
+        out << "  return res == 0 ? 0 : -1;\n";
+        out << "}\n";
+        out << "const char *js_eval(const char *expr) {\n";
+        out << "  if (!expr) return \"\";\n";
+        out << "  char tmp[256];\n";
+        out << "#ifdef _WIN32\n";
+        out << "  snprintf(tmp, sizeof(tmp), \".dmc_js_eval_%u.js\", (unsigned int)GetCurrentProcessId());\n";
+        out << "#else\n";
+        out << "  snprintf(tmp, sizeof(tmp), \"/tmp/.dmc_js_eval_%d.js\", (int)getpid());\n";
+        out << "#endif\n";
+        out << "  FILE *f = fopen(tmp, \"w\");\n";
+        out << "  if (!f) return \"\";\n";
+        out << "  fprintf(f, \"try {\\n  const res = (%s);\\n  if (res !== undefined && res !== null) {\\n    process.stdout.write(typeof res === 'object' ? JSON.stringify(res) : String(res));\\n  }\\n} catch (e) {\\n  process.stdout.write('error: ' + e.message);\\n}\\n\", expr);\n";
+        out << "  fclose(f);\n";
+        out << "  char cmd[512];\n";
+        out << "#ifdef _WIN32\n";
+        out << "  snprintf(cmd, sizeof(cmd), \"node \\\"%s\\\"\", tmp);\n";
+        out << "#else\n";
+        out << "  snprintf(cmd, sizeof(cmd), \"node \\\"%s\\\" 2>/dev/null || bun \\\"%s\\\" 2>/dev/null || deno run -A \\\"%s\\\"\", tmp, tmp, tmp);\n";
+        out << "#endif\n";
+        out << "  char *out_str = _dmc_js_exec_capture(cmd);\n";
+        out << "  remove(tmp);\n";
+        out << "  return out_str;\n";
+        out << "}\n\n";
     }
 
     Struct structure() {
@@ -1990,6 +2218,8 @@ const char *sha256(const char *str) {
             }
             if ((op == "==" || op == "!=") && (is_string_arg(left) || is_string_arg(right))) {
                 left = "(text_cmp(" + left + ", " + right + ") " + (op == "==" ? "==" : "!=") + " 0)";
+            } else if (op == "+" && (is_string_arg(left) || is_string_arg(right))) {
+                left = "text_concat(" + left + ", " + right + ")";
             } else {
                 std::string folded = try_fold(left, op, right);
                 if (!folded.empty()) {
@@ -2008,8 +2238,12 @@ const char *sha256(const char *str) {
     }
 
     std::string postfix(std::string val) {
-        while (peek() == "(" || peek() == "." || peek() == "[") {
-            if (peek() == "(") {
+        while (peek() == "(" || peek() == "." || peek() == "[" || peek() == "as") {
+            if (peek() == "as") {
+                take();
+                std::string t = type_name();
+                val = "((" + ctype(t) + ")(" + val + "))";
+            } else if (peek() == "(") {
                 take();
                 std::string args;
                 if (peek() != ")") {
@@ -2560,7 +2794,7 @@ const char *sha256(const char *str) {
                 }
             }
         }
-        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode"}) {
+        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval"}) {
             if (arg.rfind(std::string(fn) + "(", 0) == 0) return true;
         }
         auto open = arg.find('(');
@@ -2585,6 +2819,18 @@ const char *sha256(const char *str) {
         if (!val.empty() && val.front() == '"') return "string";
         if (is_enum_value(val)) return enum_type_of(val);
         if (val.rfind("(&", 0) == 0) return "*int";
+        if (val.rfind("((", 0) == 0) {
+            auto close = val.find(')', 2);
+            if (close != std::string::npos) {
+                std::string cast_t = val.substr(2, close - 2);
+                if (cast_t == "void*" || cast_t == "void *") return "*void";
+                if (cast_t == "const char*" || cast_t == "char*") return "string";
+                if (cast_t == "float") return "float";
+                if (cast_t == "double") return "f64";
+                if (cast_t == "int") return "int";
+                if (cast_t == "long long") return "i64";
+            }
+        }
         if (!val.empty() && val.front() == '(') {
             auto close_p = val.find(')');
             if (close_p != std::string::npos) {
@@ -2620,13 +2866,17 @@ const char *sha256(const char *str) {
         if (val.rfind("vec_new", 0) == 0) return "vec";
         if (val.rfind("map_new", 0) == 0) return "map";
         if (val.rfind("queue_new", 0) == 0) return "queue";
+        if (val.rfind("py_eval(", 0) == 0 || val.rfind("py_call(", 0) == 0 || val.rfind("js_eval(", 0) == 0 || val.rfind("ffi_call_str", 0) == 0 || val.rfind("ffi_error(", 0) == 0) return "string";
+        if (val.rfind("ffi_call_f", 0) == 0) return "f64";
+        if (val.rfind("ffi_symbol(", 0) == 0) return "*void";
+        if (val.rfind("ffi_open(", 0) == 0 || val.rfind("ffi_close(", 0) == 0 || val.rfind("py_init(", 0) == 0 || val.rfind("py_finalize(", 0) == 0 || val.rfind("py_run(", 0) == 0 || val.rfind("py_import(", 0) == 0 || val.rfind("js_run(", 0) == 0) return "int";
         for (const auto& s : structs_) {
             std::string prefix = "(" + s.name + "){";
             if (val.find(prefix) != std::string::npos || val.rfind(s.name + " {", 0) == 0 || val.rfind(s.name + "{", 0) == 0) {
                 return s.name;
             }
         }
-        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode"}) {
+        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "proc_exit", "string_copy", "string_slice", "arg_text", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval"}) {
             if (val.rfind(std::string(fn) + "(", 0) == 0) return "string";
         }
         auto open = val.find('(');
@@ -2728,6 +2978,13 @@ const char *sha256(const char *str) {
             "fs_read", "fs_write", "fs_append", "fs_exists", "fs_remove", "fs_size",
             "os_env", "os_set_env", "os_cwd", "os_platform", "os_arch",
             "sha256", "base64_encode", "base64_decode",
+            "ffi_open", "ffi_symbol", "ffi_close", "ffi_error",
+            "ffi_call_0", "ffi_call_1", "ffi_call_2", "ffi_call_3", "ffi_call_4", "ffi_call_5", "ffi_call_6",
+            "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s",
+            "ffi_call_f_1", "ffi_call_f_2",
+            "ffi_call_v_0", "ffi_call_v_1", "ffi_call_v_2", "ffi_call_v_s",
+            "py_init", "py_finalize", "py_run", "py_eval", "py_call", "py_import",
+            "js_run", "js_eval",
             "proc_arg_count", "proc_exit", "syscall", "interrupt", "arena_new", "arena_alloc", "arena_alloc_bytes", "arena_write", "arena_read", "arena_reset", "arena_top", "arena_used", "arena_free",
             "time_now_ms", "time_sleep_ms", "rand_seed", "rand_int", "proc_pid", "datetime_now", "datetime_format", "datetime_unix"
         };
@@ -3601,7 +3858,7 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
 #ifdef _WIN32
         link_flags += " -lws2_32 -lm";
 #else
-        link_flags += " -lm";
+        link_flags += " -lm -ldl";
 #endif
         for (const auto& lib : parser.link_libs()) {
             link_flags += " -l" + lib;
@@ -3655,6 +3912,8 @@ static int cmd_bindgen(int argc, char** argv) {
     std::vector<std::string> link_libs;
     std::vector<std::string> include_dirs;
     std::string prefix_filter;
+    std::string py_module;
+    bool is_rust = false;
 
     for (int i = 0; i < argc; ++i) {
         std::string arg = argv[i];
@@ -3671,15 +3930,81 @@ static int cmd_bindgen(int argc, char** argv) {
             include_dirs.push_back(arg.substr(2));
         } else if (arg == "--prefix" && i + 1 < argc) {
             prefix_filter = argv[++i];
+        } else if ((arg == "--py" || arg == "--python") && i + 1 < argc) {
+            py_module = argv[++i];
+        } else if (arg == "--rust" && i + 1 < argc) {
+            is_rust = true;
+            header_path = argv[++i];
         } else if (!arg.empty() && arg[0] != '-') {
             if (header_path.empty()) header_path = arg;
         }
     }
 
-    if (header_path.empty()) {
-        std::cerr << "dmc bindgen: header file required\n";
-        std::cerr << "usage: dmc bindgen <header.h> [-o <out.dmc>] [-l<lib>|--link <lib>] [-I<dir>] [--prefix <prefix>]\n";
+    if (header_path.empty() && py_module.empty()) {
+        std::cerr << "dmc bindgen: header file, rust file, or python module required\n";
+        std::cerr << "usage:\n";
+        std::cerr << "  dmc bindgen <header.h> [-o <out.dmc>] [-l<lib>|--link <lib>] [-I<dir>] [--prefix <prefix>]\n";
+        std::cerr << "  dmc bindgen --rust <lib.rs> [-o <out.dmc>] [-l<lib>|--link <lib>]\n";
+        std::cerr << "  dmc bindgen --py <module> [-o <out.dmc>] [--prefix <prefix>]\n";
         return 1;
+    }
+
+    if (!py_module.empty()) {
+        if (output_path.empty()) output_path = py_module + "_bindings.dmc";
+        std::string py_cmd = "python -c \"import inspect, json, " + py_module + "; fns = []; all_m = dir(" + py_module + "); print(json.dumps([m for m in all_m if not m.startswith('_') and callable(getattr(" + py_module + ", m))]))\"";
+        std::string out_json;
+#ifdef _WIN32
+        FILE* p = _popen(py_cmd.c_str(), "r");
+#else
+        FILE* p = popen(py_cmd.c_str(), "r");
+#endif
+        if (p) {
+            char buf[4096];
+            while (fgets(buf, sizeof(buf), p)) out_json += buf;
+#ifdef _WIN32
+            _pclose(p);
+#else
+            pclose(p);
+#endif
+        }
+        std::vector<std::string> py_fns;
+        size_t pos = 0;
+        while ((pos = out_json.find('"', pos)) != std::string::npos) {
+            size_t end_q = out_json.find('"', pos + 1);
+            if (end_q == std::string::npos) break;
+            std::string fn_name = out_json.substr(pos + 1, end_q - pos - 1);
+            if (!fn_name.empty() && fn_name != "json" && fn_name != "inspect") {
+                if (prefix_filter.empty() || fn_name.rfind(prefix_filter, 0) == 0) {
+                    py_fns.push_back(fn_name);
+                }
+            }
+            pos = end_q + 1;
+        }
+
+        std::ostringstream out;
+        out << "// Auto-generated Demonic C bindings for Python module: " << py_module << "\n";
+        out << "// Generated by dmc bindgen v1.6.0\n\n";
+        out << "import py;\n\n";
+        out << "fn py_" << py_module << "_init() -> int {\n";
+        out << "    return py_import(\"" << py_module << "\");\n";
+        out << "}\n\n";
+        out << "fn py_" << py_module << "_call(func: string, arg: string) -> string {\n";
+        out << "    return py_eval(\"" << py_module << ".\" + func + \"(\" + arg + \")\");\n";
+        out << "}\n\n";
+        for (const auto& fn : py_fns) {
+            out << "fn py_" << py_module << "_" << fn << "(arg: string) -> string {\n";
+            out << "    return py_eval(\"" << py_module << "." << fn << "(\" + arg + \")\");\n";
+            out << "}\n";
+        }
+        std::ofstream fout(output_path);
+        if (!fout) {
+            std::cerr << "dmc bindgen: failed to write output file: " << output_path << "\n";
+            return 1;
+        }
+        fout << out.str();
+        fout.close();
+        std::cout << "Generated Python bindings in " << output_path << " (" << py_fns.size() << " functions)\n";
+        return 0;
     }
 
     std::filesystem::path hp(header_path);
@@ -3705,6 +4030,103 @@ static int cmd_bindgen(int argc, char** argv) {
         return 1;
     }
     std::string raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+
+    if (is_rust || hp.extension() == ".rs") {
+        if (output_path.empty()) output_path = hp.stem().string() + "_bindings.dmc";
+        auto rust_type_to_dmc = [](const std::string& raw_t) -> std::string {
+            std::string t = raw_t;
+            while (!t.empty() && (t.front() == ' ' || t.front() == '\t')) t.erase(t.begin());
+            while (!t.empty() && (t.back() == ' ' || t.back() == '\t')) t.pop_back();
+            if (t == "()" || t.empty()) return "void";
+            if (t == "i32" || t == "c_int") return "int";
+            if (t == "u32" || t == "c_uint") return "u32";
+            if (t == "i64" || t == "isize" || t == "c_longlong" || t == "c_long") return "i64";
+            if (t == "u64" || t == "usize" || t == "c_ulonglong" || t == "c_ulong") return "u64";
+            if (t == "f32" || t == "c_float") return "float";
+            if (t == "f64" || t == "c_double") return "double";
+            if (t == "bool") return "bool";
+            if (t == "*const c_char" || t == "*const u8" || t == "&str") return "string";
+            if (t == "*mut c_void" || t == "*const c_void" || t.rfind("*mut", 0) == 0 || t.rfind("*const", 0) == 0) return "*void";
+            return t;
+        };
+
+        struct RustFn { std::string name; std::string ret; std::vector<std::pair<std::string, std::string>> params; };
+        std::vector<RustFn> rust_fns;
+        std::istringstream stream(raw);
+        std::string line;
+        while (std::getline(stream, line)) {
+            size_t fn_pos = line.find("extern \"C\" fn ");
+            if (fn_pos != std::string::npos) {
+                size_t after_fn = fn_pos + 14;
+                size_t paren = line.find('(', after_fn);
+                if (paren != std::string::npos) {
+                    std::string fname = line.substr(after_fn, paren - after_fn);
+                    while (!fname.empty() && (fname.front() == ' ' || fname.front() == '\t')) fname.erase(fname.begin());
+                    while (!fname.empty() && (fname.back() == ' ' || fname.back() == '\t')) fname.pop_back();
+
+                    size_t close_paren = line.find(')', paren);
+                    if (close_paren != std::string::npos) {
+                        std::string params_str = line.substr(paren + 1, close_paren - paren - 1);
+                        std::vector<std::pair<std::string, std::string>> params;
+                        std::istringstream pstream(params_str);
+                        std::string param_tok;
+                        while (std::getline(pstream, param_tok, ',')) {
+                            size_t colon = param_tok.find(':');
+                            if (colon != std::string::npos) {
+                                std::string pname = param_tok.substr(0, colon);
+                                std::string ptype = param_tok.substr(colon + 1);
+                                while (!pname.empty() && std::isspace((unsigned char)pname.front())) pname.erase(pname.begin());
+                                while (!pname.empty() && std::isspace((unsigned char)pname.back())) pname.pop_back();
+                                params.push_back({pname, rust_type_to_dmc(ptype)});
+                            }
+                        }
+                        std::string ret_t = "void";
+                        size_t arrow = line.find("->", close_paren);
+                        if (arrow != std::string::npos) {
+                            size_t brace = line.find('{', arrow);
+                            if (brace == std::string::npos) brace = line.find(';', arrow);
+                            if (brace == std::string::npos) brace = line.size();
+                            std::string raw_ret = line.substr(arrow + 2, brace - arrow - 2);
+                            ret_t = rust_type_to_dmc(raw_ret);
+                        }
+                        if (prefix_filter.empty() || fname.rfind(prefix_filter, 0) == 0) {
+                            rust_fns.push_back({fname, ret_t, params});
+                        }
+                    }
+                }
+            }
+        }
+
+        std::ostringstream out;
+        out << "// Auto-generated Demonic C bindings for Rust crate/source: " << hp.filename().string() << "\n";
+        out << "// Generated by dmc bindgen v1.6.0\n\n";
+        for (const auto& lib : link_libs) {
+            out << "#[link(\"" << lib << "\")]\n";
+        }
+        out << "extern \"C\" {\n";
+        for (const auto& fn : rust_fns) {
+            out << "    fn " << fn.name << "(";
+            for (size_t i = 0; i < fn.params.size(); ++i) {
+                if (i) out << ", ";
+                out << fn.params[i].first << ": " << fn.params[i].second;
+            }
+            out << ")";
+            if (fn.ret != "void") out << " -> " << fn.ret;
+            out << ";\n";
+        }
+        out << "}\n";
+
+        std::ofstream fout(output_path);
+        if (!fout) {
+            std::cerr << "dmc bindgen: failed to write output file: " << output_path << "\n";
+            return 1;
+        }
+        fout << out.str();
+        fout.close();
+        std::cout << "Generated Rust bindings in " << output_path << " (" << rust_fns.size() << " functions)\n";
+        return 0;
+    }
     in.close();
 
     if (output_path.empty()) {
@@ -3939,7 +4361,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
     std::ostringstream out;
     out << "// Auto-generated Demonic C bindings for " << hp.filename().string() << "\n";
-    out << "// Generated by dmc bindgen v1.5.0\n\n";
+    out << "// Generated by dmc bindgen v1.6.0\n\n";
     out << "#include <" << hp.filename().string() << ">\n";
     for (const auto& lib : link_libs) {
         out << "#link \"" << lib << "\"\n";
@@ -4216,7 +4638,7 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
 #ifdef _WIN32
         link_flags += " -lws2_32 -lm";
 #else
-        link_flags += " -lm";
+        link_flags += " -lm -ldl";
 #endif
     }
     for (const auto& lib : parser.link_libs()) {
@@ -4427,7 +4849,7 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
 #ifdef _WIN32
     link_flags += " -lws2_32 -lm";
 #else
-    link_flags += " -lm";
+    link_flags += " -lm -ldl";
 #endif
     for (const auto& lib : parser.link_libs()) {
         link_flags += " -l" + lib;
@@ -4532,7 +4954,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v1.5.0)\n"
+              << "Demonic C Interactive REPL (v1.6.0)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -4607,7 +5029,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.5.0";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.6.0";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -5280,8 +5702,8 @@ static int cmd_check(int argc, char** argv) {
 
 static int cmd_info() {
     std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
-    std::cout << "  Version:       1.5.0\n";
-    std::cout << "  Features:      SIMD (f32x4/i32x4), #line source maps, bindgen, shared libs, freestanding, wasm\n";
+    std::cout << "  Version:       1.6.0\n";
+    std::cout << "  Features:      Polyglot FFI (C/Rust/Python/JS), SIMD (f32x4/i32x4), #line source maps, bindgen, shared libs, freestanding, wasm\n";
     std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
 #ifdef _WIN32
     std::cout << "windows-x86_64";
@@ -5474,7 +5896,7 @@ static int cmd_update(int argc, char** argv) {
         return 1;
     }
     
-    std::string current_ver = "v1.5.0";
+    std::string current_ver = "v1.6.0";
     std::cout << "Current version: " << current_ver << "\n";
     std::cout << "Latest version:  " << latest_tag << "\n";
     
@@ -5658,7 +6080,7 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 1.5.0 (Demonic C -> C)\n";
+        std::cout << "dmc 1.6.0 (Demonic C -> C)\n";
         return 0;
     }
 
@@ -5783,7 +6205,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 1.5.0 (Demonic C -> C)\n";
+            std::cout << "dmc 1.6.0 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {

@@ -1,0 +1,18 @@
+// Polyglot Bindgen Integration Test for Demonic C
+
+import py_math_bindings;
+
+#[test]
+fn test_python_generated_bindings() -> int {
+    let r = py_math_sqrt("144");
+    if (r != "12.0") {
+        return 1;
+    }
+
+    let s = py_math_call("floor", "15.9");
+    if (s != "15") {
+        return 2;
+    }
+
+    return 0;
+}
