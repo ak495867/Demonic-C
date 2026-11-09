@@ -1,0 +1,38 @@
+// Demonic C Standard Library: thread
+// High-performance native concurrency and synchronization
+
+fn thread_current_id() -> int {
+    return thread_id();
+}
+
+fn thread_sleep_ms(ms: int) -> int {
+    return thread_sleep(ms);
+}
+
+fn mutex_create() -> int {
+    return mutex_new();
+}
+
+fn mutex_destroy(m: int) -> int {
+    return mutex_free(m);
+}
+
+fn chan_create(capacity: int) -> int {
+    return channel_new(capacity);
+}
+
+fn chan_send(ch: int, msg: string) -> int {
+    return channel_send(ch, msg);
+}
+
+fn chan_recv(ch: int) -> string {
+    return channel_recv(ch);
+}
+
+fn chan_close(ch: int) -> int {
+    return channel_close(ch);
+}
+
+fn chan_destroy(ch: int) -> int {
+    return channel_free(ch);
+}

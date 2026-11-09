@@ -49,6 +49,8 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ### Core Capabilities
 
+- **Native Multithreading, Channels & HTTP Server**: Bare-metal OS threads (`thread_spawn`, `thread_join`), recursive mutexes, lock-free hardware atomics (`atomic_add`, `atomic_load`), Go-style condition-variable channels (`channel_new`, `channel_send`, `channel_recv`), and high-performance HTTP micro-framework (`stdlib/http.dmc`).
+- **Package Registry & Deterministic Lockfiles (`dmc.lock`)**: Centralized package catalog, deterministic SHA-256 dependency locking with `dmc.lock`, and package management (`dmc pkg install`, `dmc pkg list`, `dmc pkg search`).
 - **Beginner Ergonomics & Interactive Developer Tools**: Instant scratchpad execution with `dmc eval <expr>` and `dmc -e`, built-in educational interactive explainer with `dmc explain <topic|code>`, and beginner-friendly project scaffolding with `dmc new <name> [--template=<cli|polyglot|game|lib>]`.
 - **Universal Polyglot Interoperability Engine**: Dynamic runtime FFI (`import ffi;`, `ffi_open`, `ffi_symbol`, `ffi_call_*`) to load and invoke any native library on the fly, native Python bridge (`import py;`, `py_eval`, `py_run`, `py_call`) with auto-import and package access, JavaScript engine bridge (`import js;`, `js_eval`, `js_run`), and expanded `dmc bindgen` for C headers, Rust crates, and Python packages.
 - **Hardware SIMD Vector Extensions**: Native 128-bit vector types (`f32x4`, `i32x4`) compiling directly to SSE, AVX, or ARM NEON hardware registers with lane accessors (`.x`, `.y`, `[i]`), lane-wise arithmetic, and dot products (`simd_dot`).
@@ -120,6 +122,99 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 | `editor/` | VS Code extension foundation and language syntax definitions |
 | `playground/` | Interactive web playground |
 | `examples/` | Standalone example programs |
+
+---
+
+## ⚡ Native Concurrency, HTTP Server & Package Registry (v1.9.0)
+
+Demonic C v1.9.0 brings true bare-metal multithreading, Go-style synchronization channels, lock-free hardware atomics, a native HTTP micro-framework, and deterministic package management with `dmc.lock`.
+
+### Native Multithreading & Synchronization
+Spawn true OS threads (Win32 threads on Windows, `pthread` on Linux/macOS) with zero runtime bloat:
+
+```dmc
+import thread;
+
+fn worker(arg: string) {
+    println("Thread running with payload: " + arg);
+}
+
+fn main() -> int {
+    let th = thread_spawn_arg(worker, "demonic-payload");
+    thread_join(th);
+    return 0;
+}
+```
+
+### Go-Style Thread-Safe Channels
+Safely pass messages between threads using condition-variable backed FIFO channels:
+
+```dmc
+import thread;
+
+fn main() -> int {
+    let ch = channel_new(16); // Bounded thread-safe channel
+    channel_send(ch, "job-42");
+    
+    let msg = channel_recv(ch); // Blocks until message available
+    println("Received: " + msg);
+    
+    channel_close(ch);
+    channel_free(ch);
+    return 0;
+}
+```
+
+### Hardware Atomics & Recursive Mutexes
+Hardware-accelerated lock-free primitives and recursive mutexes:
+
+```dmc
+import thread;
+
+fn main() -> int {
+    var counter: int = 100;
+    atomic_add(&counter, 50); // Lock-free hardware increment -> 150
+    let cur = atomic_load(&counter);
+
+    let m = mutex_new();
+    mutex_lock(m);
+    // Critical section
+    mutex_unlock(m);
+    mutex_free(m);
+    return 0;
+}
+```
+
+### Native HTTP Micro-Framework (`stdlib/http.dmc`)
+High-performance response building, request parsing, and socket binding:
+
+```dmc
+import http;
+
+fn handle_request(req: string) -> string {
+    let method = http_req_method(req);
+    let path = http_req_path(req);
+
+    if (text_cmp(path, "/api/status") == 0) {
+        return http_response_json(200, "{\"status\":\"operational\"}");
+    }
+    return http_response_html(200, "<h1>Welcome to Demonic C</h1>");
+}
+```
+
+### Package Management & Deterministic `dmc.lock`
+Search the curated registry, install dependencies, and generate reproducible lockfiles:
+
+```bash
+# Search curated catalog (raylib, sqlite3, curl, cjson, linalg, ws, etc.)
+dmc pkg search
+
+# Install dependency and pin exact version in dmc.lock
+dmc pkg install raylib
+
+# View installed packages and locked dependency tree
+dmc pkg list
+```
 
 ---
 

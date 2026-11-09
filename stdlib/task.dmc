@@ -1,0 +1,20 @@
+// Demonic C Standard Library: task
+// Async background worker tasks and thread-safe futures
+
+import thread;
+
+fn task_channel_create(cap: int) -> int {
+    return channel_new(cap);
+}
+
+fn task_channel_send(ch: int, msg: string) -> int {
+    return channel_send(ch, msg);
+}
+
+fn task_channel_recv(ch: int) -> string {
+    return channel_recv(ch);
+}
+
+fn task_channel_try_recv(ch: int) -> string {
+    return channel_try_recv(ch);
+}

@@ -1,0 +1,129 @@
+// Demonic C Native Concurrency, HTTP & Async Task Test Suite
+import thread;
+import http;
+import task;
+import strings;
+
+var g_worker_ran: int = 0;
+var g_worker_arg_received: string = "";
+
+fn thread_worker_fn() {
+    g_worker_ran = 1;
+}
+
+fn thread_worker_with_arg(arg: string) {
+    g_worker_arg_received = arg;
+}
+
+#[test]
+fn test_atomics() -> int {
+    var val: int = 100;
+    atomic_add(&val, 50);
+    if (val != 150) { return 1; }
+
+    atomic_sub(&val, 25);
+    if (val != 125) { return 2; }
+
+    let loaded = atomic_load(&val);
+    if (loaded != 125) { return 3; }
+
+    atomic_store(&val, 999);
+    if (val != 999) { return 4; }
+
+    return 0;
+}
+
+#[test]
+fn test_mutex() -> int {
+    let m = mutex_new();
+    if (m < 0) { return 1; }
+
+    mutex_lock(m);
+    var shared = 42;
+    shared = shared + 10;
+    mutex_unlock(m);
+
+    if (shared != 52) { return 2; }
+
+    mutex_free(m);
+    return 0;
+}
+
+#[test]
+fn test_channels() -> int {
+    let ch = channel_new(4);
+    if (ch < 0) { return 1; }
+
+    channel_send(ch, "alpha");
+    channel_send(ch, "beta");
+
+    let msg1 = channel_recv(ch);
+    if (text_cmp(msg1, "alpha") != 0) { return 2; }
+
+    let msg2 = channel_recv(ch);
+    if (text_cmp(msg2, "beta") != 0) { return 3; }
+
+    let empty_msg = channel_try_recv(ch);
+    if (text_cmp(empty_msg, "") != 0) { return 4; }
+
+    channel_close(ch);
+    channel_free(ch);
+    return 0;
+}
+
+#[test]
+fn test_thread_spawning() -> int {
+    let tid = thread_id();
+    if (tid <= 0) { return 1; }
+
+    thread_sleep(1);
+    thread_yield();
+
+    let th = thread_spawn(thread_worker_fn);
+    if (th < 0) { return 2; }
+
+    thread_join(th);
+    if (g_worker_ran != 1) { return 3; }
+
+    return 0;
+}
+
+#[test]
+fn test_thread_with_arg() -> int {
+    let th = thread_spawn_arg(thread_worker_with_arg, "dmc-worker-payload");
+    if (th < 0) { return 1; }
+
+    thread_join(th);
+    if (text_cmp(g_worker_arg_received, "dmc-worker-payload") != 0) { return 2; }
+
+    return 0;
+}
+
+#[test]
+fn test_http_protocol() -> int {
+    let resp = http_response(200, "text/plain", "OK");
+    if (str_contains(resp, "HTTP/1.1 200 OK") != 1) { return 1; }
+    if (str_contains(resp, "Content-Type: text/plain") != 1) { return 2; }
+    if (str_contains(resp, "Content-Length: 2") != 1) { return 3; }
+
+    let json_resp = http_response_json(201, "{\"status\":true}");
+    if (str_contains(json_resp, "HTTP/1.1 201 Created") != 1) { return 4; }
+    if (str_contains(json_resp, "application/json") != 1) { return 5; }
+
+    let method = http_req_method("POST /api/v1/data HTTP/1.1\r\nHost: localhost");
+    if (text_cmp(method, "POST") != 0) { return 6; }
+
+    let path = http_req_path("GET /demonic/concurrency HTTP/1.1\r\nHost: localhost");
+    if (text_cmp(path, "/demonic/concurrency") != 0) { return 7; }
+
+    return 0;
+}
+
+#[test]
+fn test_task_channel_wrappers() -> int {
+    let ch = task_channel_create(2);
+    task_channel_send(ch, "task-item-1");
+    let item = task_channel_recv(ch);
+    if (text_cmp(item, "task-item-1") != 0) { return 1; }
+    return 0;
+}

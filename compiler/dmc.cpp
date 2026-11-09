@@ -201,7 +201,7 @@ static std::string ctype(const std::string& type) {
     return type.empty() ? "long long" : type;
 }
 
-static const std::vector<std::string> BUILTIN_MODULES = {"io", "text", "math", "mem", "core", "process", "collections", "low", "json", "http", "datetime", "regex", "db", "ffi", "py", "js"};
+static const std::vector<std::string> BUILTIN_MODULES = {"io", "text", "math", "mem", "core", "process", "collections", "low", "json", "datetime", "regex", "db", "ffi", "py", "js"};
 
 static bool is_builtin_module(const std::string& name) {
     for (auto& m : BUILTIN_MODULES) if (m == name) return true;
@@ -261,7 +261,7 @@ public:
             out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <windows.h>\n#include <io.h>\n#include <direct.h>\n#include <sys/timeb.h>\n";
             out << "#define NSCLOSE closesocket\n";
             out << "#else\n";
-            out << "#include <sys/types.h>\n#include <sys/stat.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n#include <dlfcn.h>\n";
+            out << "#include <sys/types.h>\n#include <sys/stat.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n#include <dlfcn.h>\n#include <pthread.h>\n#include <sched.h>\n";
             out << "#define NSCLOSE close\n";
             out << "#endif\n";
             out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <ctype.h>\n#include <errno.h>\n\n";
@@ -584,7 +584,7 @@ private:
                     }
                 } else if (peek() == "struct") {
                     structs_.push_back(structure());
-                } else if (peek() == "let" || peek() == "const") {
+                } else if (peek() == "let" || peek() == "const" || peek() == "var") {
                     take();
                     std::string cname = take();
                     std::string ctype_str = "int";
@@ -824,7 +824,7 @@ private:
             if (peek() == "struct" || peek() == "enum" || peek() == "fn" || peek() == "import" ||
                 peek() == "summon" || peek() == "include" || peek() == "#include" ||
                 peek() == "link" || peek() == "#link" || peek() == "extern" ||
-                peek() == "c_code" || peek() == "__c__") return;
+                peek() == "c_code" || peek() == "__c__" || peek() == "let" || peek() == "const" || peek() == "var") return;
             ++index_;
         }
     }
@@ -1031,11 +1031,15 @@ private:
         out << "static int _dmc_wsa_started = 0;\n";
         out << "static void _dmc_ensure_wsa(void) { if (!_dmc_wsa_started) { WSADATA wsa; WSAStartup(MAKEWORD(2,2), &wsa); _dmc_wsa_started = 1; } }\n";
         out << "int tcp_connect(const char *host, long long port) { _dmc_ensure_wsa(); char svc[16]; snprintf(svc, sizeof(svc), \"%lld\", port); struct addrinfo hints = {0}, *res = NULL; hints.ai_socktype = SOCK_STREAM; if (getaddrinfo(host, svc, &hints, &res) != 0) return -1; SOCKET s = socket(res->ai_family, res->ai_socktype, res->ai_protocol); if (s == INVALID_SOCKET) { freeaddrinfo(res); return -1; } if (connect(s, res->ai_addr, (int)res->ai_addrlen) == SOCKET_ERROR) { closesocket(s); s = INVALID_SOCKET; } freeaddrinfo(res); return s == INVALID_SOCKET ? -1 : (int)s; }\n";
+        out << "int tcp_listen(long long port, long long backlog) { _dmc_ensure_wsa(); SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); if (s == INVALID_SOCKET) return -1; int opt = 1; setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt)); struct sockaddr_in addr; memset(&addr, 0, sizeof(addr)); addr.sin_family = AF_INET; addr.sin_addr.s_addr = htonl(INADDR_ANY); addr.sin_port = htons((u_short)port); if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) { closesocket(s); return -1; } if (listen(s, backlog > 0 ? (int)backlog : 128) == SOCKET_ERROR) { closesocket(s); return -1; } return (int)s; }\n";
+        out << "int tcp_accept(long long s) { if (s < 0) return -1; SOCKET c = accept((SOCKET)s, NULL, NULL); return c == INVALID_SOCKET ? -1 : (int)c; }\n";
         out << "int tcp_send(long long s, const char *text) { if (s < 0 || !text) return -1; return (int)send((SOCKET)s, text, (int)strlen(text), 0); }\n";
         out << "const char *tcp_recv(long long s, long long max) { static char b[65536]; if (s < 0) return \"\"; if (max > 65535) max = 65535; int n = recv((SOCKET)s, b, (int)max, 0); if (n < 0) n = 0; b[n] = 0; return b; }\n";
         out << "int tcp_close(long long s) { if (s < 0) return -1; return closesocket((SOCKET)s) == 0 ? 0 : -1; }\n";
         out << "#else\n";
         out << "int tcp_connect(const char *host, long long port) { char svc[16]; snprintf(svc, sizeof(svc), \"%lld\", port); struct addrinfo hints = {0}, *res = NULL; hints.ai_socktype = SOCK_STREAM; if (getaddrinfo(host, svc, &hints, &res) != 0) return -1; int s = (int)socket(res->ai_family, res->ai_socktype, res->ai_protocol); if (s >= 0 && connect(s, res->ai_addr, res->ai_addrlen) < 0) { close(s); s = -1; } freeaddrinfo(res); return s; }\n";
+        out << "int tcp_listen(long long port, long long backlog) { int s = socket(AF_INET, SOCK_STREAM, 0); if (s < 0) return -1; int opt = 1; setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)); struct sockaddr_in addr; memset(&addr, 0, sizeof(addr)); addr.sin_family = AF_INET; addr.sin_addr.s_addr = htonl(INADDR_ANY); addr.sin_port = htons((uint16_t)port); if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) { close(s); return -1; } if (listen(s, backlog > 0 ? (int)backlog : 128) < 0) { close(s); return -1; } return s; }\n";
+        out << "int tcp_accept(long long s) { if (s < 0) return -1; int c = accept((int)s, NULL, NULL); return c; }\n";
         out << "int tcp_send(long long s, const char *text) { return (int)send((int)s, text, (int)strlen(text), 0); }\n";
         out << "const char *tcp_recv(long long s, long long max) { static char b[65536]; if (max > 65535) max = 65535; int n = (int)recv((int)s, b, (int)max, 0); if (n < 0) n = 0; b[n] = 0; return b; }\n";
         out << "int tcp_close(long long s) { close((int)s); return 0; }\n";
@@ -1814,6 +1818,533 @@ const char *sha256(const char *str) {
         out << "  remove(tmp);\n";
         out << "  return out_str;\n";
         out << "}\n\n";
+
+        out << R"DMC_CONCURRENCY(
+/* Demonic C Native Multithreading & Synchronization Engine */
+typedef void (*_dmc_fn_ptr)(void);
+
+typedef struct {
+    _dmc_fn_ptr fn_ptr;
+    char *arg_str;
+    long long arg_int;
+    int has_arg;
+    int is_str_arg;
+    long long exit_code;
+#ifdef _WIN32
+    HANDLE handle;
+    DWORD id;
+#else
+    pthread_t handle;
+    int joined;
+#endif
+    int active;
+} _dmc_thread_t;
+
+static _dmc_thread_t **_dmc_threads = NULL;
+static int _dmc_threads_cap = 0;
+static int _dmc_threads_next = 1;
+
+#ifdef _WIN32
+static CRITICAL_SECTION _dmc_global_lock;
+static int _dmc_global_lock_inited = 0;
+static inline void _dmc_lock_global(void) {
+    if (!_dmc_global_lock_inited) {
+        InitializeCriticalSection(&_dmc_global_lock);
+        _dmc_global_lock_inited = 1;
+    }
+    EnterCriticalSection(&_dmc_global_lock);
+}
+static inline void _dmc_unlock_global(void) {
+    LeaveCriticalSection(&_dmc_global_lock);
+}
+static DWORD WINAPI _dmc_thread_trampoline(LPVOID param) {
+    _dmc_thread_t *t = (_dmc_thread_t*)param;
+    if (t->has_arg) {
+        if (t->is_str_arg) {
+            long long (*f)(const char*) = (long long (*)(const char*))t->fn_ptr;
+            t->exit_code = f(t->arg_str ? t->arg_str : "");
+        } else {
+            long long (*f)(long long) = (long long (*)(long long))t->fn_ptr;
+            t->exit_code = f(t->arg_int);
+        }
+    } else {
+        long long (*f)(void) = (long long (*)(void))t->fn_ptr;
+        t->exit_code = f();
+    }
+    return (DWORD)t->exit_code;
+}
+#else
+static pthread_mutex_t _dmc_global_lock = PTHREAD_MUTEX_INITIALIZER;
+static inline void _dmc_lock_global(void) {
+    pthread_mutex_lock(&_dmc_global_lock);
+}
+static inline void _dmc_unlock_global(void) {
+    pthread_mutex_unlock(&_dmc_global_lock);
+}
+static void* _dmc_thread_trampoline(void *param) {
+    _dmc_thread_t *t = (_dmc_thread_t*)param;
+    if (t->has_arg) {
+        if (t->is_str_arg) {
+            long long (*f)(const char*) = (long long (*)(const char*))t->fn_ptr;
+            t->exit_code = f(t->arg_str ? t->arg_str : "");
+        } else {
+            long long (*f)(long long) = (long long (*)(long long))t->fn_ptr;
+            t->exit_code = f(t->arg_int);
+        }
+    } else {
+        long long (*f)(void) = (long long (*)(void))t->fn_ptr;
+        t->exit_code = f();
+    }
+    return (void*)(intptr_t)t->exit_code;
+}
+#endif
+
+long long _dmc_thread_spawn_impl(_dmc_fn_ptr fn_ptr) {
+    if (!fn_ptr) return -1;
+    _dmc_lock_global();
+    int h = _dmc_threads_next++;
+    if (h >= _dmc_threads_cap) {
+        int new_cap = _dmc_threads_cap ? _dmc_threads_cap * 2 : 32;
+        _dmc_thread_t **nt = (_dmc_thread_t**)realloc(_dmc_threads, new_cap * sizeof(_dmc_thread_t*));
+        if (!nt) { _dmc_unlock_global(); return -1; }
+        for (int i = _dmc_threads_cap; i < new_cap; ++i) nt[i] = NULL;
+        _dmc_threads = nt;
+        _dmc_threads_cap = new_cap;
+    }
+    _dmc_thread_t *t = (_dmc_thread_t*)calloc(1, sizeof(_dmc_thread_t));
+    t->fn_ptr = fn_ptr;
+    t->has_arg = 0;
+    t->active = 1;
+    _dmc_threads[h] = t;
+#ifdef _WIN32
+    t->handle = CreateThread(NULL, 0, _dmc_thread_trampoline, t, 0, &t->id);
+    if (!t->handle) { free(t); _dmc_threads[h] = NULL; _dmc_unlock_global(); return -1; }
+#else
+    if (pthread_create(&t->handle, NULL, _dmc_thread_trampoline, t) != 0) {
+        free(t); _dmc_threads[h] = NULL; _dmc_unlock_global(); return -1;
+    }
+#endif
+    _dmc_unlock_global();
+    return h;
+}
+
+long long _dmc_thread_spawn_arg_impl(_dmc_fn_ptr fn_ptr, const char *arg) {
+    if (!fn_ptr) return -1;
+    _dmc_lock_global();
+    int h = _dmc_threads_next++;
+    if (h >= _dmc_threads_cap) {
+        int new_cap = _dmc_threads_cap ? _dmc_threads_cap * 2 : 32;
+        _dmc_thread_t **nt = (_dmc_thread_t**)realloc(_dmc_threads, new_cap * sizeof(_dmc_thread_t*));
+        if (!nt) { _dmc_unlock_global(); return -1; }
+        for (int i = _dmc_threads_cap; i < new_cap; ++i) nt[i] = NULL;
+        _dmc_threads = nt;
+        _dmc_threads_cap = new_cap;
+    }
+    _dmc_thread_t *t = (_dmc_thread_t*)calloc(1, sizeof(_dmc_thread_t));
+    t->fn_ptr = fn_ptr;
+    t->has_arg = 1;
+    t->is_str_arg = 1;
+    t->arg_str = arg ? strdup(arg) : strdup("");
+    t->active = 1;
+    _dmc_threads[h] = t;
+#ifdef _WIN32
+    t->handle = CreateThread(NULL, 0, _dmc_thread_trampoline, t, 0, &t->id);
+    if (!t->handle) { if (t->arg_str) free(t->arg_str); free(t); _dmc_threads[h] = NULL; _dmc_unlock_global(); return -1; }
+#else
+    if (pthread_create(&t->handle, NULL, _dmc_thread_trampoline, t) != 0) {
+        if (t->arg_str) free(t->arg_str); free(t); _dmc_threads[h] = NULL; _dmc_unlock_global(); return -1;
+    }
+#endif
+    _dmc_unlock_global();
+    return h;
+}
+
+#define thread_spawn(f) _dmc_thread_spawn_impl((_dmc_fn_ptr)(f))
+#define thread_spawn_arg(f, a) _dmc_thread_spawn_arg_impl((_dmc_fn_ptr)(f), (a))
+
+long long thread_join(long long h) {
+    _dmc_lock_global();
+    if (h < 0 || h >= _dmc_threads_cap || !_dmc_threads || !_dmc_threads[h]) {
+        _dmc_unlock_global();
+        return -1;
+    }
+    _dmc_thread_t *t = _dmc_threads[h];
+    _dmc_unlock_global();
+
+#ifdef _WIN32
+    WaitForSingleObject(t->handle, INFINITE);
+    DWORD exit_code = 0;
+    GetExitCodeThread(t->handle, &exit_code);
+    CloseHandle(t->handle);
+#else
+    void *ret_val = NULL;
+    pthread_join(t->handle, &ret_val);
+#endif
+
+    _dmc_lock_global();
+    long long res = t->exit_code;
+    if (t->arg_str) free(t->arg_str);
+    free(t);
+    _dmc_threads[h] = NULL;
+    _dmc_unlock_global();
+    return res;
+}
+
+long long thread_id(void) {
+#ifdef _WIN32
+    return (long long)GetCurrentThreadId();
+#else
+    return (long long)(uintptr_t)pthread_self();
+#endif
+}
+
+long long thread_sleep(long long ms) {
+    if (ms <= 0) return 0;
+#ifdef _WIN32
+    Sleep((DWORD)ms);
+#else
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+#endif
+    return 0;
+}
+
+long long thread_yield(void) {
+#ifdef _WIN32
+    SwitchToThread();
+#else
+    sched_yield();
+#endif
+    return 0;
+}
+
+/* Mutexes */
+typedef struct {
+#ifdef _WIN32
+    CRITICAL_SECTION cs;
+#else
+    pthread_mutex_t m;
+#endif
+    int inited;
+} _dmc_mutex_t;
+
+static _dmc_mutex_t **_dmc_mutexes = NULL;
+static int _dmc_mutexes_cap = 0;
+static int _dmc_mutexes_next = 1;
+
+long long mutex_new(void) {
+    _dmc_lock_global();
+    int h = _dmc_mutexes_next++;
+    if (h >= _dmc_mutexes_cap) {
+        int new_cap = _dmc_mutexes_cap ? _dmc_mutexes_cap * 2 : 32;
+        _dmc_mutex_t **nm = (_dmc_mutex_t**)realloc(_dmc_mutexes, new_cap * sizeof(_dmc_mutex_t*));
+        if (!nm) { _dmc_unlock_global(); return -1; }
+        for (int i = _dmc_mutexes_cap; i < new_cap; ++i) nm[i] = NULL;
+        _dmc_mutexes = nm;
+        _dmc_mutexes_cap = new_cap;
+    }
+    _dmc_mutex_t *m = (_dmc_mutex_t*)calloc(1, sizeof(_dmc_mutex_t));
+#ifdef _WIN32
+    InitializeCriticalSection(&m->cs);
+#else
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&m->m, &attr);
+    pthread_mutexattr_destroy(&attr);
+#endif
+    m->inited = 1;
+    _dmc_mutexes[h] = m;
+    _dmc_unlock_global();
+    return h;
+}
+
+long long mutex_lock(long long h) {
+    if (h < 0 || h >= _dmc_mutexes_cap || !_dmc_mutexes || !_dmc_mutexes[h]) return -1;
+    _dmc_mutex_t *m = _dmc_mutexes[h];
+#ifdef _WIN32
+    EnterCriticalSection(&m->cs);
+#else
+    pthread_mutex_lock(&m->m);
+#endif
+    return 0;
+}
+
+long long mutex_unlock(long long h) {
+    if (h < 0 || h >= _dmc_mutexes_cap || !_dmc_mutexes || !_dmc_mutexes[h]) return -1;
+    _dmc_mutex_t *m = _dmc_mutexes[h];
+#ifdef _WIN32
+    LeaveCriticalSection(&m->cs);
+#else
+    pthread_mutex_unlock(&m->m);
+#endif
+    return 0;
+}
+
+long long mutex_free(long long h) {
+    _dmc_lock_global();
+    if (h < 0 || h >= _dmc_mutexes_cap || !_dmc_mutexes || !_dmc_mutexes[h]) {
+        _dmc_unlock_global();
+        return -1;
+    }
+    _dmc_mutex_t *m = _dmc_mutexes[h];
+#ifdef _WIN32
+    DeleteCriticalSection(&m->cs);
+#else
+    pthread_mutex_destroy(&m->m);
+#endif
+    free(m);
+    _dmc_mutexes[h] = NULL;
+    _dmc_unlock_global();
+    return 0;
+}
+
+/* Hardware Atomics */
+long long _dmc_atomic_add_impl(void *ptr, long long val) {
+    if (!ptr) return 0;
+#if defined(__GNUC__) || defined(__clang__)
+    return (long long)__atomic_fetch_add((long long*)ptr, val, __ATOMIC_SEQ_CST);
+#elif defined(_WIN32)
+    return (long long)InterlockedExchangeAdd64((LONG64*)ptr, (LONG64)val);
+#else
+    long long old = *(long long*)ptr; *(long long*)ptr += val; return old;
+#endif
+}
+
+long long _dmc_atomic_sub_impl(void *ptr, long long val) {
+    if (!ptr) return 0;
+#if defined(__GNUC__) || defined(__clang__)
+    return (long long)__atomic_fetch_sub((long long*)ptr, val, __ATOMIC_SEQ_CST);
+#elif defined(_WIN32)
+    return (long long)InterlockedExchangeAdd64((LONG64*)ptr, -(LONG64)val);
+#else
+    long long old = *(long long*)ptr; *(long long*)ptr -= val; return old;
+#endif
+}
+
+long long _dmc_atomic_load_impl(void *ptr) {
+    if (!ptr) return 0;
+#if defined(__GNUC__) || defined(__clang__)
+    return (long long)__atomic_load_n((long long*)ptr, __ATOMIC_SEQ_CST);
+#elif defined(_WIN32)
+    return (long long)InterlockedCompareExchange64((LONG64*)ptr, 0, 0);
+#else
+    return *(long long*)ptr;
+#endif
+}
+
+long long _dmc_atomic_store_impl(void *ptr, long long val) {
+    if (!ptr) return 0;
+#if defined(__GNUC__) || defined(__clang__)
+    __atomic_store_n((long long*)ptr, val, __ATOMIC_SEQ_CST);
+#elif defined(_WIN32)
+    InterlockedExchange64((LONG64*)ptr, (LONG64)val);
+#else
+    *(long long*)ptr = val;
+#endif
+    return val;
+}
+
+#define atomic_add(p, v) _dmc_atomic_add_impl((void*)(p), (long long)(v))
+#define atomic_sub(p, v) _dmc_atomic_sub_impl((void*)(p), (long long)(v))
+#define atomic_load(p) _dmc_atomic_load_impl((void*)(p))
+#define atomic_store(p, v) _dmc_atomic_store_impl((void*)(p), (long long)(v))
+
+/* Go-Style Thread-Safe Channels */
+typedef struct {
+    char **buffer;
+    int capacity;
+    int head;
+    int tail;
+    int count;
+    int closed;
+#ifdef _WIN32
+    CRITICAL_SECTION lock;
+    CONDITION_VARIABLE not_empty;
+    CONDITION_VARIABLE not_full;
+#else
+    pthread_mutex_t lock;
+    pthread_cond_t not_empty;
+    pthread_cond_t not_full;
+#endif
+} _dmc_chan_t;
+
+static _dmc_chan_t **_dmc_chans = NULL;
+static int _dmc_chans_cap = 0;
+static int _dmc_chans_next = 1;
+
+long long channel_new(long long capacity) {
+    if (capacity <= 0) capacity = 16;
+    _dmc_lock_global();
+    int h = _dmc_chans_next++;
+    if (h >= _dmc_chans_cap) {
+        int new_cap = _dmc_chans_cap ? _dmc_chans_cap * 2 : 32;
+        _dmc_chan_t **nc = (_dmc_chan_t**)realloc(_dmc_chans, new_cap * sizeof(_dmc_chan_t*));
+        if (!nc) { _dmc_unlock_global(); return -1; }
+        for (int i = _dmc_chans_cap; i < new_cap; ++i) nc[i] = NULL;
+        _dmc_chans = nc;
+        _dmc_chans_cap = new_cap;
+    }
+    _dmc_chan_t *ch = (_dmc_chan_t*)calloc(1, sizeof(_dmc_chan_t));
+    ch->capacity = (int)capacity;
+    ch->buffer = (char**)calloc(ch->capacity, sizeof(char*));
+#ifdef _WIN32
+    InitializeCriticalSection(&ch->lock);
+    InitializeConditionVariable(&ch->not_empty);
+    InitializeConditionVariable(&ch->not_full);
+#else
+    pthread_mutex_init(&ch->lock, NULL);
+    pthread_cond_init(&ch->not_empty, NULL);
+    pthread_cond_init(&ch->not_full, NULL);
+#endif
+    _dmc_chans[h] = ch;
+    _dmc_unlock_global();
+    return h;
+}
+
+long long channel_send(long long h, const char *msg) {
+    if (h < 0 || h >= _dmc_chans_cap || !_dmc_chans || !_dmc_chans[h]) return -1;
+    _dmc_chan_t *ch = _dmc_chans[h];
+#ifdef _WIN32
+    EnterCriticalSection(&ch->lock);
+    while (ch->count == ch->capacity && !ch->closed) {
+        SleepConditionVariableCS(&ch->not_full, &ch->lock, INFINITE);
+    }
+    if (ch->closed) {
+        LeaveCriticalSection(&ch->lock);
+        return -1;
+    }
+    ch->buffer[ch->tail] = msg ? strdup(msg) : strdup("");
+    ch->tail = (ch->tail + 1) % ch->capacity;
+    ch->count++;
+    WakeConditionVariable(&ch->not_empty);
+    LeaveCriticalSection(&ch->lock);
+#else
+    pthread_mutex_lock(&ch->lock);
+    while (ch->count == ch->capacity && !ch->closed) {
+        pthread_cond_wait(&ch->not_full, &ch->lock);
+    }
+    if (ch->closed) {
+        pthread_mutex_unlock(&ch->lock);
+        return -1;
+    }
+    ch->buffer[ch->tail] = msg ? strdup(msg) : strdup("");
+    ch->tail = (ch->tail + 1) % ch->capacity;
+    ch->count++;
+    pthread_cond_signal(&ch->not_empty);
+    pthread_mutex_unlock(&ch->lock);
+#endif
+    return 0;
+}
+
+const char *channel_recv(long long h) {
+    if (h < 0 || h >= _dmc_chans_cap || !_dmc_chans || !_dmc_chans[h]) return "";
+    _dmc_chan_t *ch = _dmc_chans[h];
+    char *res = NULL;
+#ifdef _WIN32
+    EnterCriticalSection(&ch->lock);
+    while (ch->count == 0 && !ch->closed) {
+        SleepConditionVariableCS(&ch->not_empty, &ch->lock, INFINITE);
+    }
+    if (ch->count > 0) {
+        res = ch->buffer[ch->head];
+        ch->buffer[ch->head] = NULL;
+        ch->head = (ch->head + 1) % ch->capacity;
+        ch->count--;
+        WakeConditionVariable(&ch->not_full);
+    }
+    LeaveCriticalSection(&ch->lock);
+#else
+    pthread_mutex_lock(&ch->lock);
+    while (ch->count == 0 && !ch->closed) {
+        pthread_cond_wait(&ch->not_empty, &ch->lock);
+    }
+    if (ch->count > 0) {
+        res = ch->buffer[ch->head];
+        ch->buffer[ch->head] = NULL;
+        ch->head = (ch->head + 1) % ch->capacity;
+        ch->count--;
+        pthread_cond_signal(&ch->not_full);
+    }
+    pthread_mutex_unlock(&ch->lock);
+#endif
+    return res ? res : "";
+}
+
+const char *channel_try_recv(long long h) {
+    if (h < 0 || h >= _dmc_chans_cap || !_dmc_chans || !_dmc_chans[h]) return "";
+    _dmc_chan_t *ch = _dmc_chans[h];
+    char *res = NULL;
+#ifdef _WIN32
+    EnterCriticalSection(&ch->lock);
+    if (ch->count > 0) {
+        res = ch->buffer[ch->head];
+        ch->buffer[ch->head] = NULL;
+        ch->head = (ch->head + 1) % ch->capacity;
+        ch->count--;
+        WakeConditionVariable(&ch->not_full);
+    }
+    LeaveCriticalSection(&ch->lock);
+#else
+    pthread_mutex_lock(&ch->lock);
+    if (ch->count > 0) {
+        res = ch->buffer[ch->head];
+        ch->buffer[ch->head] = NULL;
+        ch->head = (ch->head + 1) % ch->capacity;
+        ch->count--;
+        pthread_cond_signal(&ch->not_full);
+    }
+    pthread_mutex_unlock(&ch->lock);
+#endif
+    return res ? res : "";
+}
+
+long long channel_close(long long h) {
+    if (h < 0 || h >= _dmc_chans_cap || !_dmc_chans || !_dmc_chans[h]) return -1;
+    _dmc_chan_t *ch = _dmc_chans[h];
+#ifdef _WIN32
+    EnterCriticalSection(&ch->lock);
+    ch->closed = 1;
+    WakeAllConditionVariable(&ch->not_empty);
+    WakeAllConditionVariable(&ch->not_full);
+    LeaveCriticalSection(&ch->lock);
+#else
+    pthread_mutex_lock(&ch->lock);
+    ch->closed = 1;
+    pthread_cond_broadcast(&ch->not_empty);
+    pthread_cond_broadcast(&ch->not_full);
+    pthread_mutex_unlock(&ch->lock);
+#endif
+    return 0;
+}
+
+long long channel_free(long long h) {
+    _dmc_lock_global();
+    if (h < 0 || h >= _dmc_chans_cap || !_dmc_chans || !_dmc_chans[h]) {
+        _dmc_unlock_global();
+        return -1;
+    }
+    _dmc_chan_t *ch = _dmc_chans[h];
+    channel_close(h);
+    for (int i = 0; i < ch->capacity; ++i) {
+        if (ch->buffer[i]) free(ch->buffer[i]);
+    }
+    free(ch->buffer);
+#ifdef _WIN32
+    DeleteCriticalSection(&ch->lock);
+#else
+    pthread_mutex_destroy(&ch->lock);
+    pthread_cond_destroy(&ch->not_empty);
+    pthread_cond_destroy(&ch->not_full);
+#endif
+    free(ch);
+    _dmc_chans[h] = NULL;
+    _dmc_unlock_global();
+    return 0;
+}
+)DMC_CONCURRENCY";
     }
 
     Struct structure() {
@@ -2139,6 +2670,7 @@ const char *sha256(const char *str) {
                 expect("=");
                 std::string init = expression(";");
                 expect(";");
+                bind_type(name, type);
                 header = ctype(type) + " " + name + " = " + init + "; ";
                 header += expression(";");
                 expect(";");
@@ -2926,7 +3458,7 @@ const char *sha256(const char *str) {
                 }
             }
         }
-        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "text_upper", "text_lower", "text_replace", "proc_exit", "string_copy", "string_slice", "arg_text", "prompt", "term_color", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval"}) {
+        for (const auto& fn : {"file_read", "tcp_recv", "http_get", "http_response", "http_response_json", "http_response_html", "http_req_method", "http_req_path", "http_status_text", "text_concat", "text_sub", "text_from_int", "text_from_float", "text_upper", "text_lower", "text_replace", "proc_exit", "string_copy", "string_slice", "arg_text", "prompt", "term_color", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval", "channel_recv", "channel_try_recv"}) {
             if (arg.rfind(std::string(fn) + "(", 0) == 0) return true;
         }
         auto open = arg.find('(');
@@ -3008,7 +3540,7 @@ const char *sha256(const char *str) {
                 return s.name;
             }
         }
-        for (const auto& fn : {"file_read", "tcp_recv", "text_concat", "text_sub", "text_from_int", "text_from_float", "text_upper", "text_lower", "text_replace", "proc_exit", "string_copy", "string_slice", "arg_text", "prompt", "term_color", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval"}) {
+        for (const auto& fn : {"file_read", "tcp_recv", "http_get", "http_response", "http_response_json", "http_response_html", "http_req_method", "http_req_path", "http_status_text", "text_concat", "text_sub", "text_from_int", "text_from_float", "text_upper", "text_lower", "text_replace", "proc_exit", "string_copy", "string_slice", "arg_text", "prompt", "term_color", "fs_read", "os_env", "os_cwd", "os_platform", "os_arch", "sha256", "base64_encode", "base64_decode", "ffi_error", "ffi_call_str_0", "ffi_call_str_1", "ffi_call_str_2", "ffi_call_str_s", "py_eval", "py_call", "js_eval", "channel_recv", "channel_try_recv"}) {
             if (val.rfind(std::string(fn) + "(", 0) == 0) return "string";
         }
         auto open = val.find('(');
@@ -3098,7 +3630,7 @@ const char *sha256(const char *str) {
         static const std::vector<std::string> fns = {
             "print", "println", "mem_alloc", "mem_free", "mem_size", "mem_write", "mem_read",
             "mem_map", "mem_unmap", "file_open", "file_read", "file_write", "file_close",
-            "tcp_connect", "tcp_send", "tcp_recv", "tcp_close",
+            "tcp_connect", "tcp_listen", "tcp_accept", "tcp_send", "tcp_recv", "tcp_close",
             "vec_new", "vec_len", "vec_push", "vec_pop", "vec_get", "vec_set", "vec_free",
             "queue_new", "queue_len", "queue_push", "queue_pop", "queue_peek", "queue_free",
             "map_new", "map_set", "map_get", "map_has", "map_len", "map_free",
@@ -3120,6 +3652,10 @@ const char *sha256(const char *str) {
             "py_init", "py_finalize", "py_run", "py_eval", "py_call", "py_import",
             "js_run", "js_eval",
             "proc_arg_count", "arg_count", "proc_exit", "syscall", "interrupt", "arena_new", "arena_alloc", "arena_alloc_bytes", "arena_write", "arena_read", "arena_reset", "arena_top", "arena_used", "arena_free",
+            "thread_spawn", "thread_spawn_arg", "thread_join", "thread_id", "thread_sleep", "thread_yield",
+            "mutex_new", "mutex_lock", "mutex_unlock", "mutex_free",
+            "atomic_add", "atomic_sub", "atomic_load", "atomic_store",
+            "channel_new", "channel_send", "channel_recv", "channel_try_recv", "channel_close", "channel_free",
             "time_now_ms", "time_sleep_ms", "rand_seed", "rand_int", "proc_pid", "datetime_now", "datetime_format", "datetime_unix"
         };
         for (auto& f : fns) if (f == name) return true;
@@ -3312,20 +3848,111 @@ static std::string packages_path() {
     return p;
 }
 
+static const std::vector<PackageInfo> REGISTRY_CATALOG = {
+    {"raylib",  "5.0.0",  "Hardware accelerated graphics, audio, and input for 2D/3D games"},
+    {"sqlite3", "3.45.1", "Self-contained serverless zero-configuration SQL database engine"},
+    {"curl",    "8.6.0",  "Command line tool and library for transferring data with URLs"},
+    {"cjson",   "1.7.17", "Ultralightweight, ANSI-C compliant JSON parser and serializer"},
+    {"linalg",  "1.2.0",  "SIMD-accelerated linear algebra, matrix, and vector math"},
+    {"ws",      "0.4.0",  "High-performance RFC 6455 WebSocket server and client protocol"},
+    {"json",    "2.0.1",  "Standard JSON parsing, serialization, and schema validation"},
+    {"json",    "1.5.0",  "Legacy JSON parser for Demonic C"},
+    {"http",    "1.0.3",  "Native HTTP client and multi-threaded micro-server library"},
+    {"http",    "0.9.0",  "Basic HTTP client support"},
+    {"crypto",  "0.9.1",  "Cryptographic primitives, SHA-256, HMAC, and cipher algorithms"}
+};
+
+static std::string to_lower_str(const std::string& s) {
+    std::string res = s;
+    for (char& c : res) c = (char)std::tolower((unsigned char)c);
+    return res;
+}
+
 static std::vector<PackageInfo> search_registry(const std::string& name) {
     std::vector<PackageInfo> results;
-    
-    
-    if (name == "json") {
-        results.push_back({"json", "2.0.1", "JSON parsing and serialization"});
-        results.push_back({"json", "1.5.0", "Basic JSON support"});
-    } else if (name == "http") {
-        results.push_back({"http", "1.0.3", "HTTP client library"});
-        results.push_back({"http", "0.9.0", "Basic HTTP support"});
-    } else if (name == "crypto") {
-        results.push_back({"crypto", "0.9.1", "Cryptographic primitives"});
+    std::string q = to_lower_str(name);
+    for (const auto& pkg : REGISTRY_CATALOG) {
+        if (q.empty() || q == "*" || to_lower_str(pkg.name).find(q) != std::string::npos || to_lower_str(pkg.summary).find(q) != std::string::npos) {
+            results.push_back(pkg);
+        }
     }
     return results;
+}
+
+static std::string mock_sha256(const std::string& data) {
+    unsigned long long h1 = 0xcbf29ce484222325ULL;
+    unsigned long long h2 = 0x100000001b3ULL;
+    for (char c : data) {
+        h1 = (h1 ^ (unsigned char)c) * 0x100000001b3ULL;
+        h2 = (h2 ^ (unsigned char)c) * 0xbf58476d1ce4e5b9ULL;
+    }
+    char buf[65];
+    snprintf(buf, sizeof(buf), "%016llx%016llx%016llx%016llx", h1, h2, h1 ^ h2, h1 + h2);
+    return std::string(buf);
+}
+
+static void update_lockfile() {
+    std::string toml_path = "dmc.toml";
+    if (!std::filesystem::exists(toml_path)) return;
+
+    std::ifstream f(toml_path);
+    std::string line;
+    std::string current_section;
+    std::vector<std::pair<std::string, std::string>> deps;
+
+    while (std::getline(f, line)) {
+        std::string trimmed = line;
+        trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
+        trimmed.erase(trimmed.find_last_not_of(" \t\r\n") + 1);
+        if (trimmed.empty() || trimmed[0] == '#') continue;
+
+        if (trimmed.find("[dependencies]") != std::string::npos) {
+            current_section = "deps";
+            continue;
+        } else if (trimmed[0] == '[') {
+            current_section = "";
+            continue;
+        }
+
+        if (current_section == "deps" && trimmed.find('=') != std::string::npos) {
+            size_t eq = trimmed.find('=');
+            std::string dname = trimmed.substr(0, eq);
+            std::string dval = trimmed.substr(eq + 1);
+
+            dname.erase(0, dname.find_first_not_of(" \t"));
+            dname.erase(dname.find_last_not_of(" \t") + 1);
+            dval.erase(0, dval.find_first_not_of(" \t\"\'^~>="));
+            dval.erase(dval.find_last_not_of(" \t\"\'\r\n") + 1);
+
+            if (!dname.empty()) {
+                deps.push_back({dname, dval.empty() ? "*" : dval});
+            }
+        }
+    }
+    f.close();
+
+    std::ofstream lock("dmc.lock");
+    if (!lock) return;
+
+    lock << "# Auto-generated by Demonic C Package Manager (v1.9.0)\n";
+    lock << "# Manual edits may be overwritten.\n\n";
+    lock << "version = 1\n\n";
+
+    for (const auto& d : deps) {
+        std::string locked_ver = d.second;
+        if (locked_ver == "*") {
+            auto hits = search_registry(d.first);
+            if (!hits.empty()) locked_ver = hits[0].version;
+            else locked_ver = "1.0.0";
+        }
+        std::string chk = mock_sha256(d.first + "@" + locked_ver);
+        lock << "[[package]]\n";
+        lock << "name = \"" << d.first << "\"\n";
+        lock << "version = \"" << locked_ver << "\"\n";
+        lock << "source = \"registry+" << registry_url() << "/" << d.first << "\"\n";
+        lock << "checksum = \"" << chk << "\"\n\n";
+    }
+    lock.close();
 }
 
 static std::vector<PackageMetadata> installed_packages() {
@@ -3341,19 +3968,24 @@ static std::vector<PackageMetadata> installed_packages() {
                 std::string line;
                 PackageMetadata meta;
                 meta.name = dname;
+                auto clean_val = [](std::string s) {
+                    s.erase(0, s.find_first_not_of(" \t\"\'"));
+                    s.erase(s.find_last_not_of(" \t\"\'\r\n") + 1);
+                    return s;
+                };
                 while (std::getline(f, line)) {
                     if (line.find("version") != std::string::npos) {
                         size_t eq = line.find('=');
-                        if (eq != std::string::npos) meta.version = line.substr(eq + 2);
+                        if (eq != std::string::npos) meta.version = clean_val(line.substr(eq + 1));
                     } else if (line.find("description") != std::string::npos) {
                         size_t eq = line.find('=');
-                        if (eq != std::string::npos) meta.description = line.substr(eq + 2);
+                        if (eq != std::string::npos) meta.description = clean_val(line.substr(eq + 1));
                     } else if (line.find("author") != std::string::npos) {
                         size_t eq = line.find('=');
-                        if (eq != std::string::npos) meta.author = line.substr(eq + 2);
+                        if (eq != std::string::npos) meta.author = clean_val(line.substr(eq + 1));
                     } else if (line.find("license") != std::string::npos) {
                         size_t eq = line.find('=');
-                        if (eq != std::string::npos) meta.license = line.substr(eq + 2);
+                        if (eq != std::string::npos) meta.license = clean_val(line.substr(eq + 1));
                     }
                 }
                 pkgs.push_back(meta);
@@ -3384,25 +4016,21 @@ static bool write_package_meta(const std::string& pkg_name, const PackageMetadat
 }
 
 static void install_package(const std::string& name, const std::string& version) {
-    
     auto results = search_registry(name);
     if (results.empty()) {
         std::cerr << "dmc install: package '" << name << "' not found in registry\n";
         return;
     }
     
-    
     std::string pkg_version = version;
     if (pkg_version.empty()) {
         pkg_version = results[0].version;
     }
     
-    
     bool found = false;
     for (const auto& pkg : results) {
-        if (pkg.version == pkg_version) {
-            
-            
+        if (pkg.name == name && (version.empty() || pkg.version == pkg_version)) {
+            pkg_version = pkg.version;
             PackageMetadata meta;
             meta.name = pkg.name;
             meta.version = pkg.version;
@@ -3420,14 +4048,33 @@ static void install_package(const std::string& name, const std::string& version)
         std::cerr << "dmc install: version '" << pkg_version << "' of package '" << name << "' not available\n";
         return;
     }
-    
-    
-    
-    std::string current_dir = std::filesystem::current_path().string();
-    std::string dmc_toml = current_dir + "/dmc.toml";
-    
-    
-    std::cout << "Package '" << name << "-" << pkg_version << "' installed successfully\n";
+
+    std::string toml_path = "dmc.toml";
+    if (std::filesystem::exists(toml_path)) {
+        std::ifstream fin(toml_path);
+        std::string content((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+        fin.close();
+
+        if (content.find(name + " =") == std::string::npos && content.find("\"" + name + "\"") == std::string::npos) {
+            size_t dep_pos = content.find("[dependencies]");
+            if (dep_pos != std::string::npos) {
+                size_t nl = content.find('\n', dep_pos);
+                if (nl != std::string::npos) {
+                    content.insert(nl + 1, name + " = \"^" + pkg_version + "\"\n");
+                } else {
+                    content += "\n" + name + " = \"^" + pkg_version + "\"\n";
+                }
+            } else {
+                content += "\n[dependencies]\n" + name + " = \"^" + pkg_version + "\"\n";
+            }
+            std::ofstream fout(toml_path);
+            fout << content;
+            fout.close();
+        }
+    }
+
+    update_lockfile();
+    std::cout << "Package '" << name << "@" << pkg_version << "' installed successfully and locked in dmc.lock\n";
 }
 
 static void uninstall_package(const std::string& name) {
@@ -3441,11 +4088,33 @@ static void uninstall_package(const std::string& name) {
             break;
         }
     }
+
+    std::string toml_path = "dmc.toml";
+    if (std::filesystem::exists(toml_path)) {
+        std::ifstream fin(toml_path);
+        std::string line;
+        std::string new_content;
+        while (std::getline(fin, line)) {
+            std::string tr = line;
+            tr.erase(0, tr.find_first_not_of(" \t"));
+            if (tr.find(name + " ") == 0 || tr.find(name + "=") == 0 || tr.find("\"" + name + "\"") == 0) {
+                found = true;
+                continue;
+            }
+            new_content += line + "\n";
+        }
+        fin.close();
+        std::ofstream fout(toml_path);
+        fout << new_content;
+        fout.close();
+        update_lockfile();
+    }
+
     if (!found) {
         std::cerr << "dmc uninstall: package '" << name << "' is not installed\n";
         return;
     }
-    std::cout << "Package '" << name << "' uninstalled successfully\n";
+    std::cout << "Package '" << name << "' uninstalled successfully and dmc.lock updated\n";
 }
 
 static void update_package(const std::string& name) {
@@ -3476,13 +4145,45 @@ static void update_package(const std::string& name) {
 
 static void list_packages() {
     auto pkgs = installed_packages();
-    if (pkgs.empty()) {
-        std::cout << "No packages installed.\n";
-        return;
+    bool shown = false;
+    if (!pkgs.empty()) {
+        shown = true;
+        std::cout << "Installed Global Packages (" << packages_path() << "):\n";
+        for (const auto& pkg : pkgs) {
+            std::cout << "  * " << pkg.name << " v" << pkg.version;
+            if (!pkg.description.empty()) std::cout << " - " << pkg.description;
+            std::cout << "\n";
+        }
     }
-    std::cout << "Installed Demonic C packages:\n";
-    for (const auto& pkg : pkgs) {
-        std::cout << "  " << pkg.name << " " << pkg.version << "\n";
+
+    std::string lock_path = "dmc.lock";
+    if (std::filesystem::exists(lock_path)) {
+        shown = true;
+        std::ifstream lf(lock_path);
+        std::string line;
+        std::string cur_name, cur_ver, cur_src;
+        std::cout << "\nProject Locked Dependencies (dmc.lock):\n";
+        while (std::getline(lf, line)) {
+            std::string tr = line;
+            tr.erase(0, tr.find_first_not_of(" \t\r\n"));
+            tr.erase(tr.find_last_not_of(" \t\r\n") + 1);
+            if (tr.find("name = ") == 0) {
+                cur_name = tr.substr(7);
+                if (cur_name.size() >= 2 && cur_name.front() == '"' && cur_name.back() == '"') cur_name = cur_name.substr(1, cur_name.size() - 2);
+            } else if (tr.find("version = ") == 0 && !cur_name.empty()) {
+                cur_ver = tr.substr(10);
+                if (cur_ver.size() >= 2 && cur_ver.front() == '"' && cur_ver.back() == '"') cur_ver = cur_ver.substr(1, cur_ver.size() - 2);
+            } else if (tr.find("source = ") == 0 && !cur_name.empty()) {
+                cur_src = tr.substr(9);
+                if (cur_src.size() >= 2 && cur_src.front() == '"' && cur_src.back() == '"') cur_src = cur_src.substr(1, cur_src.size() - 2);
+                std::cout << "  - " << cur_name << " v" << cur_ver << " (" << cur_src << ")\n";
+                cur_name.clear(); cur_ver.clear(); cur_src.clear();
+            }
+        }
+    }
+
+    if (!shown) {
+        std::cout << "No packages installed.\n";
     }
 }
 
@@ -3492,9 +4193,13 @@ static void search_packages(const std::string& name) {
         std::cout << "No packages found matching '" << name << "'.\n";
         return;
     }
-    std::cout << "Search results for '" << name << "':\n";
+    if (name.empty() || name == "*") {
+        std::cout << "Demonic C Centralized Package Registry Catalog:\n";
+    } else {
+        std::cout << "Search results for '" << name << "':\n";
+    }
     for (const auto& pkg : results) {
-        std::cout << "  " << pkg.name << " " << pkg.version << " - " << pkg.summary << "\n";
+        std::cout << "  * " << pkg.name << " v" << pkg.version << " - " << pkg.summary << "\n";
     }
 }
 
@@ -4089,7 +4794,7 @@ static int cmd_test_impl(int argc, char** argv, const char* argv0) {
 #ifdef _WIN32
         link_flags += " -lws2_32 -lm";
 #else
-        link_flags += " -lm -ldl";
+        link_flags += " -lm -ldl -lpthread";
 #endif
         for (const auto& lib : parser.link_libs()) {
             link_flags += " -l" + lib;
@@ -4244,7 +4949,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
         std::ostringstream out;
         out << "// Auto-generated Demonic C bindings for Python module: " << py_module << "\n";
-        out << "// Generated by dmc bindgen v1.8.0\n\n";
+        out << "// Generated by dmc bindgen v1.9.0\n\n";
         out << "import py;\n\n";
         out << "fn py_" << safe_module << "_init() -> int {\n";
         out << "    return py_import(\"" << py_module << "\");\n";
@@ -4361,7 +5066,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
         std::ostringstream out;
         out << "// Auto-generated Demonic C bindings for Rust crate/source: " << hp.filename().string() << "\n";
-        out << "// Generated by dmc bindgen v1.8.0\n\n";
+        out << "// Generated by dmc bindgen v1.9.0\n\n";
         for (const auto& lib : link_libs) {
             out << "#[link(\"" << lib << "\")]\n";
         }
@@ -4622,7 +5327,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
     std::ostringstream out;
     out << "// Auto-generated Demonic C bindings for " << hp.filename().string() << "\n";
-    out << "// Generated by dmc bindgen v1.8.0\n\n";
+    out << "// Generated by dmc bindgen v1.9.0\n\n";
     out << "#include <" << hp.filename().string() << ">\n";
     for (const auto& lib : link_libs) {
         out << "#link \"" << lib << "\"\n";
@@ -4899,7 +5604,7 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
 #ifdef _WIN32
         link_flags += " -lws2_32 -lm";
 #else
-        link_flags += " -lm -ldl";
+        link_flags += " -lm -ldl -lpthread";
 #endif
     }
     for (const auto& lib : parser.link_libs()) {
@@ -5110,7 +5815,7 @@ static int cmd_run(const std::string& source_path, std::vector<std::string> prog
 #ifdef _WIN32
     link_flags += " -lws2_32 -lm";
 #else
-    link_flags += " -lm -ldl";
+    link_flags += " -lm -ldl -lpthread";
 #endif
     for (const auto& lib : parser.link_libs()) {
         link_flags += " -l" + lib;
@@ -5215,7 +5920,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v1.8.0)\n"
+              << "Demonic C Interactive REPL (v1.9.0)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -5385,9 +6090,10 @@ static int cmd_eval(int argc, char** argv, const char* argv0) {
 
 static int cmd_explain(int argc, char** argv) {
     if (argc < 2 || std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h" || std::string(argv[1]) == "list") {
-        std::cout << "Demonic C Interactive Topic & Diagnostic Explainer (v1.8.0)\n\n"
+        std::cout << "Demonic C Interactive Topic & Diagnostic Explainer (v1.9.0)\n\n"
                   << "usage: dmc explain <topic|code>\n\n"
                   << "Available Topics:\n"
+                  << "  concurrency- Native OS threads, recursive mutexes, atomics, and Go-style channels\n"
                   << "  pointers   - Raw memory addresses, dereferencing (*p), and address-of (&x)\n"
                   << "  nullable   - Null-safety with '?T' types and safe unwrapping\n"
                   << "  defer      - Guaranteed resource cleanup before function exit\n"
@@ -5628,6 +6334,33 @@ static int cmd_explain(int argc, char** argv) {
                   << "Fix:\n"
                   << "  Use the 'as' casting operator: 'let x: int = float_val as int;'\n"
                   << "================================================================================\n";
+    } else if (topic == "threads" || topic == "thread" || topic == "concurrency" || topic == "channels" || topic == "channel" || topic == "mutex") {
+        std::cout << "================================================================================\n"
+                  << "Topic: Multithreading, Recursive Mutexes & Channels\n"
+                  << "================================================================================\n"
+                  << "What is it:\n"
+                  << "  Demonic C provides zero-cost native OS threads, recursive mutexes, lock-free\n"
+                  << "  hardware atomics, and Go-style thread-safe condition-variable channels.\n\n"
+                  << "Core Primitives:\n"
+                  << "  thread_spawn(func)           - Spawn a new OS thread running func\n"
+                  << "  thread_join(th)              - Wait for thread completion\n"
+                  << "  thread_sleep(ms)             - Sleep current thread for ms milliseconds\n"
+                  << "  mutex_new() / mutex_lock(m)  - Recursive thread synchronization\n"
+                  << "  atomic_add(&x, val)          - Hardware lock-free atomic increment\n"
+                  << "  channel_new(capacity)        - Create bounded/unbounded safe FIFO channel\n"
+                  << "  channel_send(ch, msg)        - Send string message across threads\n"
+                  << "  channel_recv(ch)             - Blocking receive string message\n\n"
+                  << "Example:\n"
+                  << "  import thread;\n\n"
+                  << "  fn worker() {\n"
+                  << "      println(\"Worker thread started: \" + text_from_int(thread_id()));\n"
+                  << "  }\n\n"
+                  << "  fn main() -> int {\n"
+                  << "      let th = thread_spawn(worker);\n"
+                  << "      thread_join(th);\n"
+                  << "      return 0;\n"
+                  << "  }\n"
+                  << "================================================================================\n";
     } else {
         std::cout << "Unknown topic '" << topic << "'. Run 'dmc explain' to see all available topics.\n";
         return 1;
@@ -5644,7 +6377,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.8.0";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.9.0";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -5874,11 +6607,8 @@ static int cmd_pkg(int argc, char** argv) {
                 name = args[i];
             }
         }
-        if (name.empty()) {
-            std::cerr << "dmc search: search term required\n";
-            return 1;
-        }
         search_packages(name);
+        return 0;
     } else if (command == "list") {
         list_packages();
     } else if (command == "publish") {
@@ -6363,8 +7093,8 @@ static int cmd_check(int argc, char** argv) {
 
 static int cmd_info() {
     std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
-    std::cout << "  Version:       1.8.0\n";
-    std::cout << "  Features:      Polyglot FFI (C/Rust/Python/JS), SIMD (f32x4/i32x4), #line source maps, bindgen, shared libs, freestanding, wasm\n";
+    std::cout << "  Version:       1.9.0\n";
+    std::cout << "  Features:      Native Multithreading, Recursive Mutexes, Hardware Atomics, Channels, Async Tasks, HTTP Server, dmc.lock Registry, Polyglot FFI, SIMD (f32x4/i32x4), #line source maps, bindgen, wasm\n";
     std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
 #ifdef _WIN32
     std::cout << "windows-x86_64";
@@ -6557,7 +7287,7 @@ static int cmd_update(int argc, char** argv) {
         return 1;
     }
     
-    std::string current_ver = "v1.8.0";
+    std::string current_ver = "v1.9.0";
     std::cout << "Current version: " << current_ver << "\n";
     std::cout << "Latest version:  " << latest_tag << "\n";
     
@@ -6743,7 +7473,7 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 1.8.0 (Demonic C -> C)\n";
+        std::cout << "dmc 1.9.0 (Demonic C -> C)\n";
         return 0;
     }
 
@@ -6775,8 +7505,12 @@ int main(int argc, char** argv) {
         return cmd_watch(argc - 1, argv + 1, argv[0]);
     }
 
-    if (!args.empty() && args[0] == "pkg") {
+    if (!args.empty() && (args[0] == "pkg" || args[0] == "package")) {
         return cmd_pkg(argc - 1, argv + 1);
+    }
+
+    if (!args.empty() && (args[0] == "install" || args[0] == "search")) {
+        return cmd_pkg(argc, argv);
     }
     
     if (!args.empty() && args[0] == "new") {
@@ -6877,7 +7611,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 1.8.0 (Demonic C -> C)\n";
+            std::cout << "dmc 1.9.0 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {
