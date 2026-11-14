@@ -79,6 +79,7 @@ struct Function {
     int line = 0;
 };
 struct Struct { std::string name; std::vector<Field> fields; };
+struct GenericStruct { std::string name; std::vector<std::string> type_params; std::vector<Field> fields; };
 struct EnumVariant { std::string name; std::string payload; };
 struct Enum {
     std::string name;
@@ -159,7 +160,7 @@ static std::vector<Token> lex(const std::string& source) {
         }
         if (i + 1 < source.size()) {
             std::string pair = source.substr(i, 2);
-            if (pair == "==" || pair == "!=" || pair == "<=" || pair == ">=" || pair == "&&" || pair == "||" || pair == "->" || pair == "::" || pair == "#[" || pair == ".." || pair == "?*") {
+            if (pair == "==" || pair == "!=" || pair == "<=" || pair == ">=" || pair == "&&" || pair == "||" || pair == "->" || pair == "=>" || pair == "::" || pair == "#[" || pair == ".." || pair == "?*") {
                 result.push_back({pair, line, col}); i += 2; col += 2; continue;
             }
         }
@@ -190,9 +191,20 @@ static std::string ctype(const std::string& type) {
     if (type == "arena") return "long long";
     if (type.rfind("?*", 0) == 0) return ctype(type.substr(2)) + "*";
     if (!type.empty() && type.front() == '*') return ctype(type.substr(1)) + "*";
-    if (type.rfind("Vector<", 0) == 0 && type.back() == '>') {
-        std::string inner = type.substr(7, type.size() - 8);
-        return "Vector_" + inner + "*";
+    if (type.find('<') != std::string::npos && type.back() == '>') {
+        if (type.rfind("Vector<", 0) == 0) {
+            std::string inner = type.substr(7, type.size() - 8);
+            return "Vector_" + inner + "*";
+        }
+        std::string mangled = type;
+        for (char& c : mangled) {
+            if (c == '<' || c == ',' || c == ' ') c = '_';
+        }
+        if (!mangled.empty() && mangled.back() == '>') mangled.pop_back();
+        while (mangled.find("__") != std::string::npos) {
+            mangled.replace(mangled.find("__"), 2, "_");
+        }
+        return mangled;
     }
     if (!type.empty() && type.front() == '[') {
         auto sep = type.find(';');
@@ -583,7 +595,10 @@ private:
                         functions_.push_back(function());
                     }
                 } else if (peek() == "struct") {
-                    structs_.push_back(structure());
+                    Struct s = structure();
+                    if (!s.name.empty()) {
+                        structs_.push_back(s);
+                    }
                 } else if (peek() == "let" || peek() == "const" || peek() == "var") {
                     take();
                     std::string cname = take();
@@ -1117,16 +1132,37 @@ private:
         out << "double math_pi(void) { return 3.14159265358979323846; }\n";
         out << "double math_e(void) { return 2.71828182845904523536; }\n";
         out << "long long text_len(const char *s) { return s ? (long long)strlen(s) : 0; }\n";
-        out << "const char *text_concat(const char *a, const char *b) { size_t la = a ? strlen(a) : 0; size_t lb = b ? strlen(b) : 0; char *res = (char*)malloc(la + lb + 1); if (!res) return \"\"; if (la) memcpy(res, a, la); if (lb) memcpy(res + la, b, lb); res[la + lb] = 0; return res; }\n";
-        out << "const char *text_sub(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen || len <= 0) { char *b = (char*)malloc(1); if (b) b[0] = 0; return b ? b : \"\"; } if (start + len > slen) len = slen - start; char *b = (char*)malloc((size_t)len + 1); if (!b) return \"\"; memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n";
+        out << "#if defined(_MSC_VER)\n#define DMC_THREAD_LOCAL __declspec(thread)\n#elif defined(__GNUC__) || defined(__clang__)\n#define DMC_THREAD_LOCAL __thread\n#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L\n#define DMC_THREAD_LOCAL _Thread_local\n#else\n#define DMC_THREAD_LOCAL\n#endif\n";
+        out << "static DMC_THREAD_LOCAL char _dmc_concat_pool[64][2048];\n";
+        out << "static DMC_THREAD_LOCAL int _dmc_concat_idx = 0;\n";
+        out << "static inline char *_dmc_concat_alloc(size_t len) {\n";
+        out << "  if (len < 2047) {\n";
+        out << "    int idx = (_dmc_concat_idx++) & 63;\n";
+        out << "    return _dmc_concat_pool[idx];\n";
+        out << "  }\n";
+        out << "  return (char*)malloc(len + 1);\n";
+        out << "}\n";
+        out << "static DMC_THREAD_LOCAL char _dmc_slice_pool[64][2048];\n";
+        out << "static DMC_THREAD_LOCAL int _dmc_slice_idx = 0;\n";
+        out << "static inline char *_dmc_slice_alloc(size_t len) {\n";
+        out << "  if (len < 2047) {\n";
+        out << "    int idx = (_dmc_slice_idx++) & 63;\n";
+        out << "    return _dmc_slice_pool[idx];\n";
+        out << "  }\n";
+        out << "  return (char*)malloc(len + 1);\n";
+        out << "}\n";
+        out << "const char *text_concat(const char *a, const char *b) { size_t la = a ? strlen(a) : 0; size_t lb = b ? strlen(b) : 0; size_t total = la + lb; char *res = _dmc_concat_alloc(total); if (!res) return \"\"; if (la) memcpy(res, a, la); if (lb) memcpy(res + la, b, lb); res[total] = 0; return res; }\n";
+        out << "const char *text_sub(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen || len <= 0) return \"\"; if (start + len > slen) len = slen - start; char *b = _dmc_slice_alloc((size_t)len); if (!b) return \"\"; if (len) memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n";
         out << "long long text_char_at(const char *s, long long i) { if (!s || i < 0 || i >= (long long)strlen(s)) return -1; return (unsigned char)s[i]; }\n";
         out << "long long text_cmp(const char *a, const char *b) { if (!a && !b) return 0; if (!a) return -1; if (!b) return 1; return strcmp(a, b); }\n";
+        out << "long long text_find(const char *s, const char *sub) { if (!s || !sub) return -1; const char *p = strstr(s, sub); return p ? (long long)(p - s) : -1; }\n";
+        out << "long long text_contains(const char *s, const char *sub) { return text_find(s, sub) >= 0 ? 1 : 0; }\n";
         out << "const char *text_from_int(long long x) { static char buf[32]; snprintf(buf, sizeof(buf), \"%lld\", x); return buf; }\n";
         out << "const char *text_from_float(double x) { static char buf[64]; snprintf(buf, sizeof(buf), \"%g\", x); return buf; }\n";
         out << "long long text_to_int(const char *s) { return atoll(s); }\n";
-        out << "const char *text_upper(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = (char*)malloc(n + 1); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)toupper((unsigned char)s[i]); res[n] = 0; return res; }\n";
-        out << "const char *text_lower(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = (char*)malloc(n + 1); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)tolower((unsigned char)s[i]); res[n] = 0; return res; }\n";
-        out << "const char *text_replace(const char *s, const char *sub, const char *rep) { if (!s) return \"\"; if (!sub || !*sub) return text_concat(s, \"\"); if (!rep) rep = \"\"; size_t sub_len = strlen(sub); size_t rep_len = strlen(rep); size_t count = 0; const char *p = s; while ((p = strstr(p, sub)) != NULL) { count++; p += sub_len; } size_t new_len = strlen(s) + count * (rep_len >= sub_len ? (rep_len - sub_len) : 0); char *res = (char*)malloc(new_len + 1); if (!res) return \"\"; char *dst = res; p = s; while (*p) { if (strncmp(p, sub, sub_len) == 0) { memcpy(dst, rep, rep_len); dst += rep_len; p += sub_len; } else { *dst++ = *p++; } } *dst = 0; return res; }\n";
+        out << "const char *text_upper(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = _dmc_concat_alloc(n); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)toupper((unsigned char)s[i]); res[n] = 0; return res; }\n";
+        out << "const char *text_lower(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = _dmc_concat_alloc(n); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)tolower((unsigned char)s[i]); res[n] = 0; return res; }\n";
+        out << "const char *text_replace(const char *s, const char *sub, const char *rep) { if (!s) return \"\"; if (!sub || !*sub) return text_concat(s, \"\"); if (!rep) rep = \"\"; size_t sub_len = strlen(sub); size_t rep_len = strlen(rep); size_t count = 0; const char *p = s; while ((p = strstr(p, sub)) != NULL) { count++; p += sub_len; } size_t new_len = strlen(s) + count * (rep_len >= sub_len ? (rep_len - sub_len) : 0); char *res = _dmc_concat_alloc(new_len); if (!res) return \"\"; char *dst = res; p = s; while (*p) { if (strncmp(p, sub, sub_len) == 0) { memcpy(dst, rep, rep_len); dst += rep_len; p += sub_len; } else { *dst++ = *p++; } } *dst = 0; return res; }\n";
         out << R"DMC_JSON(
 static char _dmc_json_value[65536];
 const char *json_parse(const char *s) { return s ? s : ""; }
@@ -1261,8 +1297,8 @@ int db_close(long long connection) { (void)connection; return 0; }
 )DMC_DB";
 
         out << "double text_to_float(const char *s) { return atof(s); }\n";
-        out << "const char *string_copy(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *b = (char*)malloc(n + 1); if (n) memcpy(b, s, n); b[n] = 0; return b; }\n";
-        out << "const char *string_slice(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen || len <= 0) return string_copy(\"\"); if (start + len > slen) len = slen - start; char *b = (char*)malloc((size_t)len + 1); if (len) memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n\n";
+        out << "const char *string_copy(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *b = _dmc_slice_alloc(n); if (!b) return \"\"; if (n) memcpy(b, s, n); b[n] = 0; return b; }\n";
+        out << "const char *string_slice(const char *s, long long start, long long len) { return text_sub(s, start, len); }\n\n";
         out << "long long proc_arg_count(long long argc) { return argc ? argc : (long long)__dmc_argc; }\n";
         out << "const char *proc_exit(long long code) { exit((int)code); return \"\"; }\n\n";
 
@@ -2345,24 +2381,255 @@ long long channel_free(long long h) {
     _dmc_unlock_global();
     return 0;
 }
+
+typedef void (*_dmc_pool_fn)(const char*);
+typedef struct _dmc_pool_item {
+    _dmc_pool_fn fn;
+    char *arg;
+    struct _dmc_pool_item *next;
+} _dmc_pool_item_t;
+
+typedef struct {
+    int count;
+    int stop;
+    _dmc_pool_item_t *head;
+    _dmc_pool_item_t *tail;
+#ifdef _WIN32
+    CRITICAL_SECTION lock;
+    CONDITION_VARIABLE cv;
+    HANDLE *threads;
+#else
+    pthread_mutex_t lock;
+    pthread_cond_t cv;
+    pthread_t *threads;
+#endif
+} _dmc_task_pool_t;
+
+static _dmc_task_pool_t **_dmc_pools = NULL;
+static int _dmc_pools_cap = 0;
+static int _dmc_pools_next = 1;
+
+#ifdef _WIN32
+static DWORD WINAPI _dmc_pool_worker(LPVOID param) {
+    _dmc_task_pool_t *p = (_dmc_task_pool_t*)param;
+    while (1) {
+        EnterCriticalSection(&p->lock);
+        while (!p->head && !p->stop) {
+            SleepConditionVariableCS(&p->cv, &p->lock, INFINITE);
+        }
+        if (p->stop && !p->head) {
+            LeaveCriticalSection(&p->lock);
+            break;
+        }
+        _dmc_pool_item_t *item = p->head;
+        p->head = item->next;
+        if (!p->head) p->tail = NULL;
+        LeaveCriticalSection(&p->lock);
+        if (item->fn) item->fn(item->arg ? item->arg : "");
+        if (item->arg) free(item->arg);
+        free(item);
+    }
+    return 0;
+}
+#else
+static void* _dmc_pool_worker(void *param) {
+    _dmc_task_pool_t *p = (_dmc_task_pool_t*)param;
+    while (1) {
+        pthread_mutex_lock(&p->lock);
+        while (!p->head && !p->stop) {
+            pthread_cond_wait(&p->cv, &p->lock);
+        }
+        if (p->stop && !p->head) {
+            pthread_mutex_unlock(&p->lock);
+            break;
+        }
+        _dmc_pool_item_t *item = p->head;
+        p->head = item->next;
+        if (!p->head) p->tail = NULL;
+        pthread_mutex_unlock(&p->lock);
+        if (item->fn) item->fn(item->arg ? item->arg : "");
+        if (item->arg) free(item->arg);
+        free(item);
+    }
+    return NULL;
+}
+#endif
+
+long long task_pool_new(long long threads) {
+    if (threads <= 0) threads = 4;
+    _dmc_lock_global();
+    int h = _dmc_pools_next++;
+    if (h >= _dmc_pools_cap) {
+        int nc = _dmc_pools_cap ? _dmc_pools_cap * 2 : 16;
+        _dmc_task_pool_t **np = (_dmc_task_pool_t**)realloc(_dmc_pools, nc * sizeof(_dmc_task_pool_t*));
+        if (!np) { _dmc_unlock_global(); return -1; }
+        for (int i = _dmc_pools_cap; i < nc; ++i) np[i] = NULL;
+        _dmc_pools = np;
+        _dmc_pools_cap = nc;
+    }
+    _dmc_task_pool_t *p = (_dmc_task_pool_t*)calloc(1, sizeof(_dmc_task_pool_t));
+    p->count = (int)threads;
+#ifdef _WIN32
+    InitializeCriticalSection(&p->lock);
+    InitializeConditionVariable(&p->cv);
+    p->threads = (HANDLE*)calloc(p->count, sizeof(HANDLE));
+    for (int i = 0; i < p->count; ++i) {
+        p->threads[i] = CreateThread(NULL, 0, _dmc_pool_worker, p, 0, NULL);
+    }
+#else
+    pthread_mutex_init(&p->lock, NULL);
+    pthread_cond_init(&p->cv, NULL);
+    p->threads = (pthread_t*)calloc(p->count, sizeof(pthread_t));
+    for (int i = 0; i < p->count; ++i) {
+        pthread_create(&p->threads[i], NULL, _dmc_pool_worker, p);
+    }
+#endif
+    _dmc_pools[h] = p;
+    _dmc_unlock_global();
+    return h;
+}
+
+long long task_pool_submit(long long h, void *fn_ptr, const char *arg) {
+    if (h < 0 || h >= _dmc_pools_cap || !_dmc_pools || !_dmc_pools[h] || !fn_ptr) return -1;
+    _dmc_task_pool_t *p = _dmc_pools[h];
+    _dmc_pool_item_t *item = (_dmc_pool_item_t*)calloc(1, sizeof(_dmc_pool_item_t));
+    item->fn = (_dmc_pool_fn)fn_ptr;
+    item->arg = arg ? strdup(arg) : strdup("");
+#ifdef _WIN32
+    EnterCriticalSection(&p->lock);
+    if (p->tail) {
+        p->tail->next = item;
+        p->tail = item;
+    } else {
+        p->head = item;
+        p->tail = item;
+    }
+    WakeConditionVariable(&p->cv);
+    LeaveCriticalSection(&p->lock);
+#else
+    pthread_mutex_lock(&p->lock);
+    if (p->tail) {
+        p->tail->next = item;
+        p->tail = item;
+    } else {
+        p->head = item;
+        p->tail = item;
+    }
+    pthread_cond_signal(&p->cv);
+    pthread_mutex_unlock(&p->lock);
+#endif
+    return 0;
+}
+
+long long task_pool_free(long long h) {
+    if (h < 0 || h >= _dmc_pools_cap || !_dmc_pools || !_dmc_pools[h]) return -1;
+    _dmc_task_pool_t *p = _dmc_pools[h];
+#ifdef _WIN32
+    EnterCriticalSection(&p->lock);
+    p->stop = 1;
+    WakeAllConditionVariable(&p->cv);
+    LeaveCriticalSection(&p->lock);
+    for (int i = 0; i < p->count; ++i) {
+        if (p->threads[i]) {
+            WaitForSingleObject(p->threads[i], INFINITE);
+            CloseHandle(p->threads[i]);
+        }
+    }
+    DeleteCriticalSection(&p->lock);
+    free(p->threads);
+#else
+    pthread_mutex_lock(&p->lock);
+    p->stop = 1;
+    pthread_cond_broadcast(&p->cv);
+    pthread_mutex_unlock(&p->lock);
+    for (int i = 0; i < p->count; ++i) {
+        pthread_join(p->threads[i], NULL);
+    }
+    pthread_mutex_destroy(&p->lock);
+    pthread_cond_destroy(&p->cv);
+    free(p->threads);
+#endif
+    free(p);
+    _dmc_lock_global();
+    _dmc_pools[h] = NULL;
+    _dmc_unlock_global();
+    return 0;
+}
 )DMC_CONCURRENCY";
     }
 
     Struct structure() {
         expect("struct");
-        Struct result{take(), {}};
+        std::string sname = take();
+        std::vector<std::string> tparams;
+        if (peek() == "<") {
+            take();
+            while (true) {
+                tparams.push_back(take());
+                if (peek() == ",") { take(); continue; }
+                break;
+            }
+            expect(">");
+        }
         expect("{");
+        std::vector<Field> fields;
         while (peek() != "}") {
             std::string name = take();
             expect(":");
             std::string type = type_name();
             if (peek() == ",") take();
-            else expect(";");
-            result.fields.push_back({name, type});
+            else if (peek() == ";") take();
+            fields.push_back({name, type});
         }
         expect("}");
         if (peek() == ";") take();
-        return result;
+        if (!tparams.empty()) {
+            generic_structs_[sname] = {sname, tparams, fields};
+            return Struct{"", {}};
+        }
+        return Struct{sname, fields};
+    }
+
+    void instantiate_generic_struct(const std::string& base, const std::vector<std::string>& args) {
+        auto it = generic_structs_.find(base);
+        if (it == generic_structs_.end()) return;
+        const auto& gs = it->second;
+        if (gs.type_params.size() != args.size()) return;
+        std::string full_type = base + "<";
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (i > 0) full_type += ", ";
+            full_type += args[i];
+        }
+        full_type += ">";
+        std::string mangled = ctype(full_type);
+        for (const auto& s : structs_) {
+            if (s.name == mangled) return;
+        }
+        std::vector<Field> subst_fields;
+        for (const auto& f : gs.fields) {
+            std::string ftype = f.type;
+            for (size_t i = 0; i < gs.type_params.size(); ++i) {
+                const std::string& p = gs.type_params[i];
+                const std::string& a = args[i];
+                if (ftype == p) {
+                    ftype = a;
+                } else {
+                    size_t pos = 0;
+                    while ((pos = ftype.find(p, pos)) != std::string::npos) {
+                        bool left_ok = (pos == 0 || !std::isalnum(static_cast<unsigned char>(ftype[pos - 1])));
+                        bool right_ok = (pos + p.size() >= ftype.size() || !std::isalnum(static_cast<unsigned char>(ftype[pos + p.size()])));
+                        if (left_ok && right_ok) {
+                            ftype.replace(pos, p.size(), a);
+                            pos += a.size();
+                        } else {
+                            pos += p.size();
+                        }
+                    }
+                }
+            }
+            subst_fields.push_back({f.name, ftype});
+        }
+        structs_.push_back({mangled, subst_fields});
     }
 
     Enum parse_enum() {
@@ -2719,6 +2986,9 @@ long long channel_free(long long h) {
         if (peek() == "switch") {
             return switch_statement();
         }
+        if (peek() == "match") {
+            return match_statement();
+        }
         if (peek() == "asm") {
             return asm_statement();
         }
@@ -2779,6 +3049,139 @@ long long channel_free(long long h) {
         }
         result += "}";
         return result;
+    }
+
+    std::string match_statement() {
+        take();
+        std::string scrutinee;
+        if (peek() == "(") {
+            take();
+            scrutinee = expression(")");
+            expect(")");
+        } else {
+            scrutinee = expression("{");
+        }
+        expect("{");
+        int match_id = ++match_counter_;
+        std::string match_var = "_dmc_match_" + std::to_string(match_id);
+        std::string stype = infer_type(scrutinee);
+        const Enum* matched_enum = nullptr;
+        if (!stype.empty()) {
+            for (const auto& e : enums_) {
+                if (e.name == stype) {
+                    matched_enum = &e;
+                    break;
+                }
+            }
+        }
+        if (!matched_enum && peek() != "}" && peek() != "_" && peek() != "default") {
+            std::string first_tok = peek();
+            std::string cand_prefix = "";
+            std::string cand_var = first_tok;
+            if (index_ + 1 < tokens_.size() && tokens_[index_ + 1].text == "::" && index_ + 2 < tokens_.size()) {
+                cand_prefix = first_tok;
+                cand_var = tokens_[index_ + 2].text;
+            }
+            for (const auto& e : enums_) {
+                for (const auto& v : e.variants) {
+                    if ((cand_prefix.empty() || e.name == cand_prefix) && (v.name == cand_var || e.name + "_" + v.name == cand_var)) {
+                        matched_enum = &e;
+                        stype = e.name;
+                        break;
+                    }
+                }
+                if (matched_enum) break;
+            }
+        }
+        if (stype.empty()) stype = "int";
+        std::string pre_assign = ctype(stype) + " " + match_var + " = " + scrutinee + ";\n";
+        std::string switch_target = (matched_enum && matched_enum->has_payload()) ? (match_var + ".tag") : match_var;
+        std::string out = pre_assign + "    switch (" + switch_target + ") {\n";
+        while (peek() != "}") {
+            if (peek() == "_" || peek() == "default") {
+                take();
+                expect("=>");
+                out += "        default: {\n";
+                if (peek() == "{") {
+                    auto body = block();
+                    for (const auto& s : body) out += "            " + s + "\n";
+                } else {
+                    std::string s = statement();
+                    out += "            " + s + "\n";
+                }
+                out += "            break;\n        }\n";
+                if (peek() == "," || peek() == ";") take();
+                continue;
+            }
+            std::string pat_prefix = "";
+            std::string pat_variant = take();
+            if (peek() == "::") {
+                take();
+                pat_prefix = pat_variant;
+                pat_variant = take();
+            }
+            std::string bind_name = "";
+            if (peek() == "(") {
+                take();
+                bind_name = take();
+                expect(")");
+            }
+            expect("=>");
+            const Enum* arm_enum = matched_enum;
+            const EnumVariant* arm_var = nullptr;
+            if (!arm_enum) {
+                for (const auto& e : enums_) {
+                    for (const auto& v : e.variants) {
+                        if ((pat_prefix.empty() || e.name == pat_prefix) && (v.name == pat_variant || e.name + "_" + v.name == pat_variant)) {
+                            arm_enum = &e;
+                            arm_var = &v;
+                            break;
+                        }
+                    }
+                    if (arm_var) break;
+                }
+            } else {
+                for (const auto& v : arm_enum->variants) {
+                    if (v.name == pat_variant || arm_enum->name + "_" + v.name == pat_variant) {
+                        arm_var = &v;
+                        break;
+                    }
+                }
+            }
+            std::string case_label;
+            if (arm_enum && arm_var) {
+                if (arm_enum->has_payload()) {
+                    case_label = arm_enum->name + "_Tag_" + arm_var->name;
+                } else {
+                    case_label = arm_enum->name + "_" + arm_var->name;
+                }
+            } else {
+                case_label = pat_prefix.empty() ? pat_variant : (pat_prefix + "_" + pat_variant);
+            }
+            out += "        case " + case_label + ": {\n";
+            std::string payload_type = (arm_var && !arm_var->payload.empty()) ? arm_var->payload : "";
+            if (!bind_name.empty() && !payload_type.empty()) {
+                std::string c_p = ctype(payload_type);
+                out += "            " + c_p + " " + bind_name + " = " + match_var + ".data." + arm_var->name + ";\n";
+            }
+            if (peek() == "{") {
+                auto body = block(!bind_name.empty() ? bind_name : "", payload_type);
+                for (const auto& s : body) out += "            " + s + "\n";
+            } else {
+                scopes_.emplace_back();
+                if (!bind_name.empty() && !payload_type.empty()) {
+                    bind_type(bind_name, payload_type);
+                }
+                std::string s = statement();
+                scopes_.pop_back();
+                out += "            " + s + "\n";
+            }
+            out += "            break;\n        }\n";
+            if (peek() == "," || peek() == ";") take();
+        }
+        expect("}");
+        out += "    }";
+        return out;
     }
 
     std::string asm_statement() {
@@ -3276,6 +3679,28 @@ long long channel_free(long long h) {
                 }
                 return "Vector_" + elem;
             }
+            if (generic_structs_.find(name) != generic_structs_.end() && peek() == "<") {
+                take();
+                std::vector<std::string> args;
+                while (peek() != ">") {
+                    args.push_back(type_name());
+                    if (peek() == ",") take();
+                    else break;
+                }
+                expect(">");
+                instantiate_generic_struct(name, args);
+                std::string full_type = name + "<";
+                for (size_t i = 0; i < args.size(); ++i) {
+                    if (i > 0) full_type += ", ";
+                    full_type += args[i];
+                }
+                full_type += ">";
+                std::string mangled = ctype(full_type);
+                if (peek() == "{") {
+                    return struct_literal(mangled);
+                }
+                return mangled;
+            }
             if (peek() == "::") {
                 take();
                 std::string variant = take();
@@ -3407,10 +3832,23 @@ long long channel_free(long long h) {
         std::string base = take();
         if (peek() == "<") {
             take();
-            std::string inner = type_name();
+            std::vector<std::string> args;
+            while (peek() != ">") {
+                args.push_back(type_name());
+                if (peek() == ",") take();
+                else break;
+            }
             expect(">");
-            std::string full_type = base + "<" + inner + ">";
-            if (base == "Vector") specialized_vectors_.insert(inner);
+            std::string full_type = base + "<";
+            for (size_t i = 0; i < args.size(); ++i) {
+                if (i > 0) full_type += ", ";
+                full_type += args[i];
+            }
+            full_type += ">";
+            if (base == "Vector" && !args.empty()) specialized_vectors_.insert(args[0]);
+            if (generic_structs_.find(base) != generic_structs_.end()) {
+                instantiate_generic_struct(base, args);
+            }
             return full_type;
         }
         while (peek() == "*") {
@@ -3534,7 +3972,7 @@ long long channel_free(long long h) {
         if (val.rfind("py_eval(", 0) == 0 || val.rfind("py_call(", 0) == 0 || val.rfind("js_eval(", 0) == 0 || val.rfind("ffi_call_str", 0) == 0 || val.rfind("ffi_error(", 0) == 0) return "string";
         if (val.rfind("ffi_call_f", 0) == 0) return "f64";
         if (val.rfind("ffi_symbol(", 0) == 0) return "*void";
-        if (val.rfind("ffi_open(", 0) == 0 || val.rfind("ffi_close(", 0) == 0 || val.rfind("py_init(", 0) == 0 || val.rfind("py_finalize(", 0) == 0 || val.rfind("py_run(", 0) == 0 || val.rfind("py_import(", 0) == 0 || val.rfind("js_run(", 0) == 0) return "int";
+        if (val.rfind("ffi_open(", 0) == 0 || val.rfind("ffi_close(", 0) == 0 || val.rfind("py_init(", 0) == 0 || val.rfind("py_finalize(", 0) == 0 || val.rfind("py_run(", 0) == 0 || val.rfind("py_import(", 0) == 0 || val.rfind("js_run(", 0) == 0 || val.rfind("task_pool_new(", 0) == 0 || val.rfind("task_pool_submit(", 0) == 0 || val.rfind("task_pool_free(", 0) == 0) return "int";
         for (const auto& s : structs_) {
             std::string prefix = "(" + s.name + "){";
             if (val.find(prefix) != std::string::npos || val.rfind(s.name + " {", 0) == 0 || val.rfind(s.name + "{", 0) == 0) {
@@ -3637,7 +4075,7 @@ long long channel_free(long long h) {
             "map_new", "map_set", "map_get", "map_has", "map_len", "map_free",
             "math_abs", "math_min", "math_max", "math_clamp",
             "math_sin", "math_cos", "math_tan", "math_sqrt", "math_floor", "math_ceil", "math_abs_f", "math_pi", "math_e",
-            "text_len", "text_concat", "text_sub", "text_char_at", "text_cmp",
+            "text_len", "text_concat", "text_sub", "text_char_at", "text_cmp", "text_find", "text_contains",
             "text_from_int", "text_from_float", "text_to_int", "text_to_float",
             "text_upper", "text_lower", "text_replace",
             "string_copy", "string_slice",
@@ -3657,7 +4095,8 @@ long long channel_free(long long h) {
             "mutex_new", "mutex_lock", "mutex_unlock", "mutex_free",
             "atomic_add", "atomic_sub", "atomic_load", "atomic_store",
             "channel_new", "channel_send", "channel_recv", "channel_try_recv", "channel_close", "channel_free",
-            "time_now_ms", "time_sleep_ms", "rand_seed", "rand_int", "proc_pid", "datetime_now", "datetime_format", "datetime_unix"
+            "time_now_ms", "time_sleep_ms", "rand_seed", "rand_int", "proc_pid", "datetime_now", "datetime_format", "datetime_unix",
+            "task_pool_new", "task_pool_submit", "task_pool_free"
         };
         for (auto& f : fns) if (f == name) return true;
         return false;
@@ -3721,6 +4160,8 @@ long long channel_free(long long h) {
     size_t index_ = 0;
     std::vector<Function> functions_;
     std::vector<Struct> structs_;
+    std::unordered_map<std::string, GenericStruct> generic_structs_;
+    int match_counter_ = 0;
     std::vector<Enum> enums_;
     std::vector<std::unordered_map<std::string, std::string>> scopes_;
     std::set<std::string> imports_;
@@ -3845,7 +4286,8 @@ static void resolve_dependencies() {
 
 static std::string packages_path() {
     std::string p = pkg_dir();
-    std::filesystem::create_directories(p);
+    std::error_code ec;
+    std::filesystem::create_directories(p, ec);
     return p;
 }
 
@@ -5639,13 +6081,28 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
 static void print_diagnostic(const std::string& filepath, const std::string& source, const Diagnostic& d, const std::string& severity);
 
 static std::string dmc_cache_dir() {
+    std::error_code ec;
     const char* home = std::getenv("USERPROFILE");
 #ifndef _WIN32
     if (!home) home = std::getenv("HOME");
 #endif
-    std::filesystem::path p = home ? std::filesystem::path(home) / ".dmc" / "cache" : std::filesystem::current_path() / ".dmc" / "cache";
-    std::filesystem::create_directories(p);
-    return p.string();
+    if (home) {
+        std::filesystem::path p = std::filesystem::path(home) / ".dmc" / "cache";
+        if (std::filesystem::create_directories(p, ec) || (!ec && std::filesystem::exists(p))) {
+            return p.string();
+        }
+    }
+    ec.clear();
+    std::filesystem::path local = std::filesystem::current_path(ec) / ".dmc" / "cache";
+    if (!ec && (std::filesystem::create_directories(local, ec) || (!ec && std::filesystem::exists(local)))) {
+        return local.string();
+    }
+    ec.clear();
+    std::filesystem::path tmp = std::filesystem::temp_directory_path(ec) / ".dmc" / "cache";
+    if (!ec && (std::filesystem::create_directories(tmp, ec) || (!ec && std::filesystem::exists(tmp)))) {
+        return tmp.string();
+    }
+    return ".";
 }
 
 static uint64_t compute_fnv1a_hash(const std::string& data) {

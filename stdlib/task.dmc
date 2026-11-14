@@ -1,6 +1,3 @@
-// Demonic C Standard Library: task
-// Async background worker tasks and thread-safe futures
-
 import thread;
 
 fn task_channel_create(cap: int) -> int {
@@ -17,4 +14,16 @@ fn task_channel_recv(ch: int) -> string {
 
 fn task_channel_try_recv(ch: int) -> string {
     return channel_try_recv(ch);
+}
+
+fn task_pool_create(threads: int) -> int {
+    return task_pool_new(threads);
+}
+
+fn task_pool_dispatch(pool: int, fn_name: *void, arg: string) -> int {
+    return task_pool_submit(pool, fn_name, arg);
+}
+
+fn task_pool_destroy(pool: int) -> int {
+    return task_pool_free(pool);
 }

@@ -1,0 +1,172 @@
+import task;
+import thread;
+
+enum Status {
+    Ok(int),
+    Err(int)
+}
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+struct Pair<T, U> {
+    first: T,
+    second: U
+}
+
+var g_pool_jobs: int = 0;
+
+fn pool_worker_fn(arg: string) {
+    if (text_cmp(arg, "worker_payload") == 0) {
+        atomic_add(&g_pool_jobs, 1);
+    }
+}
+
+#[test]
+fn test_match_tagged_union() -> int {
+    let s1 = Status_Ok(42);
+    var res1 = 0;
+    match (s1) {
+        Ok(val) => {
+            res1 = val;
+        }
+        Err(code) => {
+            res1 = 0 - code;
+        }
+        _ => {
+            res1 = -1;
+        }
+    }
+    if (res1 != 42) {
+        return 1;
+    }
+
+    let s2 = Status_Err(7);
+    var res2 = 0;
+    match (s2) {
+        Ok(val) => {
+            res2 = val;
+        }
+        Err(code) => {
+            res2 = code;
+        }
+        _ => {
+            res2 = -1;
+        }
+    }
+    if (res2 != 7) {
+        return 2;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_match_simple_enum() -> int {
+    let c = Color_Green;
+    var result = 0;
+    match (c) {
+        Color::Red => {
+            result = 10;
+        }
+        Color::Green => {
+            result = 20;
+        }
+        Color::Blue => {
+            result = 30;
+        }
+        _ => {
+            result = 99;
+        }
+    }
+    if (result != 20) {
+        return 1;
+    }
+    return 0;
+}
+
+#[test]
+fn test_match_literal_values() -> int {
+    let n = 2;
+    var matched = 0;
+    match (n) {
+        1 => {
+            matched = 100;
+        }
+        2 => {
+            matched = 200;
+        }
+        _ => {
+            matched = 999;
+        }
+    }
+    if (matched != 200) {
+        return 1;
+    }
+
+    let other = 99;
+    var def_matched = 0;
+    match (other) {
+        1 => {
+            def_matched = 1;
+        }
+        2 => {
+            def_matched = 2;
+        }
+        _ => {
+            def_matched = 42;
+        }
+    }
+    if (def_matched != 42) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_generic_struct() -> int {
+    let p: Pair<int, string> = Pair<int, string>{ first: 1234, second: "generic_payload" };
+    if (p.first != 1234) {
+        return 1;
+    }
+    if (text_cmp(p.second, "generic_payload") != 0) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_scratch_string_engine() -> int {
+    var acc: string = "start";
+    for (var i = 0; i < 50; i = i + 1) {
+        acc = text_concat(acc, ".");
+    }
+    if (text_len(acc) != 55) {
+        return 1;
+    }
+    let sub = string_slice(acc, 0, 5);
+    if (text_cmp(sub, "start") != 0) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_task_pool() -> int {
+    let pool = task_pool_create(2);
+    if (pool < 0) {
+        return 1;
+    }
+    task_pool_dispatch(pool, pool_worker_fn, "worker_payload");
+    task_pool_dispatch(pool, pool_worker_fn, "worker_payload");
+    thread_sleep(50);
+    task_pool_destroy(pool);
+    let jobs = atomic_load(&g_pool_jobs);
+    if (jobs != 2) {
+        return 2;
+    }
+    return 0;
+}
