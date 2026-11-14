@@ -1133,26 +1133,8 @@ private:
         out << "double math_e(void) { return 2.71828182845904523536; }\n";
         out << "long long text_len(const char *s) { return s ? (long long)strlen(s) : 0; }\n";
         out << "#if defined(_MSC_VER)\n#define DMC_THREAD_LOCAL __declspec(thread)\n#elif defined(__GNUC__) || defined(__clang__)\n#define DMC_THREAD_LOCAL __thread\n#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L\n#define DMC_THREAD_LOCAL _Thread_local\n#else\n#define DMC_THREAD_LOCAL\n#endif\n";
-        out << "static DMC_THREAD_LOCAL char _dmc_concat_pool[64][2048];\n";
-        out << "static DMC_THREAD_LOCAL int _dmc_concat_idx = 0;\n";
-        out << "static inline char *_dmc_concat_alloc(size_t len) {\n";
-        out << "  if (len < 2047) {\n";
-        out << "    int idx = (_dmc_concat_idx++) & 63;\n";
-        out << "    return _dmc_concat_pool[idx];\n";
-        out << "  }\n";
-        out << "  return (char*)malloc(len + 1);\n";
-        out << "}\n";
-        out << "static DMC_THREAD_LOCAL char _dmc_slice_pool[64][2048];\n";
-        out << "static DMC_THREAD_LOCAL int _dmc_slice_idx = 0;\n";
-        out << "static inline char *_dmc_slice_alloc(size_t len) {\n";
-        out << "  if (len < 2047) {\n";
-        out << "    int idx = (_dmc_slice_idx++) & 63;\n";
-        out << "    return _dmc_slice_pool[idx];\n";
-        out << "  }\n";
-        out << "  return (char*)malloc(len + 1);\n";
-        out << "}\n";
-        out << "const char *text_concat(const char *a, const char *b) { size_t la = a ? strlen(a) : 0; size_t lb = b ? strlen(b) : 0; size_t total = la + lb; char *res = _dmc_concat_alloc(total); if (!res) return \"\"; if (la) memcpy(res, a, la); if (lb) memcpy(res + la, b, lb); res[total] = 0; return res; }\n";
-        out << "const char *text_sub(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen || len <= 0) return \"\"; if (start + len > slen) len = slen - start; char *b = _dmc_slice_alloc((size_t)len); if (!b) return \"\"; if (len) memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n";
+        out << "const char *text_concat(const char *a, const char *b) { size_t la = a ? strlen(a) : 0; size_t lb = b ? strlen(b) : 0; char *res = (char*)malloc(la + lb + 1); if (!res) return \"\"; if (la) memcpy(res, a, la); if (lb) memcpy(res + la, b, lb); res[la + lb] = 0; return res; }\n";
+        out << "const char *text_sub(const char *s, long long start, long long len) { if (!s) return \"\"; long long slen = (long long)strlen(s); if (start < 0) start = 0; if (start >= slen || len <= 0) { char *b = (char*)malloc(1); if (b) b[0] = 0; return b ? b : \"\"; } if (start + len > slen) len = slen - start; char *b = (char*)malloc((size_t)len + 1); if (!b) return \"\"; memcpy(b, s + start, (size_t)len); b[len] = 0; return b; }\n";
         out << "long long text_char_at(const char *s, long long i) { if (!s || i < 0 || i >= (long long)strlen(s)) return -1; return (unsigned char)s[i]; }\n";
         out << "long long text_cmp(const char *a, const char *b) { if (!a && !b) return 0; if (!a) return -1; if (!b) return 1; return strcmp(a, b); }\n";
         out << "long long text_find(const char *s, const char *sub) { if (!s || !sub) return -1; const char *p = strstr(s, sub); return p ? (long long)(p - s) : -1; }\n";
@@ -1160,9 +1142,9 @@ private:
         out << "const char *text_from_int(long long x) { static char buf[32]; snprintf(buf, sizeof(buf), \"%lld\", x); return buf; }\n";
         out << "const char *text_from_float(double x) { static char buf[64]; snprintf(buf, sizeof(buf), \"%g\", x); return buf; }\n";
         out << "long long text_to_int(const char *s) { return atoll(s); }\n";
-        out << "const char *text_upper(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = _dmc_concat_alloc(n); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)toupper((unsigned char)s[i]); res[n] = 0; return res; }\n";
-        out << "const char *text_lower(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = _dmc_concat_alloc(n); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)tolower((unsigned char)s[i]); res[n] = 0; return res; }\n";
-        out << "const char *text_replace(const char *s, const char *sub, const char *rep) { if (!s) return \"\"; if (!sub || !*sub) return text_concat(s, \"\"); if (!rep) rep = \"\"; size_t sub_len = strlen(sub); size_t rep_len = strlen(rep); size_t count = 0; const char *p = s; while ((p = strstr(p, sub)) != NULL) { count++; p += sub_len; } size_t new_len = strlen(s) + count * (rep_len >= sub_len ? (rep_len - sub_len) : 0); char *res = _dmc_concat_alloc(new_len); if (!res) return \"\"; char *dst = res; p = s; while (*p) { if (strncmp(p, sub, sub_len) == 0) { memcpy(dst, rep, rep_len); dst += rep_len; p += sub_len; } else { *dst++ = *p++; } } *dst = 0; return res; }\n";
+        out << "const char *text_upper(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = (char*)malloc(n + 1); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)toupper((unsigned char)s[i]); res[n] = 0; return res; }\n";
+        out << "const char *text_lower(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = (char*)malloc(n + 1); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)tolower((unsigned char)s[i]); res[n] = 0; return res; }\n";
+        out << "const char *text_replace(const char *s, const char *sub, const char *rep) { if (!s) return \"\"; if (!sub || !*sub) return text_concat(s, \"\"); if (!rep) rep = \"\"; size_t sub_len = strlen(sub); size_t rep_len = strlen(rep); size_t count = 0; const char *p = s; while ((p = strstr(p, sub)) != NULL) { count++; p += sub_len; } size_t new_len = strlen(s) + count * (rep_len >= sub_len ? (rep_len - sub_len) : 0); char *res = (char*)malloc(new_len + 1); if (!res) return \"\"; char *dst = res; p = s; while (*p) { if (strncmp(p, sub, sub_len) == 0) { memcpy(dst, rep, rep_len); dst += rep_len; p += sub_len; } else { *dst++ = *p++; } } *dst = 0; return res; }\n";
         out << R"DMC_JSON(
 static char _dmc_json_value[65536];
 const char *json_parse(const char *s) { return s ? s : ""; }
@@ -1297,7 +1279,7 @@ int db_close(long long connection) { (void)connection; return 0; }
 )DMC_DB";
 
         out << "double text_to_float(const char *s) { return atof(s); }\n";
-        out << "const char *string_copy(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *b = _dmc_slice_alloc(n); if (!b) return \"\"; if (n) memcpy(b, s, n); b[n] = 0; return b; }\n";
+        out << "const char *string_copy(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *b = (char*)malloc(n + 1); if (!b) return \"\"; if (n) memcpy(b, s, n); b[n] = 0; return b; }\n";
         out << "const char *string_slice(const char *s, long long start, long long len) { return text_sub(s, start, len); }\n\n";
         out << "long long proc_arg_count(long long argc) { return argc ? argc : (long long)__dmc_argc; }\n";
         out << "const char *proc_exit(long long code) { exit((int)code); return \"\"; }\n\n";
@@ -4377,7 +4359,7 @@ static void update_lockfile() {
     std::ofstream lock("dmc.lock");
     if (!lock) return;
 
-    lock << "# Auto-generated by Demonic C Package Manager (v1.9.0)\n";
+    lock << "# Auto-generated by Demonic C Package Manager (v2.0.0)\n";
     lock << "# Manual edits may be overwritten.\n\n";
     lock << "version = 1\n\n";
 
@@ -5392,7 +5374,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
         std::ostringstream out;
         out << "// Auto-generated Demonic C bindings for Python module: " << py_module << "\n";
-        out << "// Generated by dmc bindgen v1.9.0\n\n";
+        out << "// Generated by dmc bindgen v2.0.0\n\n";
         out << "import py;\n\n";
         out << "fn py_" << safe_module << "_init() -> int {\n";
         out << "    return py_import(\"" << py_module << "\");\n";
@@ -5509,7 +5491,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
         std::ostringstream out;
         out << "// Auto-generated Demonic C bindings for Rust crate/source: " << hp.filename().string() << "\n";
-        out << "// Generated by dmc bindgen v1.9.0\n\n";
+        out << "// Generated by dmc bindgen v2.0.0\n\n";
         for (const auto& lib : link_libs) {
             out << "#[link(\"" << lib << "\")]\n";
         }
@@ -5770,7 +5752,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
     std::ostringstream out;
     out << "// Auto-generated Demonic C bindings for " << hp.filename().string() << "\n";
-    out << "// Generated by dmc bindgen v1.9.0\n\n";
+    out << "// Generated by dmc bindgen v2.0.0\n\n";
     out << "#include <" << hp.filename().string() << ">\n";
     for (const auto& lib : link_libs) {
         out << "#link \"" << lib << "\"\n";
@@ -6378,7 +6360,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v1.9.0)\n"
+              << "Demonic C Interactive REPL (v2.0.0)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -6548,7 +6530,7 @@ static int cmd_eval(int argc, char** argv, const char* argv0) {
 
 static int cmd_explain(int argc, char** argv) {
     if (argc < 2 || std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h" || std::string(argv[1]) == "list") {
-        std::cout << "Demonic C Interactive Topic & Diagnostic Explainer (v1.9.0)\n\n"
+        std::cout << "Demonic C Interactive Topic & Diagnostic Explainer (v2.0.0)\n\n"
                   << "usage: dmc explain <topic|code>\n\n"
                   << "Available Topics:\n"
                   << "  concurrency- Native OS threads, recursive mutexes, atomics, and Go-style channels\n"
@@ -6835,7 +6817,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-1.9.0";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-2.0.0";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -7551,8 +7533,8 @@ static int cmd_check(int argc, char** argv) {
 
 static int cmd_info() {
     std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
-    std::cout << "  Version:       1.9.0\n";
-    std::cout << "  Features:      Native Multithreading, Recursive Mutexes, Hardware Atomics, Channels, Async Tasks, HTTP Server, dmc.lock Registry, Polyglot FFI, SIMD (f32x4/i32x4), #line source maps, bindgen, wasm\n";
+    std::cout << "  Version:       2.0.0\n";
+    std::cout << "  Features:      Pattern Matching (match), Generic Structs, Task Pool, Multithreading, Mutexes, Atomics, Channels, HTTP Server, dmc.lock, Polyglot FFI, SIMD, bindgen\n";
     std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
 #ifdef _WIN32
     std::cout << "windows-x86_64";
@@ -7745,7 +7727,7 @@ static int cmd_update(int argc, char** argv) {
         return 1;
     }
     
-    std::string current_ver = "v1.9.0";
+    std::string current_ver = "v2.0.0";
     std::cout << "Current version: " << current_ver << "\n";
     std::cout << "Latest version:  " << latest_tag << "\n";
     
@@ -7931,7 +7913,7 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 1.9.0 (Demonic C -> C)\n";
+        std::cout << "dmc 2.0.0 (Demonic C -> C)\n";
         return 0;
     }
 
@@ -8069,7 +8051,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 1.9.0 (Demonic C -> C)\n";
+            std::cout << "dmc 2.0.0 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {

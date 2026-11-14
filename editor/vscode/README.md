@@ -40,8 +40,8 @@ This automatically deploys the extension into your user `~/.vscode/extensions/` 
 
 ### Option 2: Manual Copy
 Copy the `editor/vscode` folder into your VS Code extensions folder:
-- **Windows**: `%USERPROFILE%\.vscode\extensions\demonic-c-1.9.0`
-- **Linux & macOS**: `~/.vscode/extensions/demonic-c-1.9.0`
+- **Windows**: `%USERPROFILE%\.vscode\extensions\demonic-c-2.0.0`
+- **Linux & macOS**: `~/.vscode/extensions/demonic-c-2.0.0`
 
 Restart or reload VS Code (`Developer: Reload Window`), and open any `.dmc` file.
 

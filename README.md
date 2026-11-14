@@ -125,6 +125,77 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
+## 🚀 Demonic C 2.0.0 Major Release
+
+Demonic C 2.0.0 introduces expressive pattern matching, generalized generic structs, worker task pools, high-performance substring search, and sandbox-resilient caching.
+
+### Pattern Matching (`match`)
+Expressive pattern matching with payload unpacking on tagged unions, simple enums, and literals, lowered directly to optimized C switches:
+
+```dmc
+enum Result {
+    Ok(int),
+    Err(string)
+}
+
+fn handle_result(r: Result) -> int {
+    match (r) {
+        Ok(val) => {
+            return val;
+        }
+        Err(msg) => {
+            println(msg);
+            return -1;
+        }
+        _ => {
+            return 0;
+        }
+    }
+}
+```
+
+### Generalized Generic Structs & Monomorphization
+Define parameterized structs with multiple type parameters and instantiate them with zero runtime overhead:
+
+```dmc
+struct Pair<T, U> {
+    first: T,
+    second: U
+}
+
+fn main() -> int {
+    let p: Pair<int, string> = Pair<int, string>{ first: 42, second: "hello" };
+    println(text_from_int(p.first));
+    println(p.second);
+    return 0;
+}
+```
+
+### Worker Task Pool
+Dispatch background tasks across thread pools:
+
+```dmc
+import task;
+import thread;
+
+var g_completed: int = 0;
+
+fn task_worker(arg: string) {
+    atomic_add(&g_completed, 1);
+}
+
+fn main() -> int {
+    let pool = task_pool_create(4);
+    task_pool_dispatch(pool, task_worker, "job-1");
+    task_pool_dispatch(pool, task_worker, "job-2");
+    thread_sleep(50);
+    task_pool_destroy(pool);
+    return 0;
+}
+```
+
+---
+
 ## ⚡ Native Concurrency, HTTP Server & Package Registry (v1.9.0)
 
 Demonic C v1.9.0 brings true bare-metal multithreading, Go-style synchronization channels, lock-free hardware atomics, a native HTTP micro-framework, and deterministic package management with `dmc.lock`.
