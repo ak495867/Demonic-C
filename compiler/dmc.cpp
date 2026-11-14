@@ -2120,56 +2120,22 @@ long long mutex_free(long long h) {
     return 0;
 }
 
-/* Hardware Atomics */
-long long _dmc_atomic_add_impl(void *ptr, long long val) {
-    if (!ptr) return 0;
 #if defined(__GNUC__) || defined(__clang__)
-    return (long long)__atomic_fetch_add((long long*)ptr, val, __ATOMIC_SEQ_CST);
+#define atomic_add(p, v) __atomic_fetch_add((p), (v), __ATOMIC_SEQ_CST)
+#define atomic_sub(p, v) __atomic_fetch_sub((p), (v), __ATOMIC_SEQ_CST)
+#define atomic_load(p) __atomic_load_n((p), __ATOMIC_SEQ_CST)
+#define atomic_store(p, v) __atomic_store_n((p), (v), __ATOMIC_SEQ_CST)
 #elif defined(_WIN32)
-    return (long long)InterlockedExchangeAdd64((LONG64*)ptr, (LONG64)val);
+#define atomic_add(p, v) (sizeof(*(p)) == 4 ? (long long)InterlockedExchangeAdd((volatile LONG*)(p), (LONG)(v)) : (long long)InterlockedExchangeAdd64((volatile LONG64*)(p), (LONG64)(v)))
+#define atomic_sub(p, v) (sizeof(*(p)) == 4 ? (long long)InterlockedExchangeAdd((volatile LONG*)(p), -(LONG)(v)) : (long long)InterlockedExchangeAdd64((volatile LONG64*)(p), -(LONG64)(v)))
+#define atomic_load(p) (sizeof(*(p)) == 4 ? (long long)InterlockedCompareExchange((volatile LONG*)(p), 0, 0) : (long long)InterlockedCompareExchange64((volatile LONG64*)(p), 0, 0))
+#define atomic_store(p, v) (sizeof(*(p)) == 4 ? (long long)InterlockedExchange((volatile LONG*)(p), (LONG)(v)) : (long long)InterlockedExchange64((volatile LONG64*)(p), (LONG64)(v)))
 #else
-    long long old = *(long long*)ptr; *(long long*)ptr += val; return old;
+#define atomic_add(p, v) (*(p) += (v))
+#define atomic_sub(p, v) (*(p) -= (v))
+#define atomic_load(p) (*(p))
+#define atomic_store(p, v) (*(p) = (v))
 #endif
-}
-
-long long _dmc_atomic_sub_impl(void *ptr, long long val) {
-    if (!ptr) return 0;
-#if defined(__GNUC__) || defined(__clang__)
-    return (long long)__atomic_fetch_sub((long long*)ptr, val, __ATOMIC_SEQ_CST);
-#elif defined(_WIN32)
-    return (long long)InterlockedExchangeAdd64((LONG64*)ptr, -(LONG64)val);
-#else
-    long long old = *(long long*)ptr; *(long long*)ptr -= val; return old;
-#endif
-}
-
-long long _dmc_atomic_load_impl(void *ptr) {
-    if (!ptr) return 0;
-#if defined(__GNUC__) || defined(__clang__)
-    return (long long)__atomic_load_n((long long*)ptr, __ATOMIC_SEQ_CST);
-#elif defined(_WIN32)
-    return (long long)InterlockedCompareExchange64((LONG64*)ptr, 0, 0);
-#else
-    return *(long long*)ptr;
-#endif
-}
-
-long long _dmc_atomic_store_impl(void *ptr, long long val) {
-    if (!ptr) return 0;
-#if defined(__GNUC__) || defined(__clang__)
-    __atomic_store_n((long long*)ptr, val, __ATOMIC_SEQ_CST);
-#elif defined(_WIN32)
-    InterlockedExchange64((LONG64*)ptr, (LONG64)val);
-#else
-    *(long long*)ptr = val;
-#endif
-    return val;
-}
-
-#define atomic_add(p, v) _dmc_atomic_add_impl((void*)(p), (long long)(v))
-#define atomic_sub(p, v) _dmc_atomic_sub_impl((void*)(p), (long long)(v))
-#define atomic_load(p) _dmc_atomic_load_impl((void*)(p))
-#define atomic_store(p, v) _dmc_atomic_store_impl((void*)(p), (long long)(v))
 
 /* Go-Style Thread-Safe Channels */
 typedef struct {
@@ -2497,7 +2463,7 @@ long long task_pool_submit(long long h, void *fn_ptr, const char *arg) {
         p->head = item;
         p->tail = item;
     }
-    pthread_cond_signal(&p->cv);
+    pthread_cond_broadcast(&p->cv);
     pthread_mutex_unlock(&p->lock);
 #endif
     return 0;

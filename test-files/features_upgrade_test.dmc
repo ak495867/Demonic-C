@@ -162,7 +162,11 @@ fn test_task_pool() -> int {
     }
     task_pool_dispatch(pool, pool_worker_fn, "worker_payload");
     task_pool_dispatch(pool, pool_worker_fn, "worker_payload");
-    thread_sleep(50);
+    var waited = 0;
+    while (waited < 100 && atomic_load(&g_pool_jobs) < 2) {
+        thread_sleep(10);
+        waited = waited + 1;
+    }
     task_pool_destroy(pool);
     let jobs = atomic_load(&g_pool_jobs);
     if (jobs != 2) {
