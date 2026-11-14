@@ -125,9 +125,9 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
-## 🚀 Demonic C 2.0.0 Major Release
+## 🚀 Demonic C 2.0.1 Release
 
-Demonic C 2.0.0 introduces expressive pattern matching, generalized generic structs, worker task pools, high-performance substring search, and sandbox-resilient caching.
+Demonic C 2.0.1 introduces expressive pattern matching, generalized generic structs, worker task pools, high-performance substring search, sandbox-resilient caching, and multi-architecture POSIX/ARM64 atomic stabilization.
 
 ### Pattern Matching (`match`)
 Expressive pattern matching with payload unpacking on tagged unions, simple enums, and literals, lowered directly to optimized C switches:

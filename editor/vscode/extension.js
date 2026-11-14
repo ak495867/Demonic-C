@@ -200,7 +200,7 @@ function startLspServer() {
         }).then(() => {
             sendRpcNotification('initialized', {});
             log('LSP handshake initialized successfully');
-            statusBarItem.text = '$(flame) DMC 2.0.0';
+            statusBarItem.text = '$(flame) DMC 2.0.1';
             statusBarItem.tooltip = 'Demonic C Language Server Active';
 
             // Sync all open DMC documents
@@ -303,7 +303,7 @@ function activate(context) {
 
     // Create status bar item
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    statusBarItem.text = '$(flame) DMC 2.0.0';
+    statusBarItem.text = '$(flame) DMC 2.0.1';
     statusBarItem.tooltip = 'Demonic C Language Support (Click for menu)';
     statusBarItem.command = 'demonic-c.showMenu';
     statusBarItem.show();

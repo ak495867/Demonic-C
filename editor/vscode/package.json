@@ -2,7 +2,7 @@
   "name": "demonic-c",
   "displayName": "Demonic C Language Support",
   "description": "Rich language support, syntax highlighting, LSP client, runner, snippets, and diagnostics for the Demonic C systems programming language.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "publisher": "ak495867",
   "engines": {
     "vscode": ">=1.75.0"
