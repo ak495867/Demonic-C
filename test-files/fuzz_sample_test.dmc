@@ -1,0 +1,8 @@
+#[fuzz]
+fn fuzz_target_parser(payload: string) -> int {
+    let l: int = text_len(payload);
+    if (l < 0) {
+        return 1;
+    }
+    return 0;
+}

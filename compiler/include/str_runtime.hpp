@@ -1,0 +1,60 @@
+#ifndef DMC_STR_RUNTIME_HPP
+#define DMC_STR_RUNTIME_HPP
+
+#include <string>
+
+static inline std::string str_runtime_c() {
+    return std::string(
+        "typedef struct {\n"
+        "    union {\n"
+        "        const char *ptr;\n"
+        "        const char *data;\n"
+        "    };\n"
+        "    long long len;\n"
+        "} dmc_str;\n\n"
+        "static inline dmc_str str_from(const char *s) {\n"
+        "    dmc_str r;\n"
+        "    r.ptr = s ? s : \"\";\n"
+        "    r.len = s ? (long long)strlen(s) : 0;\n"
+        "    return r;\n"
+        "}\n\n"
+        "static inline dmc_str str_slice_view(const char *s, long long start, long long len) {\n"
+        "    dmc_str r;\n"
+        "    if (!s || start < 0 || len < 0) { r.ptr = \"\"; r.len = 0; return r; }\n"
+        "    long long slen = (long long)strlen(s);\n"
+        "    if (start > slen) start = slen;\n"
+        "    if (start + len > slen) len = slen - start;\n"
+        "    r.ptr = s + start;\n"
+        "    r.len = len;\n"
+        "    return r;\n"
+        "}\n\n"
+        "static inline dmc_str str_sub(dmc_str s, long long start, long long len) {\n"
+        "    dmc_str r;\n"
+        "    if (start < 0) start = 0;\n"
+        "    if (start > s.len) start = s.len;\n"
+        "    if (len < 0) len = 0;\n"
+        "    if (start + len > s.len) len = s.len - start;\n"
+        "    r.ptr = s.ptr + start;\n"
+        "    r.len = len;\n"
+        "    return r;\n"
+        "}\n\n"
+        "static inline int str_cmp(dmc_str a, dmc_str b) {\n"
+        "    long long min_len = a.len < b.len ? a.len : b.len;\n"
+        "    int res = memcmp(a.ptr, b.ptr, (size_t)min_len);\n"
+        "    if (res != 0) return res;\n"
+        "    return a.len < b.len ? -1 : (a.len > b.len ? 1 : 0);\n"
+        "}\n\n"
+        "static inline int str_eq(dmc_str a, dmc_str b) {\n"
+        "    return a.len == b.len && memcmp(a.ptr, b.ptr, (size_t)a.len) == 0;\n"
+        "}\n\n"
+        "static inline const char *str_to_cstr(dmc_str s) {\n"
+        "    static char buf[65536];\n"
+        "    long long n = s.len < (long long)sizeof(buf) - 1 ? s.len : (long long)sizeof(buf) - 1;\n"
+        "    if (n > 0) memcpy(buf, s.ptr, (size_t)n);\n"
+        "    buf[n] = 0;\n"
+        "    return buf;\n"
+        "}\n\n"
+    );
+}
+
+#endif

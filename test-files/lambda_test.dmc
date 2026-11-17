@@ -1,0 +1,23 @@
+#[test]
+fn test_anonymous_lambda_binary() -> int {
+    let add = |a: int, b: int| -> int {
+        return a + b;
+    };
+    let sum: int = add(20, 22);
+    if (sum != 42) {
+        return 1;
+    }
+    return 0;
+}
+
+#[test]
+fn test_anonymous_lambda_nullary() -> int {
+    let get_answer = || -> int {
+        return 99;
+    };
+    let ans: int = get_answer();
+    if (ans != 99) {
+        return 1;
+    }
+    return 0;
+}

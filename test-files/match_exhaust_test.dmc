@@ -1,0 +1,70 @@
+enum LightState {
+    Off,
+    On,
+    Blink
+}
+
+enum ShapeKind {
+    Circle(int),
+    Square(int)
+}
+
+fn light_to_code(s: LightState) -> int {
+    match (s) {
+        Off => { return 0; },
+        On => { return 1; },
+        Blink => { return 2; }
+    }
+}
+
+fn light_with_default(s: LightState) -> int {
+    match (s) {
+        On => { return 1; },
+        _ => { return 0; }
+    }
+}
+
+fn shape_size(sh: ShapeKind) -> int {
+    match (sh) {
+        Circle(r) => { return r * 2; },
+        Square(w) => { return w * w; }
+    }
+}
+
+#[test]
+fn test_exhaustive_enum_match() -> int {
+    if (light_to_code(Off) != 0) {
+        return 1;
+    }
+    if (light_to_code(On) != 1) {
+        return 2;
+    }
+    if (light_to_code(Blink) != 2) {
+        return 3;
+    }
+    return 0;
+}
+
+#[test]
+fn test_match_default_fallback() -> int {
+    if (light_with_default(On) != 1) {
+        return 1;
+    }
+    if (light_with_default(Blink) != 0) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_payload_match() -> int {
+    let c: ShapeKind = ShapeKind_Circle(5);
+    let s: ShapeKind = ShapeKind_Square(4);
+    if (shape_size(c) != 10) {
+        return 1;
+    }
+    if (shape_size(s) != 16) {
+        return 2;
+    }
+    return 0;
+}

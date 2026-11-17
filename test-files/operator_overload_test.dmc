@@ -1,0 +1,57 @@
+struct Vec2 {
+    x: int,
+    y: int
+}
+
+fn Vec2_op_add(a: Vec2, b: Vec2) -> Vec2 {
+    let r: Vec2 = Vec2 { x: a.x + b.x, y: a.y + b.y };
+    return r;
+}
+
+fn Vec2_op_sub(a: Vec2, b: Vec2) -> Vec2 {
+    let r: Vec2 = Vec2 { x: a.x - b.x, y: a.y - b.y };
+    return r;
+}
+
+fn Vec2_op_eq(a: Vec2, b: Vec2) -> int {
+    if (a.x == b.x && a.y == b.y) {
+        return 1;
+    }
+    return 0;
+}
+
+#[test]
+fn test_vec2_operator_overloading() -> int {
+    let v1: Vec2 = Vec2 { x: 10, y: 20 };
+    let v2: Vec2 = Vec2 { x: 5, y: 15 };
+    let v3: Vec2 = v1 + v2;
+    if (v3.x != 15 || v3.y != 35) {
+        return 1;
+    }
+    let v4: Vec2 = v1 - v2;
+    if (v4.x != 5 || v4.y != 5) {
+        return 2;
+    }
+    if (v1 == v2) {
+        return 3;
+    }
+    let v5: Vec2 = Vec2 { x: 10, y: 20 };
+    if (!(v1 == v5)) {
+        return 4;
+    }
+    return 0;
+}
+
+#[test]
+fn test_simd_operator_overloading() -> int {
+    let a: f32x4 = f32x4(1.0, 2.0, 3.0, 4.0);
+    let b: f32x4 = f32x4(5.0, 6.0, 7.0, 8.0);
+    let c: f32x4 = a + b;
+    if (c.x < 5.9 || c.x > 6.1) {
+        return 1;
+    }
+    if (c.w < 11.9 || c.w > 12.1) {
+        return 2;
+    }
+    return 0;
+}

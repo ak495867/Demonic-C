@@ -1,0 +1,47 @@
+fn make_pair(a: int, b: int) -> (int, int) {
+    let p: (int, int) = (a, b);
+    return p;
+}
+
+fn sum_tuple(p: (int, int)) -> int {
+    let (x, y) = p;
+    return x + y;
+}
+
+#[test]
+fn test_tuple_creation_and_access() -> int {
+    let t: (int, int) = (100, 200);
+    if (t.0 != 100) {
+        return 1;
+    }
+    if (t.1 != 200) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_tuple_destructuring() -> int {
+    let pair: (int, int) = make_pair(40, 2);
+    let (first, second) = pair;
+    if (first != 40) {
+        return 1;
+    }
+    if (second != 2) {
+        return 2;
+    }
+    if (sum_tuple(pair) != 42) {
+        return 3;
+    }
+    return 0;
+}
+
+#[test]
+fn test_mixed_tuple() -> int {
+    let item: (int, int) = (7, 14);
+    let (a, b) = item;
+    if (a + b != 21) {
+        return 1;
+    }
+    return 0;
+}

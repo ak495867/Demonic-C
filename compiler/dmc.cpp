@@ -63,162 +63,11 @@ static std::string get_executable_dir() {
     return "";
 }
 
-struct Token { std::string text; int line; int col; };
-struct Diagnostic { int line; int col; std::string message; };
-struct Param { std::string name; std::string type; };
-struct Field { std::string name; std::string type; };
-struct Function {
-    std::string name;
-    std::string ret_type;
-    std::vector<Param> params;
-    std::vector<std::string> body;
-    std::vector<std::string> attributes;
-    bool is_extern = false;
-    bool is_variadic = false;
-    bool is_export = false;
-    int line = 0;
-};
-struct Struct { std::string name; std::vector<Field> fields; };
-struct GenericStruct { std::string name; std::vector<std::string> type_params; std::vector<Field> fields; };
-struct EnumVariant { std::string name; std::string payload; };
-struct Enum {
-    std::string name;
-    std::vector<EnumVariant> variants;
-    bool has_payload() const {
-        for (const auto& v : variants) if (!v.payload.empty()) return true;
-        return false;
-    }
-};
-struct Case { std::string value; std::vector<std::string> body; };
-
-static std::vector<Token> lex(const std::string& source) {
-    std::vector<Token> result;
-    int line = 1;
-    int col = 1;
-    size_t i = 0;
-    if (source.size() >= 3 && static_cast<unsigned char>(source[0]) == 0xEF &&
-        static_cast<unsigned char>(source[1]) == 0xBB &&
-        static_cast<unsigned char>(source[2]) == 0xBF) {
-        i = 3;
-    }
-    for (; i < source.size();) {
-        unsigned char c = source[i];
-        if (c == '\n') { ++line; col = 1; ++i; continue; }
-        if (std::isspace(c)) { ++i; ++col; continue; }
-        if (c == '/' && i + 1 < source.size() && source[i + 1] == '/') {
-            while (i < source.size() && source[i] != '\n') { ++i; ++col; }
-            continue;
-        }
-        if (std::isalpha(c) || c == '_') {
-            size_t start = i++;
-            int start_col = col++;
-            while (i < source.size() && (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_')) { ++i; ++col; }
-            result.push_back({source.substr(start, i - start), line, start_col});
-            continue;
-        }
-        if (std::isdigit(c)) {
-            size_t start = i++;
-            int start_col = col++;
-            while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) { ++i; ++col; }
-            if (i < source.size() && source[i] == '.' && i + 1 < source.size() && std::isdigit(static_cast<unsigned char>(source[i + 1]))) {
-                ++i; ++col;
-                while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) { ++i; ++col; }
-            }
-            if (i < source.size() && (source[i] == 'e' || source[i] == 'E')) {
-                ++i; ++col;
-                if (i < source.size() && (source[i] == '+' || source[i] == '-')) { ++i; ++col; }
-                while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) { ++i; ++col; }
-            }
-            result.push_back({source.substr(start, i - start), line, start_col});
-            continue;
-        }
-        if (c == '#' && i + 1 < source.size() && source[i + 1] != '[') {
-            size_t start = i++;
-            int start_col = col++;
-            while (i < source.size() && (std::isalnum(static_cast<unsigned char>(source[i])) || source[i] == '_')) { ++i; ++col; }
-            result.push_back({source.substr(start, i - start), line, start_col});
-            continue;
-        }
-        if (c == '"') {
-            size_t start = i++;
-            int start_col = col++;
-            while (i < source.size() && source[i] != '"') {
-                if (source[i] == '\\' && i + 1 < source.size()) { i += 2; col += 2; }
-                else {
-                    if (source[i] == '\n') { ++line; col = 1; }
-                    else { ++col; }
-                    ++i;
-                }
-            }
-            if (i >= source.size()) throw std::runtime_error("unterminated string at line " + std::to_string(line));
-            ++i; ++col;
-            result.push_back({source.substr(start, i - start), line, start_col});
-            continue;
-        }
-        if (i + 2 < source.size() && source[i] == '.' && source[i + 1] == '.' && source[i + 2] == '.') {
-            result.push_back({"...", line, col}); i += 3; col += 3; continue;
-        }
-        if (i + 1 < source.size()) {
-            std::string pair = source.substr(i, 2);
-            if (pair == "==" || pair == "!=" || pair == "<=" || pair == ">=" || pair == "&&" || pair == "||" || pair == "->" || pair == "=>" || pair == "::" || pair == "#[" || pair == ".." || pair == "?*") {
-                result.push_back({pair, line, col}); i += 2; col += 2; continue;
-            }
-        }
-        result.push_back({std::string(1, static_cast<char>(c)), line, col});
-        ++i; ++col;
-    }
-    result.push_back({"<eof>", line, col});
-    return result;
-}
-
-static std::string ctype(const std::string& type) {
-    if (type == "string") return "const char*";
-    if (type == "const unsigned char*") return "const unsigned char*";
-    if (type == "void*" || type == "*void") return "void*";
-    if (type == "u8") return "unsigned char";
-    if (type == "i32" || type == "int") return "int";
-    if (type == "u32") return "unsigned int";
-    if (type == "i64" || type == "u64") return "long long";
-    if (type == "bool") return "bool";
-    if (type == "void") return "void";
-    if (type == "f32" || type == "float") return "float";
-    if (type == "f64" || type == "double") return "double";
-    if (type == "char") return "char";
-    if (type == "size_t") return "size_t";
-    if (type == "f32x4") return "dmc_f32x4";
-    if (type == "i32x4") return "dmc_i32x4";
-    if (type == "vec" || type == "map" || type == "queue") return "int";
-    if (type == "arena") return "long long";
-    if (type.rfind("?*", 0) == 0) return ctype(type.substr(2)) + "*";
-    if (!type.empty() && type.front() == '*') return ctype(type.substr(1)) + "*";
-    if (type.find('<') != std::string::npos && type.back() == '>') {
-        if (type.rfind("Vector<", 0) == 0) {
-            std::string inner = type.substr(7, type.size() - 8);
-            return "Vector_" + inner + "*";
-        }
-        std::string mangled = type;
-        for (char& c : mangled) {
-            if (c == '<' || c == ',' || c == ' ') c = '_';
-        }
-        if (!mangled.empty() && mangled.back() == '>') mangled.pop_back();
-        while (mangled.find("__") != std::string::npos) {
-            mangled.replace(mangled.find("__"), 2, "_");
-        }
-        return mangled;
-    }
-    if (!type.empty() && type.front() == '[') {
-        auto sep = type.find(';');
-        if (sep != std::string::npos) return ctype(type.substr(1, sep - 1));
-    }
-    return type.empty() ? "long long" : type;
-}
-
-static const std::vector<std::string> BUILTIN_MODULES = {"io", "text", "math", "mem", "core", "process", "collections", "low", "json", "datetime", "regex", "db", "ffi", "py", "js"};
-
-static bool is_builtin_module(const std::string& name) {
-    for (auto& m : BUILTIN_MODULES) if (m == name) return true;
-    return false;
-}
+#include "include/tokens.hpp"
+#include "include/lexer.hpp"
+#include "include/types.hpp"
+#include "include/str_runtime.hpp"
+#include "include/fuzz.hpp"
 
 static std::string pkg_dir();
 
@@ -279,7 +128,6 @@ public:
             out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <ctype.h>\n#include <errno.h>\n\n";
         }
         out << "#if defined(_WIN32)\n#define DMC_EXPORT __declspec(dllexport)\n#elif defined(__GNUC__) || defined(__clang__)\n#define DMC_EXPORT __attribute__((visibility(\"default\")))\n#else\n#define DMC_EXPORT\n#endif\n\n";
-        out << "/* Demonic C SIMD 128-bit Vector Extensions */\n";
         out << "#if defined(__GNUC__) || defined(__clang__)\n";
         out << "typedef float dmc_f32x4 __attribute__((vector_size(16)));\n";
         out << "typedef int   dmc_i32x4 __attribute__((vector_size(16)));\n";
@@ -308,7 +156,6 @@ public:
             else out << "#include <" << h << ">\n";
         }
         for (const auto& lib : link_libs_) {
-            out << "/* DMC_LINK: " << lib << " */\n";
             out << "#if defined(_MSC_VER)\n#pragma comment(lib, \"" << lib << "\")\n#endif\n";
         }
         if (!diagnostics_.empty()) {
@@ -316,6 +163,7 @@ public:
         }
         out << "#ifdef DMC_SQLITE\ntypedef struct sqlite3 sqlite3;\ntypedef struct sqlite3_stmt sqlite3_stmt;\nextern int sqlite3_open(const char *, sqlite3 **);\nextern int sqlite3_close(sqlite3 *);\nextern int sqlite3_prepare_v2(sqlite3 *, const char *, int, sqlite3_stmt **, const char **);\nextern int sqlite3_step(sqlite3_stmt *);\nextern int sqlite3_finalize(sqlite3_stmt *);\nextern int sqlite3_column_count(sqlite3_stmt *);\nextern const unsigned char *sqlite3_column_text(sqlite3_stmt *, int);\n#define SQLITE_OK 0\n#define SQLITE_ROW 100\n#endif\n\n";
         if (!freestanding_) emit_runtime(out);
+        out << str_runtime_c() << "\n";
         for (const auto& s : structs_) {
             out << "typedef struct " << s.name << " {\n";
             for (const auto& f : s.fields) {
@@ -2740,6 +2588,45 @@ long long task_pool_free(long long h) {
         }
         if (peek() == "let" || peek() == "var") {
             take();
+            if (peek() == "(") {
+                take();
+                std::vector<std::pair<std::string, std::string>> destructure_vars;
+                while (peek() != ")") {
+                    std::string dname = take();
+                    std::string dtype = "";
+                    if (peek() == ":") {
+                        take();
+                        dtype = type_name();
+                    }
+                    destructure_vars.push_back({dname, dtype});
+                    if (peek() == ",") take();
+                    else break;
+                }
+                expect(")");
+                expect("=");
+                std::string val = expression(";");
+                expect(";");
+                std::string val_type = infer_type(val);
+                std::string tmp_tup = "_dmc_tup_" + std::to_string(++tuple_counter_);
+                std::string c_tup_t = ctype(val_type.empty() ? "Tuple" : val_type);
+                std::string res = c_tup_t + " " + tmp_tup + " = " + val + ";\n";
+                for (size_t i = 0; i < destructure_vars.size(); ++i) {
+                    std::string vname = destructure_vars[i].first;
+                    std::string vtype = destructure_vars[i].second;
+                    if (vtype.empty()) {
+                        for (const auto& s : structs_) {
+                            if (s.name == c_tup_t && i < s.fields.size()) {
+                                vtype = s.fields[i].type;
+                                break;
+                            }
+                        }
+                    }
+                    if (vtype.empty()) vtype = "int";
+                    bind_type(vname, vtype);
+                    res += "    " + ctype(vtype) + " " + vname + " = " + tmp_tup + "._" + std::to_string(i) + ";\n";
+                }
+                return res;
+            }
             std::string name = take();
             std::string type;
             if (peek() == ":") { take(); type = type_name(); }
@@ -2762,6 +2649,17 @@ long long task_pool_free(long long h) {
                 type = infer_type(val);
             }
             bind_type(name, type);
+            if (!type.empty() && is_struct_type(type)) {
+                std::string drop_fn = type + "_drop";
+                const Function* dfn = find_function(drop_fn);
+                if (dfn && !defer_stack_.empty()) {
+                    if (!dfn->params.empty() && dfn->params[0].type.front() == '*') {
+                        defer_stack_.back().push_back(drop_fn + "(&" + name + ");");
+                    } else {
+                        defer_stack_.back().push_back(drop_fn + "(" + name + ");");
+                    }
+                }
+            }
             if (!type.empty() && type.front() == '[') {
                 auto sep = type.find(';');
                 std::string elem = ctype(type.substr(1, sep - 1));
@@ -3045,8 +2943,11 @@ long long task_pool_free(long long h) {
         std::string pre_assign = ctype(stype) + " " + match_var + " = " + scrutinee + ";\n";
         std::string switch_target = (matched_enum && matched_enum->has_payload()) ? (match_var + ".tag") : match_var;
         std::string out = pre_assign + "    switch (" + switch_target + ") {\n";
+        std::set<std::string> covered_variants;
+        bool has_default = false;
         while (peek() != "}") {
             if (peek() == "_" || peek() == "default") {
+                has_default = true;
                 take();
                 expect("=>");
                 out += "        default: {\n";
@@ -3098,6 +2999,7 @@ long long task_pool_free(long long h) {
             }
             std::string case_label;
             if (arm_enum && arm_var) {
+                covered_variants.insert(arm_var->name);
                 if (arm_enum->has_payload()) {
                     case_label = arm_enum->name + "_Tag_" + arm_var->name;
                 } else {
@@ -3128,6 +3030,13 @@ long long task_pool_free(long long h) {
             if (peek() == "," || peek() == ";") take();
         }
         expect("}");
+        if (matched_enum && !has_default) {
+            for (const auto& v : matched_enum->variants) {
+                if (covered_variants.find(v.name) == covered_variants.end()) {
+                    type_warn("non-exhaustive match: missing variant '" + v.name + "' of enum '" + matched_enum->name + "'");
+                }
+            }
+        }
         out += "    }";
         return out;
     }
@@ -3160,10 +3069,14 @@ long long task_pool_free(long long h) {
     int binary_precedence(const std::string& op) const {
         if (op == "||") return 1;
         if (op == "&&") return 2;
-        if (op == "==" || op == "!=") return 3;
-        if (op == "<" || op == "<=" || op == ">" || op == ">=") return 4;
-        if (op == "+" || op == "-") return 5;
-        if (op == "*" || op == "/" || op == "%") return 6;
+        if (op == "|") return 3;
+        if (op == "^") return 4;
+        if (op == "&") return 5;
+        if (op == "==" || op == "!=") return 6;
+        if (op == "<" || op == "<=" || op == ">" || op == ">=") return 7;
+        if (op == "<<" || op == ">>") return 8;
+        if (op == "+" || op == "-") return 9;
+        if (op == "*" || op == "/" || op == "%") return 10;
         return 0;
     }
 
@@ -3223,16 +3136,42 @@ long long task_pool_free(long long h) {
             if (prec < min_prec) break;
             std::string op = take();
             std::string right = parse_binary(prec + 1, end);
+            std::string lt = infer_type(left);
+            std::string rt = infer_type(right);
             if (op != "&&" && op != "||") {
-                std::string lt = infer_type(left);
-                std::string rt = infer_type(right);
                 if (lt == "string" || rt == "string") {
                     if (!(op == "==" || op == "!=" || op == "+")) {
                         type_warn("operator '" + op + "' applied to string operand");
                     }
                 }
             }
-            if ((op == "==" || op == "!=") && (is_string_arg(left) || is_string_arg(right))) {
+            std::string op_method;
+            if (op == "+") op_method = "op_add";
+            else if (op == "-") op_method = "op_sub";
+            else if (op == "*") op_method = "op_mul";
+            else if (op == "/") op_method = "op_div";
+            else if (op == "==") op_method = "op_eq";
+            else if (op == "!=") op_method = "op_ne";
+
+            if ((lt == "f32x4" || rt == "f32x4") && (op == "+" || op == "-" || op == "*" || op == "/")) {
+                if (op == "+") left = "dmc_f32x4_add(" + left + ", " + right + ")";
+                else if (op == "-") left = "dmc_f32x4_sub(" + left + ", " + right + ")";
+                else if (op == "*") left = "dmc_f32x4_mul(" + left + ", " + right + ")";
+                else if (op == "/") left = "dmc_f32x4_div(" + left + ", " + right + ")";
+            } else if ((lt == "i32x4" || rt == "i32x4") && (op == "+" || op == "-" || op == "*")) {
+                if (op == "+") left = "dmc_i32x4_add(" + left + ", " + right + ")";
+                else if (op == "-") left = "dmc_i32x4_sub(" + left + ", " + right + ")";
+                else if (op == "*") left = "dmc_i32x4_mul(" + left + ", " + right + ")";
+            } else if (lt == "str" || rt == "str") {
+                if (op == "==") left = "str_eq(" + left + ", " + right + ")";
+                else if (op == "!=") left = "(!str_eq(" + left + ", " + right + "))";
+                else if (op == "<") left = "(str_cmp(" + left + ", " + right + ") < 0)";
+                else if (op == "<=") left = "(str_cmp(" + left + ", " + right + ") <= 0)";
+                else if (op == ">") left = "(str_cmp(" + left + ", " + right + ") > 0)";
+                else if (op == ">=") left = "(str_cmp(" + left + ", " + right + ") >= 0)";
+            } else if (!op_method.empty() && is_struct_type(lt) && is_user_function(lt + "_" + op_method)) {
+                left = lt + "_" + op_method + "(" + left + ", " + right + ")";
+            } else if ((op == "==" || op == "!=") && (is_string_arg(left) || is_string_arg(right))) {
                 left = "(text_cmp(" + left + ", " + right + ") " + (op == "==" ? "==" : "!=") + " 0)";
             } else if (op == "+" && (is_string_arg(left) || is_string_arg(right))) {
                 left = "text_concat(" + left + ", " + right + ")";
@@ -3320,7 +3259,17 @@ long long task_pool_free(long long h) {
                     std::string vt = infer_type(val);
                     std::string typed_fn = vt + "_" + field;
 
-                    if (vt == "f32x4") {
+                    if (vt == "str") {
+                        if (field == "len") val = "((" + val + ").len)";
+                        else if (field == "ptr" || field == "data") val = "((" + val + ").data)";
+                        else if (field == "slice" || field == "sub") val = "str_sub(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "to_cstr") val = "str_to_cstr(" + val + ")";
+                        else if (field == "cmp") val = "str_cmp(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (field == "eq") val = "str_eq(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (is_user_function(typed_fn)) val = typed_fn + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else if (is_user_function(field)) val = field + "(" + val + (margs.empty() ? "" : ", " + margs) + ")";
+                        else val = "((" + val + ")." + field + ")(" + margs + ")";
+                    } else if (vt == "f32x4") {
                         if (field == "get") val = "dmc_f32x4_get(" + val + ", " + margs + ")";
                         else if (field == "add") val = "dmc_f32x4_add(" + val + ", " + margs + ")";
                         else if (field == "sub") val = "dmc_f32x4_sub(" + val + ", " + margs + ")";
@@ -3431,8 +3380,15 @@ long long task_pool_free(long long h) {
                         val = "((" + val + ")." + field + ")(" + margs + ")";
                     }
                 } else {
+                    if (!field.empty() && std::isdigit(static_cast<unsigned char>(field[0]))) {
+                        field = "_" + field;
+                    }
                     std::string vt = infer_type(val);
-                    if (vt == "f32x4") {
+                    if (vt == "str" && field == "len") {
+                        val = "((" + val + ").len)";
+                    } else if (vt == "str" && (field == "ptr" || field == "data")) {
+                        val = "((" + val + ").data)";
+                    } else if (vt == "f32x4") {
                         if (field == "x") val = "dmc_f32x4_get(" + val + ", 0)";
                         else if (field == "y") val = "dmc_f32x4_get(" + val + ", 1)";
                         else if (field == "z") val = "dmc_f32x4_get(" + val + ", 2)";
@@ -3461,7 +3417,11 @@ long long task_pool_free(long long h) {
                     take();
                     std::string end_idx = expression("]");
                     expect("]");
-                    val = "string_slice(" + val + ", 0, " + end_idx + ")";
+                    if (infer_type(val) == "str") {
+                        val = "str_sub(" + val + ", 0, " + end_idx + ")";
+                    } else {
+                        val = "string_slice(" + val + ", 0, " + end_idx + ")";
+                    }
                 } else {
                     std::string idx = expression("]");
                     if (peek() == "..") {
@@ -3470,14 +3430,21 @@ long long task_pool_free(long long h) {
                         if (peek() != "]") {
                             end_idx = expression("]");
                         } else {
-                            end_idx = "text_len(" + val + ")";
+                            if (infer_type(val) == "str") end_idx = "((" + val + ").len)";
+                            else end_idx = "text_len(" + val + ")";
                         }
                         expect("]");
-                        val = "string_slice(" + val + ", " + idx + ", (" + end_idx + ") - (" + idx + "))";
+                        if (infer_type(val) == "str") {
+                            val = "str_sub(" + val + ", " + idx + ", (" + end_idx + ") - (" + idx + "))";
+                        } else {
+                            val = "string_slice(" + val + ", " + idx + ", (" + end_idx + ") - (" + idx + "))";
+                        }
                     } else {
                         expect("]");
                         std::string vt = infer_type(val);
-                        if (vt.rfind("Vector<", 0) == 0 && vt.back() == '>') {
+                        if (vt == "str") {
+                            val = "((" + val + ").data[" + idx + "])";
+                        } else if (vt.rfind("Vector<", 0) == 0 && vt.back() == '>') {
                             std::string elem = vt.substr(7, vt.size() - 8);
                             specialized_vectors_.insert(elem);
                             val = "Vector_" + elem + "_get(" + val + ", " + idx + ")";
@@ -3508,7 +3475,7 @@ long long task_pool_free(long long h) {
             }
             return "(*" + operand + ")";
         }
-        if (peek() == "!" || peek() == "-") {
+        if (peek() == "!" || peek() == "-" || peek() == "~") {
             std::string op = take();
             std::string operand = postfix(unary_expr(end));
             return "(" + op + operand + ")";
@@ -3518,11 +3485,112 @@ long long task_pool_free(long long h) {
             std::string operand = postfix(unary_expr(end));
             return "(&" + operand + ")";
         }
+        if (peek() == "||") {
+            take();
+            std::string ret_type = "void";
+            if (peek() == "->") {
+                take();
+                ret_type = type_name();
+            }
+            int lid = ++lambda_counter_;
+            std::string lambda_name = "__dmc_lambda_" + std::to_string(lid);
+            std::string fn_type = "__dmc_lambda_fn_" + std::to_string(lid);
+            lambda_signatures_[lambda_name] = fn_type;
+            std::string typedef_decl = "typedef " + ctype(ret_type) + " (*" + fn_type + ")(void);";
+            top_level_c_.push_back(typedef_decl);
+            auto bstmts = block();
+            std::string body = "{\n";
+            for (const auto& s : bstmts) body += "    " + s + "\n";
+            body += "}";
+            std::string fn_def = "static " + ctype(ret_type) + " " + lambda_name + "(void) " + body;
+            top_level_c_.push_back(fn_def);
+            return lambda_name;
+        }
+        if (peek() == "|") {
+            take();
+            std::vector<Param> params;
+            while (peek() != "|") {
+                std::string pname = take();
+                std::string ptype = "int";
+                if (peek() == ":") {
+                    take();
+                    ptype = type_name();
+                }
+                params.push_back({pname, ptype});
+                if (peek() == ",") take();
+                else break;
+            }
+            expect("|");
+            std::string ret_type = "void";
+            if (peek() == "->") {
+                take();
+                ret_type = type_name();
+            }
+            int lid = ++lambda_counter_;
+            std::string lambda_name = "__dmc_lambda_" + std::to_string(lid);
+            std::string fn_type = "__dmc_lambda_fn_" + std::to_string(lid);
+            lambda_signatures_[lambda_name] = fn_type;
+            std::string ptypes;
+            if (params.empty()) ptypes = "void";
+            for (size_t i = 0; i < params.size(); ++i) {
+                if (i > 0) ptypes += ", ";
+                ptypes += ctype(params[i].type);
+            }
+            std::string typedef_decl = "typedef " + ctype(ret_type) + " (*" + fn_type + ")(" + ptypes + ");";
+            top_level_c_.push_back(typedef_decl);
+            scopes_.emplace_back();
+            for (const auto& p : params) bind_type(p.name, p.type);
+            auto bstmts = block();
+            scopes_.pop_back();
+            std::string body = "{\n";
+            for (const auto& s : bstmts) body += "    " + s + "\n";
+            body += "}";
+            std::string sig = "static " + ctype(ret_type) + " " + lambda_name + "(";
+            if (params.empty()) sig += "void";
+            for (size_t i = 0; i < params.size(); ++i) {
+                if (i > 0) sig += ", ";
+                sig += ctype(params[i].type) + " " + params[i].name;
+            }
+            sig += ") ";
+            top_level_c_.push_back(sig + body);
+            return lambda_name;
+        }
         if (peek() == "(") {
             take();
-            std::string inner = expression(")");
+            std::string first = expression(")");
+            if (peek() == ",") {
+                std::vector<std::string> exprs;
+                exprs.push_back(first);
+                while (peek() == ",") {
+                    take();
+                    if (peek() == ")") break;
+                    exprs.push_back(expression(")"));
+                }
+                expect(")");
+                std::vector<std::string> elem_types;
+                for (const auto& e : exprs) {
+                    std::string t = infer_type(e);
+                    if (t.empty()) t = "int";
+                    elem_types.push_back(t);
+                }
+                std::string tup_type = "(";
+                for (size_t i = 0; i < elem_types.size(); ++i) {
+                    if (i > 0) tup_type += ", ";
+                    tup_type += elem_types[i];
+                }
+                tup_type += ")";
+                register_tuple_type(tup_type, elem_types);
+                std::string c_type_name = ctype(tup_type);
+                std::string lit = "((" + c_type_name + "){";
+                for (size_t i = 0; i < exprs.size(); ++i) {
+                    if (i > 0) lit += ", ";
+                    lit += "._" + std::to_string(i) + " = " + exprs[i];
+                }
+                lit += "})";
+                return lit;
+            }
             expect(")");
-            return "(" + inner + ")";
+            return "(" + first + ")";
         }
         if (peek() == "[") {
             take();
@@ -3767,6 +3835,24 @@ long long task_pool_free(long long h) {
     }
 
     std::string type_name() {
+        if (peek() == "(") {
+            take();
+            std::vector<std::string> elems;
+            while (peek() != ")") {
+                elems.push_back(type_name());
+                if (peek() == ",") take();
+                else break;
+            }
+            expect(")");
+            std::string full_type = "(";
+            for (size_t i = 0; i < elems.size(); ++i) {
+                if (i > 0) full_type += ", ";
+                full_type += elems[i];
+            }
+            full_type += ")";
+            register_tuple_type(full_type, elems);
+            return full_type;
+        }
         if (peek() == "?*") { take(); return "?*" + type_name(); }
         if (peek() == "*") { take(); return "*" + type_name(); }
         if (peek() == "[") {
@@ -3864,6 +3950,11 @@ long long task_pool_free(long long h) {
     }
 
     std::string infer_type(const std::string& val) const {
+        if (val.rfind("__dmc_lambda_", 0) == 0) {
+            auto it = lambda_signatures_.find(val);
+            if (it != lambda_signatures_.end()) return it->second;
+        }
+        if (val.rfind("str_from(", 0) == 0 || val.rfind("str_sub(", 0) == 0 || val.rfind("str_slice_view(", 0) == 0) return "str";
         if (!val.empty() && (std::isdigit(static_cast<unsigned char>(val[0])))) {
             if (val.find('.') != std::string::npos || val.find('e') != std::string::npos || val.find('E') != std::string::npos) return "f64";
         }
@@ -3892,6 +3983,8 @@ long long task_pool_free(long long h) {
             }
         }
         if (val.find("((const unsigned char[])") != std::string::npos) return "const unsigned char*";
+        if (val.rfind("dmc_f32x4_get(", 0) == 0 || val.rfind("dmc_f32x4_dot(", 0) == 0) return "f32";
+        if (val.rfind("dmc_i32x4_get(", 0) == 0) return "int";
         if (val.rfind("DMC_SIMD_F32X4", 0) == 0 || val.rfind("dmc_f32x4", 0) == 0 || val.rfind("simd_f32x4", 0) == 0) return "f32x4";
         if (val.rfind("DMC_SIMD_I32X4", 0) == 0 || val.rfind("dmc_i32x4", 0) == 0 || val.rfind("simd_i32x4", 0) == 0) return "i32x4";
         if (val.rfind("arena_new(", 0) == 0) return "arena";
@@ -4095,6 +4188,29 @@ long long task_pool_free(long long h) {
         return variant;
     }
 
+    bool is_struct_type(const std::string& name) const {
+        for (const auto& s : structs_) {
+            if (s.name == name) return true;
+        }
+        return false;
+    }
+
+    void register_tuple_type(const std::string& tuple_type, const std::vector<std::string>& elem_types) {
+        std::string c_name = ctype(tuple_type);
+        for (const auto& s : structs_) {
+            if (s.name == c_name) return;
+        }
+        Struct s;
+        s.name = c_name;
+        for (size_t i = 0; i < elem_types.size(); ++i) {
+            Field f;
+            f.name = "_" + std::to_string(i);
+            f.type = elem_types[i];
+            s.fields.push_back(f);
+        }
+        structs_.push_back(s);
+    }
+
     std::string peek() const { return tokens_[index_].text; }
     std::string take() { if (peek() == "<eof>") fail("unexpected end of file"); return tokens_[index_++].text; }
     void expect(const std::string& value) { if (peek() != value) fail("expected '" + value + "', got '" + peek() + "'"); ++index_; }
@@ -4110,6 +4226,9 @@ long long task_pool_free(long long h) {
     std::vector<Struct> structs_;
     std::unordered_map<std::string, GenericStruct> generic_structs_;
     int match_counter_ = 0;
+    int tuple_counter_ = 0;
+    int lambda_counter_ = 0;
+    std::unordered_map<std::string, std::string> lambda_signatures_;
     std::vector<Enum> enums_;
     std::vector<std::unordered_map<std::string, std::string>> scopes_;
     std::set<std::string> imports_;
@@ -7500,7 +7619,7 @@ static int cmd_check(int argc, char** argv) {
 static int cmd_info() {
     std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
     std::cout << "  Version:       2.0.1\n";
-    std::cout << "  Features:      Pattern Matching (match), Generic Structs, Task Pool, Multithreading, Mutexes, Atomics, Channels, HTTP Server, dmc.lock, Polyglot FFI, SIMD, bindgen\n";
+    std::cout << "  Features:      Pattern Matching (match), Generic Structs, Task Pool, Multithreading, Mutexes, Atomics, Channels, HTTP Server, dmc.lock, Polyglot FFI, SIMD, bindgen, String Slices (str), Operator Overloading, Tuples, Lambdas, RAII Drops, Property Mutation Fuzzing, Freestanding Core Stdlib\n";
     std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
 #ifdef _WIN32
     std::cout << "windows-x86_64";
@@ -7837,6 +7956,7 @@ static void print_usage() {
               << "  info / env      display toolchain, compiler, and environment info\n"
               << "  test [dir]      run test suite\n"
               << "  bench [dir]     run benchmark suite\n"
+              << "  fuzz <src>      run property mutation fuzz testing on #[fuzz] functions\n"
               << "  tree [src]      display project import dependency tree\n"
               << "  tokens <src>    dump lexed syntax token stream\n"
               << "  lsp             run LSP daemon (--install-vscode to setup editor)\n"
@@ -7937,6 +8057,10 @@ int main(int argc, char** argv) {
     
     if (!args.empty() && args[0] == "test") {
         return cmd_test_impl(argc - 1, argv + 1, argv[0]);
+    }
+
+    if (!args.empty() && args[0] == "fuzz") {
+        return cmd_fuzz(argc - 2, argv + 2, argv[0]);
     }
 
     if (!args.empty() && args[0] == "bench") {

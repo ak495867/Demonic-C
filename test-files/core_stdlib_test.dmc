@@ -1,0 +1,41 @@
+import "core";
+
+#[test]
+fn test_core_bits() -> int {
+    let v: int = 0;
+    v = bit_set(v, 3);
+    if (bit_get(v, 3) != 1) {
+        return 1;
+    }
+    if (bit_get(v, 2) != 0) {
+        return 2;
+    }
+    v = bit_toggle(v, 3);
+    if (bit_get(v, 3) != 0) {
+        return 3;
+    }
+    return 0;
+}
+
+#[test]
+fn test_core_math_and_align() -> int {
+    if (core_min(5, 10) != 5) {
+        return 1;
+    }
+    if (core_max(5, 10) != 10) {
+        return 2;
+    }
+    if (core_clamp(15, 0, 10) != 10) {
+        return 3;
+    }
+    if (core_abs(0 - 42) != 42) {
+        return 4;
+    }
+    if (align_up(17, 8) != 24) {
+        return 5;
+    }
+    if (align_down(17, 8) != 16) {
+        return 6;
+    }
+    return 0;
+}

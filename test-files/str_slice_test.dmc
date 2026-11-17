@@ -1,0 +1,49 @@
+#[test]
+fn test_str_creation_and_len() -> int {
+    let s: str = str_from("demonic c");
+    if (s.len != 9) {
+        return 1;
+    }
+    if (s.len() != 9) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_str_slicing_and_equality() -> int {
+    let s: str = str_from("demonic c");
+    let sub: str = s.slice(0, 7);
+    if (sub.len != 7) {
+        return 1;
+    }
+    let expected: str = str_from("demonic");
+    if (!(sub == expected)) {
+        return 2;
+    }
+    if (sub != expected) {
+        return 3;
+    }
+    let tail: str = s.slice(8, 1);
+    let expected_tail: str = str_from("c");
+    if (!(tail == expected_tail)) {
+        return 4;
+    }
+    return 0;
+}
+
+#[test]
+fn test_str_slice_range_indexing() -> int {
+    let s: str = str_from("demonic c");
+    let sub: str = s[0..7];
+    let expected: str = str_from("demonic");
+    if (!(sub == expected)) {
+        return 1;
+    }
+    let c_part: str = s[8..9];
+    let expected_c: str = str_from("c");
+    if (!(c_part == expected_c)) {
+        return 2;
+    }
+    return 0;
+}

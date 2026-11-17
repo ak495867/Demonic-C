@@ -1,0 +1,44 @@
+fn bit_get(val: int, bit: int) -> int {
+    return (val >> bit) & 1;
+}
+
+fn bit_set(val: int, bit: int) -> int {
+    return val | (1 << bit);
+}
+
+fn bit_clear(val: int, bit: int) -> int {
+    return val & (~(1 << bit));
+}
+
+fn bit_toggle(val: int, bit: int) -> int {
+    return val ^ (1 << bit);
+}
+
+fn core_min(a: int, b: int) -> int {
+    if (a < b) { return a; }
+    return b;
+}
+
+fn core_max(a: int, b: int) -> int {
+    if (a > b) { return a; }
+    return b;
+}
+
+fn core_clamp(val: int, low: int, high: int) -> int {
+    if (val < low) { return low; }
+    if (val > high) { return high; }
+    return val;
+}
+
+fn core_abs(val: int) -> int {
+    if (val < 0) { return 0 - val; }
+    return val;
+}
+
+fn align_up(val: int, alignment: int) -> int {
+    return (val + alignment - 1) & (~(alignment - 1));
+}
+
+fn align_down(val: int, alignment: int) -> int {
+    return val & (~(alignment - 1));
+}
