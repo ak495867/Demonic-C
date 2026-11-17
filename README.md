@@ -125,6 +125,24 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
+## 🚀 Demonic C 2.0.3 Release
+
+Demonic C 2.0.3 massively expands the Standard Library with 12 new zero-dependency systems modules:
+- **`cli`**: Robust CLI application & argument parser supporting subcommands, long/short flags (`--flag`, `-f`), valued options (`--port 8080`, `--host=127.0.0.1`), integer parsing, and auto-generated formatted `--help` output.
+- **`dotenv`**: Zero-allocation `.env` file loader and config parser with default fallbacks, supporting `export` syntax, quoted values, and typed getters (`dotenv_get_int`, `dotenv_get_bool`).
+- **`term_ui`**: Terminal spinners, animated progress bars, ASCII tables with dynamic padding, and interactive checkbox/radio selectors.
+- **`url`**: RFC 3986 URL/URI parser & serializer (scheme, auth, host, port, path, query dict, fragment) with percent-encoding/decoding.
+- **`websocket`**: RFC 6455 frame serializer and parser with masking/unmasking, text, binary, ping, pong, and close control frames.
+- **`mime`**: Fast Content-Type / MIME detection from file extensions, paths, and binary magic numbers (PNG, JPEG, GIF, PDF, WASM, ZIP).
+- **`csv`**: RFC 4180 streaming CSV reader and writer with quote escaping (`""`), row formatting, column indexing, and header mapping.
+- **`hex`**: High-speed binary hex encoding, decoding, single byte conversions, and hexadecimal string validation.
+- **`ini`**: Multi-section INI/Conf configuration file parser with typed getters and in-place section modifier (`ini_set`).
+- **`geom`**: 2D and 3D vector math (`Vec2`, `Vec3`, `Rect`) powered by operator overloading (`+`, `-`), dot and cross products, distance, and AABB collision queries.
+- **`hash`**: Non-cryptographic hashing (FNV-1a 32-bit, DJB2, SDBM) and 64-bit hash combiner.
+- **`ring`**: Circular ring buffers and double-ended queues with bounded capacity and O(1) push/pop operations.
+
+---
+
 ## 🚀 Demonic C 2.0.2 Release
 
 Demonic C 2.0.2 brings major architectural evolution and modern systems ergonomics:
