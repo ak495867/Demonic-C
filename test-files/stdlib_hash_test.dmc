@@ -1,0 +1,36 @@
+import "hash";
+
+#[test]
+fn test_hash_algorithms() -> int {
+    let s1: string = "hello world";
+    let s2: string = "hello world";
+    let s3: string = "demonic c";
+    let h1: int = hash_fnv1a_32(s1);
+    let h2: int = hash_fnv1a_32(s2);
+    let h3: int = hash_fnv1a_32(s3);
+    if (h1 != h2) {
+        return 1;
+    }
+    if (h1 == h3) {
+        return 2;
+    }
+    let d1: int = hash_djb2(s1);
+    let d2: int = hash_djb2(s2);
+    let d3: int = hash_djb2(s3);
+    if (d1 != d2) {
+        return 3;
+    }
+    if (d1 == d3) {
+        return 4;
+    }
+    let sdbm1: int = hash_sdbm(s1);
+    let sdbm2: int = hash_sdbm(s2);
+    if (sdbm1 != sdbm2) {
+        return 5;
+    }
+    let combined: int = hash_combine(h1, d1);
+    if (combined == 0) {
+        return 6;
+    }
+    return 0;
+}

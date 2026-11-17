@@ -1,0 +1,41 @@
+fn hash_fnv1a_32(s: string) -> int {
+    let len: int = text_len(s);
+    var h: int = 2166136261;
+    var i: int = 0;
+    while (i < len) {
+        let c: int = text_char_at(s, i);
+        h = h ^ c;
+        h = h * 16777619;
+        i = i + 1;
+    }
+    return h;
+}
+
+fn hash_djb2(s: string) -> int {
+    let len: int = text_len(s);
+    var h: int = 5381;
+    var i: int = 0;
+    while (i < len) {
+        let c: int = text_char_at(s, i);
+        h = ((h << 5) + h) + c;
+        i = i + 1;
+    }
+    return h;
+}
+
+fn hash_sdbm(s: string) -> int {
+    let len: int = text_len(s);
+    var h: int = 0;
+    var i: int = 0;
+    while (i < len) {
+        let c: int = text_char_at(s, i);
+        h = c + (h << 6) + (h << 16) - h;
+        i = i + 1;
+    }
+    return h;
+}
+
+fn hash_combine(seed: int, next_val: int) -> int {
+    let k: int = 2654435769;
+    return seed ^ (next_val + k + (seed << 6) + (seed >> 2));
+}

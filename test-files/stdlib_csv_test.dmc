@@ -1,0 +1,67 @@
+import "csv";
+
+#[test]
+fn test_csv_parse_and_get() -> int {
+    let row: string = "Alice,30,Engineer";
+    let v: Vector<string> = csv_parse_row(row);
+    if (v.len() != 3) {
+        return 1;
+    }
+    if (v.get(0) != "Alice") {
+        return 2;
+    }
+    if (v.get(1) != "30") {
+        return 3;
+    }
+    if (v.get(2) != "Engineer") {
+        return 4;
+    }
+    v.free();
+
+    let complex_row: string = "\"Doe, John\",40,\"Senior \"\"Architect\"\"\"";
+    let v2: Vector<string> = csv_parse_row(complex_row);
+    if (v2.len() != 3) {
+        return 5;
+    }
+    if (v2.get(0) != "Doe, John") {
+        return 6;
+    }
+    if (v2.get(1) != "40") {
+        return 7;
+    }
+    if (v2.get(2) != "Senior \"Architect\"") {
+        return 8;
+    }
+    v2.free();
+
+    let f0: string = csv_get_field(complex_row, 0);
+    if (f0 != "Doe, John") {
+        return 9;
+    }
+    return 0;
+}
+
+#[test]
+fn test_csv_format_and_header() -> int {
+    let headers: string = "name,age,role";
+    let row: string = "Bob,25,Designer";
+    let role: string = csv_get_by_header(headers, row, "role");
+    if (role != "Designer") {
+        return 1;
+    }
+    let name: string = csv_get_by_header(headers, row, "name");
+    if (name != "Bob") {
+        return 2;
+    }
+
+    let cols: Vector<string> = Vector<string>::new();
+    cols.push("Smith, Jane");
+    cols.push("28");
+    cols.push("Lead \"Dev\"");
+    let formatted: string = csv_format_row(cols);
+    cols.free();
+    if (formatted != "\"Smith, Jane\",28,\"Lead \"\"Dev\"\"\"") {
+        return 3;
+    }
+    return 0;
+}

@@ -1,0 +1,55 @@
+import "url";
+
+#[test]
+fn test_url_encode_decode() -> int {
+    let raw: string = "hello world!";
+    let enc: string = url_encode(raw);
+    if (enc != "hello%20world%21") {
+        return 1;
+    }
+    let dec: string = url_decode(enc);
+    if (dec != raw) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_url_parse_and_query() -> int {
+    let full: string = "https://admin@example.com:8443/api/v1?page=2&sort=desc#results";
+    let u: Url = url_parse(full);
+    if (u.scheme != "https") {
+        return 1;
+    }
+    if (u.user != "admin") {
+        return 2;
+    }
+    if (u.host != "example.com") {
+        return 3;
+    }
+    if (u.port != 8443) {
+        return 4;
+    }
+    if (u.path != "/api/v1") {
+        return 5;
+    }
+    if (u.query != "page=2&sort=desc") {
+        return 6;
+    }
+    if (u.fragment != "results") {
+        return 7;
+    }
+    let qval: string = url_query_get(u.query, "sort");
+    if (qval != "desc") {
+        return 8;
+    }
+    let page: string = url_query_get(u.query, "page");
+    if (page != "2") {
+        return 9;
+    }
+    let reconstructed: string = url_to_string(u);
+    if (reconstructed != full) {
+        return 10;
+    }
+    return 0;
+}

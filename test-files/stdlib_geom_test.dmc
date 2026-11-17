@@ -1,0 +1,56 @@
+import "geom";
+
+#[test]
+fn test_vec2_operations() -> int {
+    let a: Vec2 = Vec2_new(3.0, 4.0);
+    let b: Vec2 = Vec2_new(1.0, 2.0);
+    let c: Vec2 = a + b;
+    if (c.x < 3.99 || c.x > 4.01 || c.y < 5.99 || c.y > 6.01) {
+        return 1;
+    }
+    let d: Vec2 = a - b;
+    if (d.x < 1.99 || d.x > 2.01 || d.y < 1.99 || d.y > 2.01) {
+        return 2;
+    }
+    let dot: float = Vec2_dot(a, b);
+    if (dot < 10.99 || dot > 11.01) {
+        return 3;
+    }
+    let len: float = Vec2_len(a);
+    if (len < 4.99 || len > 5.01) {
+        return 4;
+    }
+    let dist: float = Vec2_dist(a, b);
+    if (dist < 2.82 || dist > 2.84) {
+        return 5;
+    }
+    return 0;
+}
+
+#[test]
+fn test_vec3_and_rect() -> int {
+    let v1: Vec3 = Vec3_new(1.0, 0.0, 0.0);
+    let v2: Vec3 = Vec3_new(0.0, 1.0, 0.0);
+    let v3: Vec3 = Vec3_cross(v1, v2);
+    if (v3.x < -0.01 || v3.x > 0.01 || v3.y < -0.01 || v3.y > 0.01 || v3.z < 0.99 || v3.z > 1.01) {
+        return 1;
+    }
+    let r1: Rect = Rect_new(0.0, 0.0, 10.0, 10.0);
+    let pt: Vec2 = Vec2_new(5.0, 5.0);
+    if (rect_contains(r1, pt) != 1) {
+        return 2;
+    }
+    let pt_out: Vec2 = Vec2_new(15.0, 5.0);
+    if (rect_contains(r1, pt_out) != 0) {
+        return 3;
+    }
+    let r2: Rect = Rect_new(5.0, 5.0, 10.0, 10.0);
+    if (rect_overlaps(r1, r2) != 1) {
+        return 4;
+    }
+    let r3: Rect = Rect_new(20.0, 20.0, 5.0, 5.0);
+    if (rect_overlaps(r1, r3) != 0) {
+        return 5;
+    }
+    return 0;
+}

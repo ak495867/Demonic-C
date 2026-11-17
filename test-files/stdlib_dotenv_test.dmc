@@ -1,0 +1,35 @@
+import "dotenv";
+
+#[test]
+fn test_dotenv_parsing_and_fallbacks() -> int {
+    let env_content: string = "PORT=8080\nDB_HOST=\"localhost\"\nexport APP_ENV=production\nDEBUG=true\n";
+    let count: int = dotenv_parse(env_content);
+    if (count != 4) {
+        return 1;
+    }
+    if (dotenv_get("PORT", "3000") != "8080") {
+        return 2;
+    }
+    if (dotenv_get_int("PORT", 3000) != 8080) {
+        return 3;
+    }
+    if (dotenv_get("DB_HOST", "127.0.0.1") != "localhost") {
+        return 4;
+    }
+    if (dotenv_get("APP_ENV", "dev") != "production") {
+        return 5;
+    }
+    if (dotenv_get_bool("DEBUG", 0) != 1) {
+        return 6;
+    }
+    if (dotenv_get("NON_EXISTENT_KEY", "fallback_val") != "fallback_val") {
+        return 7;
+    }
+    if (dotenv_get_int("NON_EXISTENT_PORT", 9999) != 9999) {
+        return 8;
+    }
+    if (dotenv_get_bool("NON_EXISTENT_FLAG", 1) != 1) {
+        return 9;
+    }
+    return 0;
+}

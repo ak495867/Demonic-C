@@ -1,0 +1,85 @@
+fn hex_digit_val(c: int) -> int {
+    if (c >= 48 && c <= 57) {
+        return c - 48;
+    }
+    if (c >= 97 && c <= 102) {
+        return c - 87;
+    }
+    if (c >= 65 && c <= 70) {
+        return c - 55;
+    }
+    return -1;
+}
+
+fn hex_nibble_to_char(n: int) -> string {
+    let hex_chars: string = "0123456789abcdef";
+    return text_sub(hex_chars, n & 15, 1);
+}
+
+fn hex_from_byte(b: int) -> string {
+    let hi: int = (b >> 4) & 15;
+    let lo: int = b & 15;
+    return hex_nibble_to_char(hi) + hex_nibble_to_char(lo);
+}
+
+fn hex_to_byte(c1: int, c2: int) -> int {
+    let v1: int = hex_digit_val(c1);
+    let v2: int = hex_digit_val(c2);
+    if (v1 < 0 || v2 < 0) {
+        return -1;
+    }
+    return (v1 << 4) | v2;
+}
+
+fn hex_is_valid(hex_str: string) -> int {
+    let len: int = text_len(hex_str);
+    if ((len & 1) != 0) {
+        return 0;
+    }
+    var i: int = 0;
+    while (i < len) {
+        let c: int = text_char_at(hex_str, i);
+        if (hex_digit_val(c) < 0) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn hex_encode(input: string) -> string {
+    let len: int = text_len(input);
+    var out: string = "";
+    var i: int = 0;
+    while (i < len) {
+        let b: int = text_char_at(input, i);
+        out = out + hex_from_byte(b);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn hex_decode(hex_str: string) -> string {
+    let len: int = text_len(hex_str);
+    if ((len & 1) != 0) {
+        return "";
+    }
+    var out: string = "";
+    var i: int = 0;
+    while (i < len) {
+        let c1: int = text_char_at(hex_str, i);
+        let c2: int = text_char_at(hex_str, i + 1);
+        let byte_val: int = hex_to_byte(c1, c2);
+        if (byte_val < 0) {
+            return "";
+        }
+        c_code {
+            char _buf[2];
+            _buf[0] = (char)byte_val;
+            _buf[1] = 0;
+            out = text_concat(out, _buf);
+        }
+        i = i + 2;
+    }
+    return out;
+}

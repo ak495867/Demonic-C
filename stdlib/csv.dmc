@@ -1,0 +1,128 @@
+fn csv_parse_row(row_str: string) -> Vector<string> {
+    let out: Vector<string> = Vector<string>::new();
+    let len: int = text_len(row_str);
+    if (len == 0) {
+        return out;
+    }
+    var i: int = 0;
+    while (i < len) {
+        let c: int = text_char_at(row_str, i);
+        if (c == 34) {
+            i = i + 1;
+            var field: string = "";
+            while (i < len) {
+                let cur: int = text_char_at(row_str, i);
+                if (cur == 34) {
+                    if (i + 1 < len && text_char_at(row_str, i + 1) == 34) {
+                        field = field + "\"";
+                        i = i + 2;
+                    } else {
+                        i = i + 1;
+                        break;
+                    }
+                } else {
+                    field = field + string_slice(row_str, i, 1);
+                    i = i + 1;
+                }
+            }
+            while (i < len && text_char_at(row_str, i) != 44) {
+                i = i + 1;
+            }
+            if (i < len && text_char_at(row_str, i) == 44) {
+                i = i + 1;
+            }
+            out.push(field);
+        } else {
+            var start: int = i;
+            while (i < len && text_char_at(row_str, i) != 44) {
+                i = i + 1;
+            }
+            let field: string = string_slice(row_str, start, i - start);
+            out.push(field);
+            if (i < len && text_char_at(row_str, i) == 44) {
+                i = i + 1;
+                if (i == len) {
+                    out.push("");
+                }
+            }
+        }
+    }
+    return out;
+}
+
+fn csv_format_field(val: string) -> string {
+    let len: int = text_len(val);
+    var needs_quotes: int = 0;
+    var i: int = 0;
+    while (i < len) {
+        let c: int = text_char_at(val, i);
+        if (c == 44 || c == 34 || c == 10 || c == 13) {
+            needs_quotes = 1;
+            break;
+        }
+        i = i + 1;
+    }
+    if (needs_quotes == 0) {
+        return val;
+    }
+    var res: string = "\"";
+    i = 0;
+    while (i < len) {
+        let c: int = text_char_at(val, i);
+        if (c == 34) {
+            res = res + "\"\"";
+        } else {
+            res = res + string_slice(val, i, 1);
+        }
+        i = i + 1;
+    }
+    res = res + "\"";
+    return res;
+}
+
+fn csv_format_row(fields: Vector<string>) -> string {
+    let n: int = fields.len();
+    if (n == 0) {
+        return "";
+    }
+    var res: string = "";
+    var i: int = 0;
+    while (i < n) {
+        if (i > 0) {
+            res = res + ",";
+        }
+        res = res + csv_format_field(fields.get(i));
+        i = i + 1;
+    }
+    return res;
+}
+
+fn csv_get_field(row_str: string, target_col: int) -> string {
+    let v: Vector<string> = csv_parse_row(row_str);
+    if (target_col < 0 || target_col >= v.len()) {
+        v.free();
+        return "";
+    }
+    let res: string = v.get(target_col);
+    v.free();
+    return res;
+}
+
+fn csv_get_by_header(headers_row: string, data_row: string, header_name: string) -> string {
+    let h: Vector<string> = csv_parse_row(headers_row);
+    let hlen: int = h.len();
+    var col_idx: int = -1;
+    var i: int = 0;
+    while (i < hlen) {
+        if (h.get(i) == header_name) {
+            col_idx = i;
+            break;
+        }
+        i = i + 1;
+    }
+    h.free();
+    if (col_idx == -1) {
+        return "";
+    }
+    return csv_get_field(data_row, col_idx);
+}

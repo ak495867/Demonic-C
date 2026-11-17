@@ -1,0 +1,34 @@
+import "hex";
+
+#[test]
+fn test_hex_encode_decode() -> int {
+    let msg: string = "Demonic C";
+    let encoded: string = hex_encode(msg);
+    if (hex_is_valid(encoded) != 1) {
+        return 1;
+    }
+    let decoded: string = hex_decode(encoded);
+    if (decoded != msg) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_hex_byte_helpers() -> int {
+    let b_str: string = hex_from_byte(255);
+    if (b_str != "ff") {
+        return 1;
+    }
+    let b_val: int = hex_to_byte(102, 102);
+    if (b_val != 255) {
+        return 2;
+    }
+    if (hex_is_valid("12345g") != 0) {
+        return 3;
+    }
+    if (hex_is_valid("12345") != 0) {
+        return 4;
+    }
+    return 0;
+}

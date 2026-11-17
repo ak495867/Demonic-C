@@ -1,0 +1,51 @@
+import "ini";
+
+#[test]
+fn test_ini_reading() -> int {
+    let conf: string = "[server]\nhost = 127.0.0.1\nport = 9000\nenabled = true\n\n[database]\nname = demonic_db\nmax_conns = 50\n";
+    if (ini_has_section(conf, "server") != 1) {
+        return 1;
+    }
+    if (ini_has_section(conf, "unknown") != 0) {
+        return 2;
+    }
+    if (ini_has_key(conf, "server", "host") != 1) {
+        return 3;
+    }
+    if (ini_has_key(conf, "server", "missing") != 0) {
+        return 4;
+    }
+    if (ini_get(conf, "server", "host", "0.0.0.0") != "127.0.0.1") {
+        return 5;
+    }
+    if (ini_get_int(conf, "server", "port", 80) != 9000) {
+        return 6;
+    }
+    if (ini_get_bool(conf, "server", "enabled", 0) != 1) {
+        return 7;
+    }
+    if (ini_get(conf, "database", "name", "") != "demonic_db") {
+        return 8;
+    }
+    if (ini_get_int(conf, "database", "max_conns", 10) != 50) {
+        return 9;
+    }
+    if (ini_get(conf, "none", "key", "def") != "def") {
+        return 10;
+    }
+    return 0;
+}
+
+#[test]
+fn test_ini_writing() -> int {
+    let conf: string = "[server]\nport = 8080\n";
+    let updated: string = ini_set(conf, "server", "port", "443");
+    if (ini_get_int(updated, "server", "port", 0) != 443) {
+        return 1;
+    }
+    let with_new_sec: string = ini_set(updated, "cache", "ttl", "3600");
+    if (ini_get_int(with_new_sec, "cache", "ttl", 0) != 3600) {
+        return 2;
+    }
+    return 0;
+}

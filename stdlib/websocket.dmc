@@ -1,0 +1,180 @@
+struct WsFrame {
+    fin: int,
+    opcode: int,
+    masked: int,
+    payload: string,
+    payload_len: int
+}
+
+fn ws_encode_frame(opcode: int, payload: string, mask: int) -> string {
+    var out: string = "";
+    c_code {
+        size_t plen = strlen(payload);
+        size_t header_len = 2;
+        if (plen >= 126 && plen <= 65535) {
+            header_len = header_len + 2;
+        }
+        if (mask != 0) {
+            header_len = header_len + 4;
+        }
+        char *buf = (char*)malloc(header_len + plen + 1);
+        if (buf) {
+            buf[0] = (char)(128 | (opcode & 15));
+            unsigned char m_bit = (mask != 0) ? 128 : 0;
+            size_t pos = 2;
+            if (plen < 126) {
+                buf[1] = (char)(m_bit | (unsigned char)plen);
+            } else {
+                buf[1] = (char)(m_bit | 126);
+                buf[2] = (char)((plen >> 8) & 255);
+                buf[3] = (char)(plen & 255);
+                pos = 4;
+            }
+            if (mask != 0) {
+                unsigned char mkey[4] = { 18, 52, 86, 120 };
+                buf[pos] = (char)mkey[0];
+                pos = pos + 1;
+                buf[pos] = (char)mkey[1];
+                pos = pos + 1;
+                buf[pos] = (char)mkey[2];
+                pos = pos + 1;
+                buf[pos] = (char)mkey[3];
+                pos = pos + 1;
+                for (size_t i = 0; i < plen; i = i + 1) {
+                    buf[pos] = (char)(((unsigned char)payload[i]) ^ mkey[i % 4]);
+                    pos = pos + 1;
+                }
+            } else {
+                for (size_t i = 0; i < plen; i = i + 1) {
+                    buf[pos] = payload[i];
+                    pos = pos + 1;
+                }
+            }
+            buf[pos] = 0;
+            out = buf;
+        }
+    }
+    return out;
+}
+
+fn ws_decode_frame(frame_data: string) -> WsFrame {
+    var fin: int = 0;
+    var opcode: int = 0;
+    var masked: int = 0;
+    var payload: string = "";
+    var payload_len: int = 0;
+    c_code {
+        size_t flen = strlen(frame_data);
+        if (flen >= 2) {
+            unsigned char b0 = (unsigned char)frame_data[0];
+            unsigned char b1 = (unsigned char)frame_data[1];
+            fin = (b0 & 128) != 0 ? 1 : 0;
+            opcode = b0 & 15;
+            masked = (b1 & 128) != 0 ? 1 : 0;
+            size_t plen = b1 & 127;
+            size_t pos = 2;
+            if (plen == 126 && flen >= 4) {
+                unsigned char b2 = (unsigned char)frame_data[2];
+                unsigned char b3 = (unsigned char)frame_data[3];
+                plen = (((size_t)b2) << 8) | (size_t)b3;
+                pos = 4;
+            }
+            payload_len = (int)plen;
+            unsigned char mkey[4] = { 0, 0, 0, 0 };
+            if (masked != 0 && flen >= pos + 4) {
+                mkey[0] = (unsigned char)frame_data[pos];
+                pos = pos + 1;
+                mkey[1] = (unsigned char)frame_data[pos];
+                pos = pos + 1;
+                mkey[2] = (unsigned char)frame_data[pos];
+                pos = pos + 1;
+                mkey[3] = (unsigned char)frame_data[pos];
+                pos = pos + 1;
+            }
+            char *buf = (char*)malloc(plen + 1);
+            if (buf) {
+                for (size_t i = 0; i < plen && (pos + i) < flen; i = i + 1) {
+                    unsigned char b = (unsigned char)frame_data[pos + i];
+                    if (masked != 0) {
+                        buf[i] = (char)(b ^ mkey[i % 4]);
+                    } else {
+                        buf[i] = (char)b;
+                    }
+                }
+                buf[plen] = 0;
+                payload = buf;
+            }
+        }
+    }
+    let frame: WsFrame = WsFrame {
+        fin: fin,
+        opcode: opcode,
+        masked: masked,
+        payload: payload,
+        payload_len: payload_len
+    };
+    return frame;
+}
+
+fn ws_text_frame(msg: string, mask: int) -> string {
+    return ws_encode_frame(1, msg, mask);
+}
+
+fn ws_binary_frame(data: string, mask: int) -> string {
+    return ws_encode_frame(2, data, mask);
+}
+
+fn ws_close_frame(code: int) -> string {
+    var payload: string = "";
+    c_code {
+        char buf[3];
+        buf[0] = (char)((code >> 8) & 255);
+        buf[1] = (char)(code & 255);
+        buf[2] = 0;
+        payload = buf;
+    }
+    return ws_encode_frame(8, payload, 0);
+}
+
+fn ws_ping_frame() -> string {
+    return ws_encode_frame(9, "ping", 0);
+}
+
+fn ws_pong_frame(ping_payload: string) -> string {
+    return ws_encode_frame(10, ping_payload, 0);
+}
+
+fn ws_is_text(frame: *WsFrame) -> int {
+    if (frame.opcode == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+fn ws_is_binary(frame: *WsFrame) -> int {
+    if (frame.opcode == 2) {
+        return 1;
+    }
+    return 0;
+}
+
+fn ws_is_close(frame: *WsFrame) -> int {
+    if (frame.opcode == 8) {
+        return 1;
+    }
+    return 0;
+}
+
+fn ws_is_ping(frame: *WsFrame) -> int {
+    if (frame.opcode == 9) {
+        return 1;
+    }
+    return 0;
+}
+
+fn ws_is_pong(frame: *WsFrame) -> int {
+    if (frame.opcode == 10) {
+        return 1;
+    }
+    return 0;
+}

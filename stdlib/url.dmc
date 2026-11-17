@@ -1,0 +1,208 @@
+struct Url {
+    scheme: string,
+    user: string,
+    host: string,
+    port: int,
+    path: string,
+    query: string,
+    fragment: string
+}
+
+fn url_new() -> Url {
+    let u: Url = Url {
+        scheme: "",
+        user: "",
+        host: "",
+        port: 0,
+        path: "/",
+        query: "",
+        fragment: ""
+    };
+    return u;
+}
+
+fn url_encode(input: string) -> string {
+    var out: string = "";
+    c_code {
+        static const char *hex_digits = "0123456789ABCDEF";
+        size_t len = strlen(input);
+        char *buf = (char*)malloc(len * 3 + 1);
+        if (buf) {
+            size_t pos = 0;
+            for (size_t i = 0; i < len; i = i + 1) {
+                unsigned char c = (unsigned char)input[i];
+                if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) ||
+                    c == 45 || c == 95 || c == 46 || c == 126) {
+                    buf[pos] = (char)c;
+                    pos = pos + 1;
+                } else {
+                    buf[pos] = 37;
+                    pos = pos + 1;
+                    buf[pos] = hex_digits[(c >> 4) & 15];
+                    pos = pos + 1;
+                    buf[pos] = hex_digits[c & 15];
+                    pos = pos + 1;
+                }
+            }
+            buf[pos] = 0;
+            out = buf;
+        }
+    }
+    return out;
+}
+
+fn url_decode(input: string) -> string {
+    var out: string = "";
+    c_code {
+        size_t len = strlen(input);
+        char *buf = (char*)malloc(len + 1);
+        if (buf) {
+            size_t pos = 0;
+            for (size_t i = 0; i < len; i = i + 1) {
+                if (input[i] == 37 && i + 2 < len) {
+                    char h1 = input[i + 1];
+                    char h2 = input[i + 2];
+                    int v1 = 0;
+                    int v2 = 0;
+                    if (h1 >= 48 && h1 <= 57) v1 = h1 - 48;
+                    else if (h1 >= 65 && h1 <= 70) v1 = h1 - 55;
+                    else if (h1 >= 97 && h1 <= 102) v1 = h1 - 87;
+                    if (h2 >= 48 && h2 <= 57) v2 = h2 - 48;
+                    else if (h2 >= 65 && h2 <= 70) v2 = h2 - 55;
+                    else if (h2 >= 97 && h2 <= 102) v2 = h2 - 87;
+                    buf[pos] = (char)((v1 << 4) | v2);
+                    pos = pos + 1;
+                    i = i + 2;
+                } else if (input[i] == 43) {
+                    buf[pos] = 32;
+                    pos = pos + 1;
+                } else {
+                    buf[pos] = input[i];
+                    pos = pos + 1;
+                }
+            }
+            buf[pos] = 0;
+            out = buf;
+        }
+    }
+    return out;
+}
+
+fn url_parse(raw: string) -> Url {
+    var u: Url = url_new();
+    var rem: string = raw;
+
+    let frag_pos: int = text_find(rem, "#");
+    if (frag_pos >= 0) {
+        u.fragment = string_slice(rem, frag_pos + 1, text_len(rem) - frag_pos - 1);
+        rem = string_slice(rem, 0, frag_pos);
+    }
+
+    let q_pos: int = text_find(rem, "?");
+    if (q_pos >= 0) {
+        u.query = string_slice(rem, q_pos + 1, text_len(rem) - q_pos - 1);
+        rem = string_slice(rem, 0, q_pos);
+    }
+
+    let scheme_pos: int = text_find(rem, "://");
+    if (scheme_pos >= 0) {
+        u.scheme = string_slice(rem, 0, scheme_pos);
+        rem = string_slice(rem, scheme_pos + 3, text_len(rem) - scheme_pos - 3);
+    }
+
+    let path_pos: int = text_find(rem, "/");
+    var auth: string = "";
+    if (path_pos >= 0) {
+        auth = string_slice(rem, 0, path_pos);
+        u.path = string_slice(rem, path_pos, text_len(rem) - path_pos);
+    } else {
+        auth = rem;
+        u.path = "/";
+    }
+
+    let at_pos: int = text_find(auth, "@");
+    var host_port: string = auth;
+    if (at_pos >= 0) {
+        u.user = string_slice(auth, 0, at_pos);
+        host_port = string_slice(auth, at_pos + 1, text_len(auth) - at_pos - 1);
+    }
+
+    let colon_pos: int = text_find(host_port, ":");
+    if (colon_pos >= 0) {
+        u.host = string_slice(host_port, 0, colon_pos);
+        let port_str: string = string_slice(host_port, colon_pos + 1, text_len(host_port) - colon_pos - 1);
+        u.port = text_to_int(port_str);
+    } else {
+        u.host = host_port;
+        if (u.scheme == "http") {
+            u.port = 80;
+        } else if (u.scheme == "https") {
+            u.port = 443;
+        } else {
+            u.port = 0;
+        }
+    }
+
+    return u;
+}
+
+fn url_to_string(u: Url) -> string {
+    var res: string = "";
+    if (text_len(u.scheme) > 0) {
+        res = res + u.scheme + "://";
+    }
+    if (text_len(u.user) > 0) {
+        res = res + u.user + "@";
+    }
+    res = res + u.host;
+    if (u.port > 0) {
+        if (!((u.scheme == "http" && u.port == 80) || (u.scheme == "https" && u.port == 443))) {
+            res = res + ":" + text_from_int(u.port);
+        }
+    }
+    if (text_len(u.path) > 0) {
+        res = res + u.path;
+    }
+    if (text_len(u.query) > 0) {
+        res = res + "?" + u.query;
+    }
+    if (text_len(u.fragment) > 0) {
+        res = res + "#" + u.fragment;
+    }
+    return res;
+}
+
+fn url_query_get(query: string, key: string) -> string {
+    let qlen: int = text_len(query);
+    let klen: int = text_len(key);
+    if (qlen == 0 || klen == 0) {
+        return "";
+    }
+    var i: int = 0;
+    while (i < qlen) {
+        var next_amp: int = qlen;
+        var j: int = i;
+        while (j < qlen) {
+            if (text_char_at(query, j) == 38) {
+                next_amp = j;
+                break;
+            }
+            j = j + 1;
+        }
+        let pair: string = string_slice(query, i, next_amp - i);
+        let eq_pos: int = text_find(pair, "=");
+        if (eq_pos >= 0) {
+            let k: string = string_slice(pair, 0, eq_pos);
+            if (k == key) {
+                let val: string = string_slice(pair, eq_pos + 1, text_len(pair) - eq_pos - 1);
+                return url_decode(val);
+            }
+        } else {
+            if (pair == key) {
+                return "";
+            }
+        }
+        i = next_amp + 1;
+    }
+    return "";
+}

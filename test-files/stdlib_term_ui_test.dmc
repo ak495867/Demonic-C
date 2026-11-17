@@ -1,0 +1,51 @@
+import "term_ui";
+
+#[test]
+fn test_progress_bar_and_spinner() -> int {
+    let p50: string = term_progress_bar(50, 10);
+    if (p50 != "[=====     ] 50%") {
+        return 1;
+    }
+    let p100: string = term_progress_bar(100, 10);
+    if (p100 != "[==========] 100%") {
+        return 2;
+    }
+    if (term_spinner_frame(0) != "|") {
+        return 3;
+    }
+    if (term_spinner_frame(1) != "/") {
+        return 4;
+    }
+    if (term_spinner_frame(2) != "-") {
+        return 5;
+    }
+    if (term_spinner_frame(3) != "\\") {
+        return 6;
+    }
+    return 0;
+}
+
+#[test]
+fn test_table_and_selection() -> int {
+    let row: string = term_table_row("PID", 5, "NAME", 8, "STATUS", 6);
+    if (row != "| PID   | NAME     | STATUS |") {
+        return 1;
+    }
+    let div: string = term_table_divider(5, 8, 6);
+    if (div != "+-------+----------+--------+") {
+        return 2;
+    }
+    if (term_checkbox(1, "Option A") != "[x] Option A") {
+        return 3;
+    }
+    if (term_checkbox(0, "Option B") != "[ ] Option B") {
+        return 4;
+    }
+    if (term_radio(1, "Choice 1") != "(o) Choice 1") {
+        return 5;
+    }
+    if (term_radio(0, "Choice 2") != "( ) Choice 2") {
+        return 6;
+    }
+    return 0;
+}

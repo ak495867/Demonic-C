@@ -1,0 +1,58 @@
+import "websocket";
+
+#[test]
+fn test_ws_text_frames() -> int {
+    let raw_msg: string = "Hello WebSocket";
+    let encoded: string = ws_text_frame(raw_msg, 0);
+    let frame: WsFrame = ws_decode_frame(encoded);
+    if (frame.fin != 1) {
+        return 1;
+    }
+    if (ws_is_text(&frame) != 1) {
+        return 2;
+    }
+    if (frame.masked != 0) {
+        return 3;
+    }
+    if (frame.payload != raw_msg) {
+        return 4;
+    }
+
+    let masked_encoded: string = ws_text_frame("Masked payload test", 1);
+    let frame2: WsFrame = ws_decode_frame(masked_encoded);
+    if (frame2.fin != 1) {
+        return 5;
+    }
+    if (ws_is_text(&frame2) != 1) {
+        return 6;
+    }
+    if (frame2.masked != 1) {
+        return 7;
+    }
+    if (frame2.payload != "Masked payload test") {
+        return 8;
+    }
+    return 0;
+}
+
+#[test]
+fn test_ws_control_frames() -> int {
+    let ping_data: string = ws_ping_frame();
+    let pf: WsFrame = ws_decode_frame(ping_data);
+    if (ws_is_ping(&pf) != 1) {
+        return 1;
+    }
+
+    let pong_data: string = ws_pong_frame("ping");
+    let pong_f: WsFrame = ws_decode_frame(pong_data);
+    if (ws_is_pong(&pong_f) != 1) {
+        return 2;
+    }
+
+    let close_data: string = ws_close_frame(1000);
+    let cf: WsFrame = ws_decode_frame(close_data);
+    if (ws_is_close(&cf) != 1) {
+        return 3;
+    }
+    return 0;
+}

@@ -1,0 +1,39 @@
+import "cli";
+
+#[test]
+fn test_cli_parsing() -> int {
+    var app: CliApp = cli_new("demonic", "Demonic C Compiler CLI", "2.0.2");
+    cli_add_arg(&app, "build");
+    cli_add_arg(&app, "-v");
+    cli_add_arg(&app, "--port");
+    cli_add_arg(&app, "8080");
+    cli_add_arg(&app, "--host=127.0.0.1");
+
+    if (cli_get_subcommand(&app) != "build") {
+        return 1;
+    }
+    if (cli_has(&app, "-v") != 1) {
+        return 2;
+    }
+    if (cli_has(&app, "--missing") != 0) {
+        return 3;
+    }
+    if (cli_get(&app, "--port", "3000") != "8080") {
+        return 4;
+    }
+    if (cli_get_int(&app, "--port", 3000) != 8080) {
+        return 5;
+    }
+    if (cli_get(&app, "--host", "localhost") != "127.0.0.1") {
+        return 6;
+    }
+    if (cli_get(&app, "--target", "x86_64") != "x86_64") {
+        return 7;
+    }
+    let help_text: string = cli_help(&app, "demonic <command> [options]");
+    if (text_find(help_text, "Demonic C Compiler CLI") < 0) {
+        return 8;
+    }
+    cli_free(&app);
+    return 0;
+}

@@ -1,0 +1,98 @@
+import "ring";
+
+#[test]
+fn test_ring_fifo() -> int {
+    var rb: RingBuffer = ring_new(4);
+    if (ring_is_empty(&rb) != 1) {
+        return 1;
+    }
+    if (ring_push_back(&rb, 10) != 1) {
+        return 2;
+    }
+    if (ring_push_back(&rb, 20) != 1) {
+        return 3;
+    }
+    if (ring_push_back(&rb, 30) != 1) {
+        return 4;
+    }
+    if (ring_push_back(&rb, 40) != 1) {
+        return 5;
+    }
+    if (ring_is_full(&rb) != 1) {
+        return 6;
+    }
+    if (ring_push_back(&rb, 50) != 0) {
+        return 7;
+    }
+    if (ring_len(&rb) != 4) {
+        return 8;
+    }
+    if (ring_peek_front(&rb) != 10) {
+        return 9;
+    }
+    if (ring_peek_back(&rb) != 40) {
+        return 10;
+    }
+    if (ring_get(&rb, 0) != 10) {
+        return 11;
+    }
+    if (ring_get(&rb, 2) != 30) {
+        return 12;
+    }
+    if (ring_pop_front(&rb) != 10) {
+        return 13;
+    }
+    if (ring_pop_front(&rb) != 20) {
+        return 14;
+    }
+    if (ring_push_back(&rb, 50) != 1) {
+        return 15;
+    }
+    if (ring_pop_front(&rb) != 30) {
+        return 16;
+    }
+    if (ring_pop_front(&rb) != 40) {
+        return 17;
+    }
+    if (ring_pop_front(&rb) != 50) {
+        return 18;
+    }
+    if (ring_is_empty(&rb) != 1) {
+        return 19;
+    }
+    ring_free(&rb);
+    return 0;
+}
+
+#[test]
+fn test_ring_deque_ops() -> int {
+    var rb: RingBuffer = ring_new(4);
+    ring_push_front(&rb, 100);
+    ring_push_front(&rb, 200);
+    if (ring_len(&rb) != 2) {
+        return 1;
+    }
+    if (ring_peek_front(&rb) != 200) {
+        return 2;
+    }
+    if (ring_peek_back(&rb) != 100) {
+        return 3;
+    }
+    if (ring_pop_back(&rb) != 100) {
+        return 4;
+    }
+    if (ring_pop_back(&rb) != 200) {
+        return 5;
+    }
+    if (ring_is_empty(&rb) != 1) {
+        return 6;
+    }
+    ring_push_back(&rb, 7);
+    ring_push_back(&rb, 8);
+    ring_clear(&rb);
+    if (ring_len(&rb) != 0) {
+        return 7;
+    }
+    ring_free(&rb);
+    return 0;
+}

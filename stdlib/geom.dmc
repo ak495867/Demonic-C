@@ -1,0 +1,112 @@
+struct Vec2 {
+    x: float,
+    y: float
+}
+
+struct Vec3 {
+    x: float,
+    y: float,
+    z: float
+}
+
+struct Rect {
+    x: float,
+    y: float,
+    w: float,
+    h: float
+}
+
+fn Vec2_new(x: float, y: float) -> Vec2 {
+    let v: Vec2 = Vec2 { x: x, y: y };
+    return v;
+}
+
+fn Vec2_op_add(a: Vec2, b: Vec2) -> Vec2 {
+    let r: Vec2 = Vec2 { x: a.x + b.x, y: a.y + b.y };
+    return r;
+}
+
+fn Vec2_op_sub(a: Vec2, b: Vec2) -> Vec2 {
+    let r: Vec2 = Vec2 { x: a.x - b.x, y: a.y - b.y };
+    return r;
+}
+
+fn Vec2_op_mul(a: Vec2, b: Vec2) -> Vec2 {
+    let r: Vec2 = Vec2 { x: a.x * b.x, y: a.y * b.y };
+    return r;
+}
+
+fn Vec2_op_eq(a: Vec2, b: Vec2) -> int {
+    var dx: float = a.x - b.x;
+    var dy: float = a.y - b.y;
+    if (dx < 0.0) { dx = 0.0 - dx; }
+    if (dy < 0.0) { dy = 0.0 - dy; }
+    if (dx < 0.0001 && dy < 0.0001) {
+        return 1;
+    }
+    return 0;
+}
+
+fn Vec2_dot(a: Vec2, b: Vec2) -> float {
+    return (a.x * b.x) + (a.y * b.y);
+}
+
+fn Vec2_len_sq(v: Vec2) -> float {
+    return (v.x * v.x) + (v.y * v.y);
+}
+
+fn Vec2_len(v: Vec2) -> float {
+    return math_sqrt((v.x * v.x) + (v.y * v.y));
+}
+
+fn Vec2_dist(a: Vec2, b: Vec2) -> float {
+    let dx: float = a.x - b.x;
+    let dy: float = a.y - b.y;
+    return math_sqrt((dx * dx) + (dy * dy));
+}
+
+fn Vec3_new(x: float, y: float, z: float) -> Vec3 {
+    let v: Vec3 = Vec3 { x: x, y: y, z: z };
+    return v;
+}
+
+fn Vec3_op_add(a: Vec3, b: Vec3) -> Vec3 {
+    let r: Vec3 = Vec3 { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+    return r;
+}
+
+fn Vec3_op_sub(a: Vec3, b: Vec3) -> Vec3 {
+    let r: Vec3 = Vec3 { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+    return r;
+}
+
+fn Vec3_dot(a: Vec3, b: Vec3) -> float {
+    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
+}
+
+fn Vec3_cross(a: Vec3, b: Vec3) -> Vec3 {
+    let rx: float = (a.y * b.z) - (a.z * b.y);
+    let ry: float = (a.z * b.x) - (a.x * b.z);
+    let rz: float = (a.x * b.y) - (a.y * b.x);
+    let r: Vec3 = Vec3 { x: rx, y: ry, z: rz };
+    return r;
+}
+
+fn Rect_new(x: float, y: float, w: float, h: float) -> Rect {
+    let r: Rect = Rect { x: x, y: y, w: w, h: h };
+    return r;
+}
+
+fn rect_contains(r: Rect, pt: Vec2) -> int {
+    if (pt.x >= r.x && pt.x <= (r.x + r.w) && pt.y >= r.y && pt.y <= (r.y + r.h)) {
+        return 1;
+    }
+    return 0;
+}
+
+fn rect_overlaps(r1: Rect, r2: Rect) -> int {
+    if (r1.x < (r2.x + r2.w) && (r1.x + r1.w) > r2.x && r1.y < (r2.y + r2.h) && (r1.y + r1.h) > r2.y) {
+        return 1;
+    }
+    return 0;
+}

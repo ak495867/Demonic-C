@@ -1,0 +1,104 @@
+fn mime_from_extension(ext: string) -> string {
+    var e: string = text_lower(ext);
+    if (text_len(e) > 0 && text_char_at(e, 0) == 46) {
+        e = string_slice(e, 1, text_len(e) - 1);
+    }
+    if (e == "html" || e == "htm") { return "text/html"; }
+    if (e == "css") { return "text/css"; }
+    if (e == "js" || e == "mjs") { return "application/javascript"; }
+    if (e == "json") { return "application/json"; }
+    if (e == "txt" || e == "text" || e == "dmc" || e == "c" || e == "cpp" || e == "h") { return "text/plain"; }
+    if (e == "xml") { return "application/xml"; }
+    if (e == "csv") { return "text/csv"; }
+    if (e == "png") { return "image/png"; }
+    if (e == "jpg" || e == "jpeg") { return "image/jpeg"; }
+    if (e == "gif") { return "image/gif"; }
+    if (e == "svg") { return "image/svg+xml"; }
+    if (e == "webp") { return "image/webp"; }
+    if (e == "ico") { return "image/x-icon"; }
+    if (e == "pdf") { return "application/pdf"; }
+    if (e == "zip") { return "application/zip"; }
+    if (e == "tar") { return "application/x-tar"; }
+    if (e == "gz") { return "application/gzip"; }
+    if (e == "wasm") { return "application/wasm"; }
+    if (e == "mp3") { return "audio/mpeg"; }
+    if (e == "wav") { return "audio/wav"; }
+    if (e == "ogg") { return "audio/ogg"; }
+    if (e == "mp4") { return "video/mp4"; }
+    if (e == "webm") { return "video/webm"; }
+    return "application/octet-stream";
+}
+
+fn mime_from_path(path: string) -> string {
+    let len: int = text_len(path);
+    var i: int = len - 1;
+    var dot_pos: int = -1;
+    while (i >= 0) {
+        let c: int = text_char_at(path, i);
+        if (c == 47 || c == 92) {
+            break;
+        }
+        if (c == 46) {
+            dot_pos = i;
+            break;
+        }
+        i = i - 1;
+    }
+    if (dot_pos == -1 || dot_pos == len - 1) {
+        return "application/octet-stream";
+    }
+    let ext: string = string_slice(path, dot_pos + 1, len - dot_pos - 1);
+    return mime_from_extension(ext);
+}
+
+fn mime_from_magic(data: string) -> string {
+    let len: int = text_len(data);
+    if (len >= 4) {
+        let b0: int = text_char_at(data, 0);
+        let b1: int = text_char_at(data, 1);
+        let b2: int = text_char_at(data, 2);
+        let b3: int = text_char_at(data, 3);
+        if (b0 == 137 && b1 == 80 && b2 == 78 && b3 == 71) {
+            return "image/png";
+        }
+        if (b0 == 255 && b1 == 216 && b2 == 255) {
+            return "image/jpeg";
+        }
+        if (b0 == 71 && b1 == 73 && b2 == 70 && b3 == 56) {
+            return "image/gif";
+        }
+        if (b0 == 37 && b1 == 80 && b2 == 68 && b3 == 70) {
+            return "application/pdf";
+        }
+        if (b0 == 80 && b1 == 75 && b2 == 3 && b3 == 4) {
+            return "application/zip";
+        }
+        if (b0 == 0 && b1 == 97 && b2 == 115 && b3 == 109) {
+            return "application/wasm";
+        }
+    }
+    return "application/octet-stream";
+}
+
+fn mime_is_text(mime_type: string) -> int {
+    if (text_len(mime_type) >= 5) {
+        let prefix: string = string_slice(mime_type, 0, 5);
+        if (prefix == "text/") {
+            return 1;
+        }
+    }
+    if (mime_type == "application/json" || mime_type == "application/javascript" || mime_type == "application/xml") {
+        return 1;
+    }
+    return 0;
+}
+
+fn mime_is_image(mime_type: string) -> int {
+    if (text_len(mime_type) >= 6) {
+        let prefix: string = string_slice(mime_type, 0, 6);
+        if (prefix == "image/") {
+            return 1;
+        }
+    }
+    return 0;
+}

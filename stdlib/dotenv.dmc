@@ -1,0 +1,115 @@
+fn _dotenv_trim(s: string) -> string {
+    let len: int = text_len(s);
+    if (len == 0) { return ""; }
+    var start: int = 0;
+    while (start < len) {
+        let c: int = text_char_at(s, start);
+        if (c != 32 && c != 9 && c != 10 && c != 13) {
+            break;
+        }
+        start = start + 1;
+    }
+    if (start == len) { return ""; }
+    var end: int = len - 1;
+    while (end > start) {
+        let c: int = text_char_at(s, end);
+        if (c != 32 && c != 9 && c != 10 && c != 13) {
+            break;
+        }
+        end = end - 1;
+    }
+    return string_slice(s, start, end - start + 1);
+}
+
+fn dotenv_parse(content: string) -> int {
+    let len: int = text_len(content);
+    if (len == 0) { return 0; }
+    var count: int = 0;
+    var i: int = 0;
+    while (i < len) {
+        var next_nl: int = len;
+        var j: int = i;
+        while (j < len) {
+            let c: int = text_char_at(content, j);
+            if (c == 10 || c == 13) {
+                next_nl = j;
+                break;
+            }
+            j = j + 1;
+        }
+        var line: string = _dotenv_trim(string_slice(content, i, next_nl - i));
+        let line_len: int = text_len(line);
+        if (line_len > 0) {
+            if (text_char_at(line, 0) != 35) {
+                if (line_len >= 7) {
+                    if (string_slice(line, 0, 7) == "export ") {
+                        line = _dotenv_trim(string_slice(line, 7, line_len - 7));
+                    }
+                }
+                let eq_pos: int = text_find(line, "=");
+                if (eq_pos > 0) {
+                    let k: string = _dotenv_trim(string_slice(line, 0, eq_pos));
+                    var v: string = _dotenv_trim(string_slice(line, eq_pos + 1, text_len(line) - eq_pos - 1));
+                    let vlen: int = text_len(v);
+                    if (vlen >= 2) {
+                        let c0: int = text_char_at(v, 0);
+                        let cN: int = text_char_at(v, vlen - 1);
+                        if ((c0 == 34 && cN == 34) || (c0 == 39 && cN == 39)) {
+                            v = string_slice(v, 1, vlen - 2);
+                        }
+                    }
+                    os_set_env(k, v);
+                    count = count + 1;
+                }
+            }
+        }
+        i = next_nl + 1;
+        if (i < len && text_char_at(content, next_nl) == 13 && text_char_at(content, i) == 10) {
+            i = i + 1;
+        }
+    }
+    return count;
+}
+
+fn dotenv_load(path: string) -> int {
+    var p: string = path;
+    if (text_len(p) == 0) {
+        p = ".env";
+    }
+    if (fs_exists(p) == 0) {
+        return -1;
+    }
+    let content: string = fs_read(p);
+    return dotenv_parse(content);
+}
+
+fn dotenv_get(key: string, default_val: string) -> string {
+    let val: string = os_env(key);
+    if (text_len(val) == 0) {
+        return default_val;
+    }
+    return val;
+}
+
+fn dotenv_get_int(key: string, default_val: int) -> int {
+    let val: string = os_env(key);
+    if (text_len(val) == 0) {
+        return default_val;
+    }
+    return text_to_int(val);
+}
+
+fn dotenv_get_bool(key: string, default_val: int) -> int {
+    let val: string = os_env(key);
+    if (text_len(val) == 0) {
+        return default_val;
+    }
+    let low: string = text_lower(val);
+    if (low == "1" || low == "true" || low == "yes" || low == "on") {
+        return 1;
+    }
+    if (low == "0" || low == "false" || low == "no" || low == "off") {
+        return 0;
+    }
+    return default_val;
+}

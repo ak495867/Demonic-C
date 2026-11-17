@@ -1,0 +1,73 @@
+fn term_repeat_char(ch: string, count: int) -> string {
+    if (count <= 0) {
+        return "";
+    }
+    var res: string = "";
+    var i: int = 0;
+    while (i < count) {
+        res = res + ch;
+        i = i + 1;
+    }
+    return res;
+}
+
+fn term_pad_right(s: string, width: int) -> string {
+    let len: int = text_len(s);
+    if (len >= width) {
+        return s;
+    }
+    return s + term_repeat_char(" ", width - len);
+}
+
+fn term_pad_left(s: string, width: int) -> string {
+    let len: int = text_len(s);
+    if (len >= width) {
+        return s;
+    }
+    return term_repeat_char(" ", width - len) + s;
+}
+
+fn term_progress_bar(percent: int, width: int) -> string {
+    var p: int = percent;
+    if (p < 0) { p = 0; }
+    if (p > 100) { p = 100; }
+    var w: int = width;
+    if (w <= 0) { w = 20; }
+    let filled_len: int = (p * w) / 100;
+    let empty_len: int = w - filled_len;
+    let bar: string = "[" + term_repeat_char("=", filled_len) + term_repeat_char(" ", empty_len) + "] " + text_from_int(p) + "%";
+    return bar;
+}
+
+fn term_spinner_frame(step: int) -> string {
+    var idx: int = step % 4;
+    if (idx < 0) {
+        idx = idx + 4;
+    }
+    if (idx == 0) { return "|"; }
+    if (idx == 1) { return "/"; }
+    if (idx == 2) { return "-"; }
+    return "\\";
+}
+
+fn term_table_divider(w1: int, w2: int, w3: int) -> string {
+    return "+-" + term_repeat_char("-", w1) + "-+-" + term_repeat_char("-", w2) + "-+-" + term_repeat_char("-", w3) + "-+";
+}
+
+fn term_table_row(c1: string, w1: int, c2: string, w2: int, c3: string, w3: int) -> string {
+    return "| " + term_pad_right(c1, w1) + " | " + term_pad_right(c2, w2) + " | " + term_pad_right(c3, w3) + " |";
+}
+
+fn term_checkbox(selected: int, label: string) -> string {
+    if (selected != 0) {
+        return "[x] " + label;
+    }
+    return "[ ] " + label;
+}
+
+fn term_radio(selected: int, label: string) -> string {
+    if (selected != 0) {
+        return "(o) " + label;
+    }
+    return "( ) " + label;
+}

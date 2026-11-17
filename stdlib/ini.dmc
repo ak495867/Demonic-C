@@ -1,0 +1,173 @@
+fn _ini_trim(s: string) -> string {
+    let len: int = text_len(s);
+    if (len == 0) { return ""; }
+    var start: int = 0;
+    while (start < len) {
+        let c: int = text_char_at(s, start);
+        if (c != 32 && c != 9 && c != 10 && c != 13) {
+            break;
+        }
+        start = start + 1;
+    }
+    if (start == len) { return ""; }
+    var end: int = len - 1;
+    while (end > start) {
+        let c: int = text_char_at(s, end);
+        if (c != 32 && c != 9 && c != 10 && c != 13) {
+            break;
+        }
+        end = end - 1;
+    }
+    return string_slice(s, start, end - start + 1);
+}
+
+fn ini_get(content: string, section: string, key: string, default_val: string) -> string {
+    let len: int = text_len(content);
+    if (len == 0) { return default_val; }
+    var cur_sec: string = "";
+    var i: int = 0;
+    while (i < len) {
+        var next_nl: int = len;
+        var j: int = i;
+        while (j < len) {
+            let c: int = text_char_at(content, j);
+            if (c == 10 || c == 13) {
+                next_nl = j;
+                break;
+            }
+            j = j + 1;
+        }
+        let line: string = _ini_trim(string_slice(content, i, next_nl - i));
+        let line_len: int = text_len(line);
+        if (line_len > 0) {
+            let first_char: int = text_char_at(line, 0);
+            if (first_char != 35 && first_char != 59) {
+                if (first_char == 91 && text_char_at(line, line_len - 1) == 93) {
+                    cur_sec = _ini_trim(string_slice(line, 1, line_len - 2));
+                } else {
+                    let eq_pos: int = text_find(line, "=");
+                    if (eq_pos > 0) {
+                        let k: string = _ini_trim(string_slice(line, 0, eq_pos));
+                        if (cur_sec == section && k == key) {
+                            var v: string = _ini_trim(string_slice(line, eq_pos + 1, line_len - eq_pos - 1));
+                            let vlen: int = text_len(v);
+                            if (vlen >= 2) {
+                                let c0: int = text_char_at(v, 0);
+                                let cN: int = text_char_at(v, vlen - 1);
+                                if ((c0 == 34 && cN == 34) || (c0 == 39 && cN == 39)) {
+                                    v = string_slice(v, 1, vlen - 2);
+                                }
+                            }
+                            return v;
+                        }
+                    }
+                }
+            }
+        }
+        i = next_nl + 1;
+        if (i < len && text_char_at(content, next_nl) == 13 && text_char_at(content, i) == 10) {
+            i = i + 1;
+        }
+    }
+    return default_val;
+}
+
+fn ini_get_int(content: string, section: string, key: string, default_val: int) -> int {
+    let s: string = ini_get(content, section, key, "");
+    if (text_len(s) == 0) {
+        return default_val;
+    }
+    return text_to_int(s);
+}
+
+fn ini_get_bool(content: string, section: string, key: string, default_val: int) -> int {
+    let s: string = ini_get(content, section, key, "");
+    if (text_len(s) == 0) {
+        return default_val;
+    }
+    let low: string = text_lower(s);
+    if (low == "1" || low == "true" || low == "yes" || low == "on") {
+        return 1;
+    }
+    if (low == "0" || low == "false" || low == "no" || low == "off") {
+        return 0;
+    }
+    return default_val;
+}
+
+fn ini_has_section(content: string, section: string) -> int {
+    let sec_header: string = "[" + section + "]";
+    return text_contains(content, sec_header);
+}
+
+fn ini_has_key(content: string, section: string, key: string) -> int {
+    let val: string = ini_get(content, section, key, "__NOT_FOUND_KEY__");
+    if (val == "__NOT_FOUND_KEY__") {
+        return 0;
+    }
+    return 1;
+}
+
+fn ini_set(content: string, section: string, key: string, val: string) -> string {
+    if (ini_has_section(content, section) == 0) {
+        var res: string = content;
+        if (text_len(res) > 0 && text_char_at(res, text_len(res) - 1) != 10) {
+            res = res + "\n";
+        }
+        res = res + "[" + section + "]\n" + key + " = " + val + "\n";
+        return res;
+    }
+    let target_entry: string = key + " = " + val;
+    let len: int = text_len(content);
+    var cur_sec: string = "";
+    var res: string = "";
+    var replaced: int = 0;
+    var i: int = 0;
+    while (i < len) {
+        var next_nl: int = len;
+        var j: int = i;
+        while (j < len) {
+            let c: int = text_char_at(content, j);
+            if (c == 10 || c == 13) {
+                next_nl = j;
+                break;
+            }
+            j = j + 1;
+        }
+        let raw_line: string = string_slice(content, i, next_nl - i);
+        let line: string = _ini_trim(raw_line);
+        let line_len: int = text_len(line);
+        var line_written: int = 0;
+        if (line_len > 0) {
+            let first_char: int = text_char_at(line, 0);
+            if (first_char == 91 && text_char_at(line, line_len - 1) == 93) {
+                if (cur_sec == section && replaced == 0) {
+                    res = res + target_entry + "\n";
+                    replaced = 1;
+                }
+                cur_sec = _ini_trim(string_slice(line, 1, line_len - 2));
+            } else if (first_char != 35 && first_char != 59) {
+                let eq_pos: int = text_find(line, "=");
+                if (eq_pos > 0) {
+                    let k: string = _ini_trim(string_slice(line, 0, eq_pos));
+                    if (cur_sec == section && k == key) {
+                        res = res + target_entry + "\n";
+                        replaced = 1;
+                        line_written = 1;
+                    }
+                }
+            }
+        }
+        if (line_written == 0) {
+            res = res + raw_line + "\n";
+        }
+        i = next_nl + 1;
+        if (i < len && text_char_at(content, next_nl) == 13 && text_char_at(content, i) == 10) {
+            i = i + 1;
+        }
+    }
+    if (replaced == 0 && cur_sec == section) {
+        res = res + target_entry + "\n";
+    }
+    return res;
+}

@@ -1,0 +1,42 @@
+import "mime";
+
+#[test]
+fn test_mime_extensions() -> int {
+    if (mime_from_extension("html") != "text/html") {
+        return 1;
+    }
+    if (mime_from_extension(".json") != "application/json") {
+        return 2;
+    }
+    if (mime_from_extension(".PNG") != "image/png") {
+        return 3;
+    }
+    if (mime_from_extension("unknown_xyz") != "application/octet-stream") {
+        return 4;
+    }
+    return 0;
+}
+
+#[test]
+fn test_mime_paths_and_kinds() -> int {
+    if (mime_from_path("app/styles/main.css") != "text/css") {
+        return 1;
+    }
+    if (mime_from_path("C:\\Users\\docs\\report.pdf") != "application/pdf") {
+        return 2;
+    }
+    let m_txt: string = "text/plain";
+    if (mime_is_text(m_txt) != 1) {
+        return 3;
+    }
+    if (mime_is_text("image/png") != 0) {
+        return 4;
+    }
+    if (mime_is_image("image/webp") != 1) {
+        return 5;
+    }
+    if (mime_is_image("text/html") != 0) {
+        return 6;
+    }
+    return 0;
+}
