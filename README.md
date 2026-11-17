@@ -125,6 +125,20 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
+## 🚀 Demonic C 2.0.2 Release
+
+Demonic C 2.0.2 brings major architectural evolution and modern systems ergonomics:
+- **Compiler Modularization**: Decoupled headers under `compiler/include/` (`tokens.hpp`, `lexer.hpp`, `types.hpp`, `str_runtime.hpp`, `fuzz.hpp`).
+- **Zero-Copy String Slices (`str`)**: High-performance string view type with sub-slice indexing (`s[0..7]`, `s.slice()`), length queries, and zero-cost pointer access.
+- **Operator Overloading**: Overloaded arithmetic and comparison operators for user structs (`TypeName_op_add`, `TypeName_op_sub`, `TypeName_op_mul`, `TypeName_op_div`, `TypeName_op_eq`, `TypeName_op_ne`) and hardware SIMD vectors (`f32x4`, `i32x4`).
+- **Tuple Types & Destructuring**: Native tuple types (`(T1, T2)`), tuple literals (`(10, 20)`), element access (`.0`, `.1`), and destructuring bindings (`let (a, b) = tup;`).
+- **Anonymous Lambdas**: Expressive anonymous functions and closures (`|x: int, y: int| -> int { return x + y; }`).
+- **Deterministic RAII Drop Cleanup**: Automatic deterministic destructor execution (`TypeName_drop`) on block exit and early returns.
+- **Property-Based Mutation Fuzz Testing**: Built-in CLI command (`dmc fuzz`) executing automated property mutation harnesses over 1,000 iterations without crashes.
+- **Freestanding Core Stdlib (`stdlib/core.dmc`)**: Bitwise operations (`bit_get`, `bit_set`, `bit_clear`, `bit_toggle`), alignment (`align_up`, `align_down`), and full bitwise operators (`|`, `^`, `&`, `<<`, `>>`, `~`).
+
+---
+
 ## 🚀 Demonic C 2.0.1 Release
 
 Demonic C 2.0.1 introduces expressive pattern matching, generalized generic structs, worker task pools, high-performance substring search, sandbox-resilient caching, and multi-architecture POSIX/ARM64 atomic stabilization.
