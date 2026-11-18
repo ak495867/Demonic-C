@@ -1,4 +1,7 @@
+#define _CRT_SECURE_NO_WARNINGS
+#define _ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
 #include <algorithm>
+#include <bitset>
 #include <cctype>
 #include <fstream>
 #include <filesystem>
