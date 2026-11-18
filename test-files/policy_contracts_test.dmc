@@ -1,0 +1,225 @@
+import "policy";
+
+fn safe_div(a: int, b: int) -> int requires(b != 0) ensures(result * b <= a) {
+    return a / b;
+}
+
+fn deposit(balance: int, amount: int) -> int requires(amount > 0 && balance >= 0) ensures(result == balance + amount) {
+    return balance + amount;
+}
+
+pure fn safe_abs(x: int) -> int ensures(result >= 0) {
+    if (x < 0) {
+        return -x;
+    }
+    return x;
+}
+
+pure fn pure_add(a: int, b: int) -> int requires(a >= 0 && b >= 0) ensures(result >= a) {
+    return a + b;
+}
+
+pure fn pure_multiply(a: int, b: int) -> int requires(a >= 0 && b >= 0) ensures(result >= 0) {
+    return a * b;
+}
+
+enum GuardKind {
+    Active(int),
+    Pending(int),
+    Denied(int)
+}
+
+pure fn guard_eval(g: GuardKind) -> int {
+    match (g) {
+        Active(v) if v > 100 => { return 100; },
+        Active(v) => { return v; },
+        Pending(v) if v == 0 => { return 0; },
+        Pending(v) => { return v * 2; },
+        Denied(v) if v < 0 => { return -1; },
+        Denied(v) => { return 999; }
+    }
+}
+
+pure fn guard_scalar(code: int) -> int {
+    match (code) {
+        1 if code == 1 => { return 10; },
+        2 => { return 20; },
+        _ if code > 10 => { return 100; },
+        _ => { return -1; }
+    }
+}
+
+#[test]
+fn test_requires_and_ensures() -> int {
+    let d1: int = safe_div(10, 2);
+    if (d1 != 5) {
+        return 1;
+    }
+    let d2: int = safe_div(9, 3);
+    if (d2 != 3) {
+        return 2;
+    }
+    let b1: int = deposit(100, 50);
+    if (b1 != 150) {
+        return 3;
+    }
+    let b2: int = deposit(0, 10);
+    if (b2 != 10) {
+        return 4;
+    }
+    let a1: int = safe_abs(-42);
+    if (a1 != 42) {
+        return 5;
+    }
+    let a2: int = safe_abs(17);
+    if (a2 != 17) {
+        return 6;
+    }
+    return 0;
+}
+
+#[test]
+fn test_pure_functions() -> int {
+    let sum: int = pure_add(20, 22);
+    if (sum != 42) {
+        return 1;
+    }
+    let prod: int = pure_multiply(6, 7);
+    if (prod != 42) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_match_guards() -> int {
+    let v1: int = guard_eval(Active(150));
+    if (v1 != 100) {
+        return 1;
+    }
+    let v2: int = guard_eval(Active(50));
+    if (v2 != 50) {
+        return 2;
+    }
+    let v3: int = guard_eval(Pending(0));
+    if (v3 != 0) {
+        return 3;
+    }
+    let v4: int = guard_eval(Pending(5));
+    if (v4 != 10) {
+        return 4;
+    }
+    let v5: int = guard_eval(Denied(-5));
+    if (v5 != -1) {
+        return 5;
+    }
+    let v6: int = guard_eval(Denied(10));
+    if (v6 != 999) {
+        return 6;
+    }
+    let s1: int = guard_scalar(1);
+    if (s1 != 10) {
+        return 7;
+    }
+    let s2: int = guard_scalar(2);
+    if (s2 != 20) {
+        return 8;
+    }
+    let s3: int = guard_scalar(50);
+    if (s3 != 100) {
+        return 9;
+    }
+    let s4: int = guard_scalar(5);
+    if (s4 != -1) {
+        return 10;
+    }
+    return 0;
+}
+
+#[test]
+fn test_policy_engine() -> int {
+    var engine: PolicyEngine = policy_new(0);
+    if (policy_get_state(&engine) != 0) {
+        return 1;
+    }
+    let a1: int = policy_allow(&engine, 0, 1, 10, 0);
+    if (a1 != 1) {
+        return 2;
+    }
+    let a2: int = policy_allow(&engine, 1, 2, 20, 4);
+    if (a2 != 1) {
+        return 3;
+    }
+    let a3: int = policy_allow(&engine, 2, 3, 30, 0);
+    if (a3 != 1) {
+        return 4;
+    }
+
+    let ok1: int = policy_step(&engine, 10, 1, 0);
+    if (ok1 != 1) {
+        return 5;
+    }
+    if (policy_get_state(&engine) != 1) {
+        return 6;
+    }
+
+    let bad_step: int = policy_step(&engine, 20, 2, 0);
+    if (bad_step != 0) {
+        return 7;
+    }
+    if (policy_get_state(&engine) != 1) {
+        return 8;
+    }
+    if (policy_get_violations(&engine) != 1) {
+        return 9;
+    }
+
+    let ok2: int = policy_step(&engine, 20, 2, 4);
+    if (ok2 != 1) {
+        return 10;
+    }
+    if (policy_get_state(&engine) != 2) {
+        return 11;
+    }
+
+    let ok3: int = policy_step(&engine, 30, 3, 0);
+    if (ok3 != 1) {
+        return 12;
+    }
+    if (policy_get_state(&engine) != 3) {
+        return 13;
+    }
+    if (policy_get_steps(&engine) != 3) {
+        return 14;
+    }
+    return 0;
+}
+
+#[test]
+fn test_policy_state_invariants() -> int {
+    if (policy_state_is_valid(PolicyInit) != 1) {
+        return 1;
+    }
+    if (policy_state_is_valid(PolicyActive) != 1) {
+        return 2;
+    }
+    if (policy_state_is_valid(PolicyError) != 0) {
+        return 3;
+    }
+    if (policy_state_is_terminal(PolicyClosed) != 1) {
+        return 4;
+    }
+    if (policy_state_is_terminal(PolicyActive) != 0) {
+        return 5;
+    }
+    if (policy_state_can_transition(PolicyInit, PolicyActive) != 1) {
+        return 6;
+    }
+    if (policy_state_can_transition(PolicyInit, PolicyClosed) != 0) {
+        return 7;
+    }
+    if (policy_state_can_transition(PolicyActive, PolicyPaused) != 1) {
+        return 8;
+    }
+    return 0;
+}

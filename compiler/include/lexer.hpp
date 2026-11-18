@@ -35,6 +35,18 @@ static inline std::vector<Token> lex(const std::string& source) {
         if (std::isdigit(c)) {
             size_t start = i++;
             int start_col = col++;
+            if (c == '0' && i < source.size() && (source[i] == 'x' || source[i] == 'X')) {
+                ++i; ++col;
+                while (i < source.size() && (std::isxdigit(static_cast<unsigned char>(source[i])) || source[i] == '_')) { ++i; ++col; }
+                result.push_back({source.substr(start, i - start), line, start_col});
+                continue;
+            }
+            if (c == '0' && i < source.size() && (source[i] == 'b' || source[i] == 'B')) {
+                ++i; ++col;
+                while (i < source.size() && (source[i] == '0' || source[i] == '1' || source[i] == '_')) { ++i; ++col; }
+                result.push_back({source.substr(start, i - start), line, start_col});
+                continue;
+            }
             while (i < source.size() && std::isdigit(static_cast<unsigned char>(source[i]))) { ++i; ++col; }
             if (i < source.size() && source[i] == '.' && i + 1 < source.size() && std::isdigit(static_cast<unsigned char>(source[i + 1]))) {
                 ++i; ++col;

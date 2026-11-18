@@ -1,0 +1,96 @@
+struct ArenaAllocator {
+    base: *void,
+    capacity: usize,
+    offset: usize
+}
+
+fn arena_new(base_ptr: *void, capacity: usize) -> ArenaAllocator {
+    let a: ArenaAllocator = ArenaAllocator {
+        base: base_ptr,
+        capacity: capacity,
+        offset: 0
+    };
+    return a;
+}
+
+fn arena_alloc(a: *ArenaAllocator, size: usize) -> *void {
+    let aligned: usize = (size + 7) & (~7);
+    if (a.offset + aligned > a.capacity) {
+        return null;
+    }
+    let ptr: *void = ptr_add(a.base, a.offset as i64);
+    a.offset = a.offset + aligned;
+    return ptr;
+}
+
+fn arena_reset(a: *ArenaAllocator) -> void {
+    a.offset = 0;
+}
+
+struct PoolAllocator {
+    base: *void,
+    capacity: usize,
+    block_size: usize,
+    block_count: usize,
+    allocated: usize,
+    free_head: *void
+}
+
+fn pool_reset(p: *PoolAllocator) -> void {
+    p.allocated = 0;
+    if (p.block_count > 0) {
+        p.free_head = p.base;
+        let i: usize = 0;
+        while (i < p.block_count) {
+            let curr: *void = ptr_add(p.base, (i * p.block_size) as i64);
+            let next: *void = null;
+            if (i + 1 < p.block_count) {
+                next = ptr_add(p.base, ((i + 1) * p.block_size) as i64);
+            }
+            ptr_write64(curr, next as u64);
+            i = i + 1;
+        }
+    } else {
+        p.free_head = null;
+    }
+}
+
+fn pool_new(base_ptr: *void, capacity: usize, block_size: usize) -> PoolAllocator {
+    let bs: usize = block_size;
+    if (bs < 8) {
+        bs = 8;
+    }
+    let count: usize = capacity / bs;
+    let p: PoolAllocator = PoolAllocator {
+        base: base_ptr,
+        capacity: capacity,
+        block_size: bs,
+        block_count: count,
+        allocated: 0,
+        free_head: null
+    };
+    pool_reset(&p);
+    return p;
+}
+
+fn pool_alloc(p: *PoolAllocator) -> *void {
+    if (p.free_head == null) {
+        return null;
+    }
+    let block: *void = p.free_head;
+    let next_addr: u64 = ptr_read64(block);
+    p.free_head = next_addr as *void;
+    p.allocated = p.allocated + 1;
+    return block;
+}
+
+fn pool_free(p: *PoolAllocator, block: *void) -> void {
+    if (block == null) {
+        return;
+    }
+    ptr_write64(block, p.free_head as u64);
+    p.free_head = block;
+    if (p.allocated > 0) {
+        p.allocated = p.allocated - 1;
+    }
+}

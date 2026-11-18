@@ -1,0 +1,137 @@
+enum PolicyState {
+    PolicyInit,
+    PolicyActive,
+    PolicyPaused,
+    PolicyLocked,
+    PolicyClosed,
+    PolicyError
+}
+
+pure fn policy_state_is_valid(s: PolicyState) -> int {
+    match (s) {
+        PolicyInit => { return 1; },
+        PolicyActive => { return 1; },
+        PolicyPaused => { return 1; },
+        PolicyLocked => { return 1; },
+        PolicyClosed => { return 1; },
+        PolicyError => { return 0; }
+    }
+}
+
+pure fn policy_state_is_terminal(s: PolicyState) -> int {
+    match (s) {
+        PolicyClosed => { return 1; },
+        PolicyError => { return 1; },
+        _ => { return 0; }
+    }
+}
+
+pure fn policy_state_can_transition(from_st: PolicyState, to_st: PolicyState) -> int {
+    match (from_st) {
+        PolicyInit if to_st == PolicyActive => { return 1; },
+        PolicyActive if to_st == PolicyPaused || to_st == PolicyClosed || to_st == PolicyLocked => { return 1; },
+        PolicyPaused if to_st == PolicyActive || to_st == PolicyClosed => { return 1; },
+        PolicyLocked if to_st == PolicyActive || to_st == PolicyClosed => { return 1; },
+        _ => { return 0; }
+    }
+}
+
+struct PolicyTransition {
+    from_state: int,
+    to_state: int,
+    action: int,
+    guard_rule: int
+}
+
+fn policy_transition_new(from_st: int, to_st: int, action: int, guard_rule: int) -> PolicyTransition {
+    let t: PolicyTransition = PolicyTransition {
+        from_state: from_st,
+        to_state: to_st,
+        action: action,
+        guard_rule: guard_rule
+    };
+    return t;
+}
+
+struct PolicyEngine {
+    current_state: int,
+    transition_count: int,
+    max_transitions: int,
+    step_count: int,
+    violations: int,
+    transitions: [PolicyTransition; 64]
+}
+
+fn policy_new(initial_state: int) -> PolicyEngine requires(initial_state >= 0) ensures(result.current_state == initial_state) {
+    let pe: PolicyEngine = PolicyEngine {
+        current_state: initial_state,
+        transition_count: 0,
+        max_transitions: 64,
+        step_count: 0,
+        violations: 0
+    };
+    return pe;
+}
+
+fn policy_allow(engine: *PolicyEngine, from_state: int, to_state: int, action: int, guard_rule: int) -> int requires(engine != null) ensures(result == 0 || result == 1) {
+    if (engine.transition_count >= engine.max_transitions) {
+        return 0;
+    }
+    let idx: int = engine.transition_count;
+    engine.transitions[idx].from_state = from_state;
+    engine.transitions[idx].to_state = to_state;
+    engine.transitions[idx].action = action;
+    engine.transitions[idx].guard_rule = guard_rule;
+    engine.transition_count = engine.transition_count + 1;
+    return 1;
+}
+
+pure fn policy_is_valid(engine: *PolicyEngine, from_state: int, to_state: int, action: int, context_perm: int) -> int requires(engine != null) {
+    var i: int = 0;
+    while (i < engine.transition_count) {
+        if (engine.transitions[i].from_state == from_state) {
+            if (engine.transitions[i].to_state == to_state) {
+                if (engine.transitions[i].action == action) {
+                    let rule: int = engine.transitions[i].guard_rule;
+                    if (rule == 0) {
+                        return 1;
+                    }
+                    if ((context_perm & rule) == rule) {
+                        return 1;
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn policy_step(engine: *PolicyEngine, action: int, target_state: int, context_perm: int) -> int requires(engine != null) ensures(result == 0 || result == 1) {
+    let valid: int = policy_is_valid(engine, engine.current_state, target_state, action, context_perm);
+    if (valid == 1) {
+        engine.current_state = target_state;
+        engine.step_count = engine.step_count + 1;
+        return 1;
+    }
+    engine.violations = engine.violations + 1;
+    return 0;
+}
+
+pure fn policy_get_state(engine: *PolicyEngine) -> int requires(engine != null) ensures(result >= 0) {
+    return engine.current_state;
+}
+
+pure fn policy_get_violations(engine: *PolicyEngine) -> int requires(engine != null) ensures(result >= 0) {
+    return engine.violations;
+}
+
+pure fn policy_get_steps(engine: *PolicyEngine) -> int requires(engine != null) ensures(result >= 0) {
+    return engine.step_count;
+}
+
+fn policy_reset(engine: *PolicyEngine, new_state: int) -> void requires(engine != null) {
+    engine.current_state = new_state;
+    engine.step_count = 0;
+    engine.violations = 0;
+}

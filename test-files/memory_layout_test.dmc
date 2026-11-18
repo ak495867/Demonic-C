@@ -1,0 +1,159 @@
+import "alloc";
+
+#[repr(packed)]
+struct IpHeader {
+    version: u4,
+    ihl: u4,
+    total_len: u16
+}
+
+#[align(64)]
+struct AlignedBlock {
+    val: u64
+}
+
+#[test]
+fn test_packed_bitfield_struct() -> int {
+    let h: IpHeader = IpHeader {
+        version: 4,
+        ihl: 5,
+        total_len: 1500
+    };
+    if (h.version != 4) {
+        return 1;
+    }
+    if (h.ihl != 5) {
+        return 2;
+    }
+    if (h.total_len != 1500) {
+        return 3;
+    }
+    let b0: u8 = ptr_read8(&h);
+    if (b0 != 84) {
+        return 4;
+    }
+    let p_len: *void = ptr_add(&h, 1);
+    let len_val: u16 = ptr_read16(p_len);
+    if (len_val != 1500) {
+        return 5;
+    }
+    h.version = 6;
+    if (h.version != 6) {
+        return 6;
+    }
+    let b0_v6: u8 = ptr_read8(&h);
+    if (b0_v6 != 86) {
+        return 7;
+    }
+    return 0;
+}
+
+#[test]
+fn test_struct_alignment() -> int {
+    var arr: [AlignedBlock; 2] = [AlignedBlock { val: 1 }, AlignedBlock { val: 2 }];
+    let p0: *void = &arr[0];
+    let p1: *void = &arr[1];
+    let diff: i64 = ptr_diff(p1, p0);
+    if (diff != 64) {
+        return 1;
+    }
+    let addr: u64 = p0 as u64;
+    if ((addr & 63) != 0) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_pointer_primitives() -> int {
+    var buf: [u8; 64] = [0];
+    let base: *void = &buf[0];
+    let p8: *void = ptr_add(base, 8);
+    let p24: *void = ptr_add(base, 24);
+    let diff: i64 = ptr_diff(p24, p8);
+    if (diff != 16) {
+        return 1;
+    }
+    let diff_rev: i64 = ptr_diff(p8, p24);
+    if (diff_rev != -16) {
+        return 2;
+    }
+    ptr_write32(p8, 305419896);
+    let r32: u32 = ptr_read32(p8);
+    if (r32 != 305419896) {
+        return 3;
+    }
+    ptr_write8(base, 250);
+    if (ptr_read8(base) != 250) {
+        return 4;
+    }
+    ptr_write16(p24, 60000);
+    if (ptr_read16(p24) != 60000) {
+        return 5;
+    }
+    let p32: *void = ptr_add(base, 32);
+    ptr_write64(p32, 123456789012345);
+    if (ptr_read64(p32) != 123456789012345) {
+        return 6;
+    }
+    return 0;
+}
+
+#[test]
+fn test_arena_allocator() -> int {
+    var raw: [u8; 256] = [0];
+    let arena: ArenaAllocator = arena_new(&raw[0], 256);
+    let p1: *void = arena_alloc(&arena, 32);
+    if (p1 == null) {
+        return 1;
+    }
+    ptr_write32(p1, 12345);
+    if (ptr_read32(p1) != 12345) {
+        return 2;
+    }
+    let p2: *void = arena_alloc(&arena, 64);
+    if (p2 == null) {
+        return 3;
+    }
+    let diff: i64 = ptr_diff(p2, p1);
+    if (diff < 32) {
+        return 4;
+    }
+    let p_fail: *void = arena_alloc(&arena, 500);
+    if (p_fail != null) {
+        return 5;
+    }
+    arena_reset(&arena);
+    let p3: *void = arena_alloc(&arena, 32);
+    if (p3 != p1) {
+        return 6;
+    }
+    return 0;
+}
+
+#[test]
+fn test_pool_allocator() -> int {
+    var raw: [u8; 256] = [0];
+    let pool: PoolAllocator = pool_new(&raw[0], 256, 32);
+    let p1: *void = pool_alloc(&pool);
+    if (p1 == null) {
+        return 1;
+    }
+    ptr_write32(p1, 999);
+    if (ptr_read32(p1) != 999) {
+        return 2;
+    }
+    let p2: *void = pool_alloc(&pool);
+    if (p2 == null) {
+        return 3;
+    }
+    if (p1 == p2) {
+        return 4;
+    }
+    pool_free(&pool, p1);
+    let p3: *void = pool_alloc(&pool);
+    if (p3 != p1) {
+        return 5;
+    }
+    return 0;
+}

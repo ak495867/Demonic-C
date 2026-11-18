@@ -14,12 +14,15 @@ struct Function {
     std::vector<Param> params;
     std::vector<std::string> body;
     std::vector<std::string> attributes;
+    std::string requires_clause;
+    std::string ensures_clause;
     bool is_extern = false;
     bool is_variadic = false;
     bool is_export = false;
+    bool is_pure = false;
     int line = 0;
 };
-struct Struct { std::string name; std::vector<Field> fields; };
+struct Struct { std::string name; std::vector<Field> fields; std::vector<std::string> attributes; };
 struct GenericStruct { std::string name; std::vector<std::string> type_params; std::vector<Field> fields; };
 struct EnumVariant { std::string name; std::string payload; };
 struct Enum {
@@ -31,5 +34,49 @@ struct Enum {
     }
 };
 struct Case { std::string value; std::vector<std::string> body; };
+
+struct HdlPort {
+    std::string name;
+    std::string type;
+    bool is_output = false;
+    int width = 1;
+};
+
+struct HdlReg {
+    std::string name;
+    std::string type;
+    int width = 1;
+    std::string init_val;
+};
+
+struct HdlWire {
+    std::string name;
+    std::string type;
+    int width = 1;
+    std::string init_val;
+};
+
+struct HdlSyncSensitivity {
+    std::string signal;
+    std::string edge;
+};
+
+struct HdlSyncBlock {
+    std::vector<HdlSyncSensitivity> sensitivities;
+    std::vector<Token> tokens;
+};
+
+struct HdlCombBlock {
+    std::vector<Token> tokens;
+};
+
+struct HdlModule {
+    std::string name;
+    std::vector<HdlPort> ports;
+    std::vector<HdlReg> regs;
+    std::vector<HdlWire> wires;
+    std::vector<HdlSyncBlock> sync_blocks;
+    std::vector<HdlCombBlock> comb_blocks;
+};
 
 #endif

@@ -1,0 +1,32 @@
+pure fn hdl_slice(val: u64, high: int, low: int) -> u64 {
+    let width: int = high - low + 1;
+    if (width >= 64) {
+        return val >> (low as u64);
+    }
+    let mask: u64 = ((1 as u64) << (width as u64)) - 1;
+    return (val >> (low as u64)) & mask;
+}
+
+pure fn hdl_concat(a: u64, a_bits: int, b: u64, b_bits: int) -> u64 {
+    var mask_b: u64 = 0;
+    if (b_bits >= 64) {
+        mask_b = 0xFFFFFFFFFFFFFFFF as u64;
+    } else {
+        mask_b = ((1 as u64) << (b_bits as u64)) - 1;
+    }
+    let masked_b: u64 = b & mask_b;
+    return (a << (b_bits as u64)) | masked_b;
+}
+
+pure fn hdl_bit(val: u64, bit_idx: int) -> u1 {
+    let b: u64 = (val >> (bit_idx as u64)) & 1;
+    return b as u1;
+}
+
+pure fn hdl_set_bit(val: u64, bit_idx: int, b: u1) -> u64 {
+    let mask: u64 = (1 as u64) << (bit_idx as u64);
+    if (b != 0) {
+        return val | mask;
+    }
+    return val & (~mask);
+}

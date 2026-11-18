@@ -95,9 +95,21 @@ public:
     void set_emit_line_directives(bool enable) { emit_line_directives_ = enable; }
     void set_freestanding(bool enable) { freestanding_ = enable; }
     bool freestanding() const { return freestanding_; }
+    const std::vector<HdlModule>& modules() const { return modules_; }
+
+    std::string emit_verilog(const std::string& top_module = "") {
+        if (!declarations_collected_) {
+            collect_declarations();
+            declarations_collected_ = true;
+        }
+        return generate_verilog(top_module);
+    }
 
     std::string emit() {
-        collect_declarations();
+        if (!declarations_collected_) {
+            collect_declarations();
+            declarations_collected_ = true;
+        }
         std::ostringstream out;
         if (freestanding_) {
             out << "#define _GNU_SOURCE\n";
@@ -107,17 +119,28 @@ public:
             out << "typedef uint64_t u64;\n";
             out << "typedef int32_t i32;\n";
             out << "typedef uint32_t u32;\n";
-            out << "typedef uint8_t u8;\n\n";
+            out << "typedef int16_t i16;\n";
+            out << "typedef uint16_t u16;\n";
+            out << "typedef int8_t i8;\n";
+            out << "typedef uint8_t u8;\n";
+            out << "typedef size_t usize;\n";
+            out << "typedef ptrdiff_t isize;\n\n";
         } else {
             out << "#define _GNU_SOURCE\n";
             out << "#define _DARWIN_C_SOURCE\n";
             out << "#define _POSIX_C_SOURCE 200809L\n";
             out << "#ifndef null\n#define null ((void*)0)\n#endif\n";
-            out << "typedef long long i64;\n";
-            out << "typedef unsigned long long u64;\n";
-            out << "typedef int i32;\n";
-            out << "typedef unsigned int u32;\n";
-            out << "typedef unsigned char u8;\n";
+            out << "#include <stddef.h>\n#include <stdint.h>\n#include <stdbool.h>\n";
+            out << "typedef int64_t i64;\n";
+            out << "typedef uint64_t u64;\n";
+            out << "typedef int32_t i32;\n";
+            out << "typedef uint32_t u32;\n";
+            out << "typedef int16_t i16;\n";
+            out << "typedef uint16_t u16;\n";
+            out << "typedef int8_t i8;\n";
+            out << "typedef uint8_t u8;\n";
+            out << "typedef size_t usize;\n";
+            out << "typedef ptrdiff_t isize;\n";
             out << "#ifdef _WIN32\n";
             out << "#include <winsock2.h>\n#include <ws2tcpip.h>\n#include <windows.h>\n#include <io.h>\n#include <direct.h>\n#include <sys/timeb.h>\n";
             out << "#define NSCLOSE closesocket\n";
@@ -125,7 +148,7 @@ public:
             out << "#include <sys/types.h>\n#include <sys/stat.h>\n#include <sys/socket.h>\n#include <sys/time.h>\n#include <netdb.h>\n#include <unistd.h>\n#include <regex.h>\n#include <dlfcn.h>\n#include <pthread.h>\n#include <sched.h>\n";
             out << "#define NSCLOSE close\n";
             out << "#endif\n";
-            out << "#include <stdio.h>\n#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <ctype.h>\n#include <errno.h>\n\n";
+            out << "#include <stddef.h>\n#include <stdio.h>\n#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <time.h>\n#include <ctype.h>\n#include <errno.h>\n\n";
         }
         out << "#if defined(_WIN32)\n#define DMC_EXPORT __declspec(dllexport)\n#elif defined(__GNUC__) || defined(__clang__)\n#define DMC_EXPORT __attribute__((visibility(\"default\")))\n#else\n#define DMC_EXPORT\n#endif\n\n";
         out << "#if defined(__GNUC__) || defined(__clang__)\n";
@@ -151,6 +174,35 @@ public:
         out << "static inline dmc_i32x4 dmc_i32x4_add(dmc_i32x4 a, dmc_i32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a + b;\n#else\n    dmc_i32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]+b.v[i]; return r;\n#endif\n}\n";
         out << "static inline dmc_i32x4 dmc_i32x4_sub(dmc_i32x4 a, dmc_i32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a - b;\n#else\n    dmc_i32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]-b.v[i]; return r;\n#endif\n}\n";
         out << "static inline dmc_i32x4 dmc_i32x4_mul(dmc_i32x4 a, dmc_i32x4 b) {\n#if defined(__GNUC__) || defined(__clang__)\n    return a * b;\n#else\n    dmc_i32x4 r; for(int i=0;i<4;i++) r.v[i]=a.v[i]*b.v[i]; return r;\n#endif\n}\n\n";
+        out << "#if defined(__GNUC__) || defined(__clang__)\n";
+        out << "#define DMC_VOLATILE_INLINE static inline __attribute__((unused))\n";
+        out << "#else\n";
+        out << "#define DMC_VOLATILE_INLINE static inline\n";
+        out << "#endif\n\n";
+        out << "DMC_VOLATILE_INLINE uint8_t volatile_load8(uint64_t addr) { return *(volatile uint8_t*)(uintptr_t)addr; }\n";
+        out << "DMC_VOLATILE_INLINE void volatile_store8(uint64_t addr, uint8_t val) { *(volatile uint8_t*)(uintptr_t)addr = (uint8_t)val; }\n";
+        out << "DMC_VOLATILE_INLINE uint16_t volatile_load16(uint64_t addr) { return *(volatile uint16_t*)(uintptr_t)addr; }\n";
+        out << "DMC_VOLATILE_INLINE void volatile_store16(uint64_t addr, uint16_t val) { *(volatile uint16_t*)(uintptr_t)addr = (uint16_t)val; }\n";
+        out << "DMC_VOLATILE_INLINE uint32_t volatile_load32(uint64_t addr) { return *(volatile uint32_t*)(uintptr_t)addr; }\n";
+        out << "DMC_VOLATILE_INLINE void volatile_store32(uint64_t addr, uint32_t val) { *(volatile uint32_t*)(uintptr_t)addr = (uint32_t)val; }\n";
+        out << "DMC_VOLATILE_INLINE uint64_t volatile_load64(uint64_t addr) { return *(volatile uint64_t*)(uintptr_t)addr; }\n";
+        out << "DMC_VOLATILE_INLINE void volatile_store64(uint64_t addr, uint64_t val) { *(volatile uint64_t*)(uintptr_t)addr = (uint64_t)val; }\n\n";
+        out << "DMC_VOLATILE_INLINE void cpu_barrier(void) {\n#if defined(__GNUC__) || defined(__clang__)\n    __asm__ volatile(\"\" ::: \"memory\");\n#endif\n}\n";
+        out << "DMC_VOLATILE_INLINE void cpu_pause(void) {\n#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)) && (defined(__GNUC__) || defined(__clang__))\n    __asm__ volatile(\"pause\" ::: \"memory\");\n#elif defined(__aarch64__) && (defined(__GNUC__) || defined(__clang__))\n    __asm__ volatile(\"yield\" ::: \"memory\");\n#elif defined(__GNUC__) || defined(__clang__)\n    __asm__ volatile(\"\" ::: \"memory\");\n#endif\n}\n";
+        out << "DMC_VOLATILE_INLINE void cpu_hlt(void) {\n#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)) && (defined(__GNUC__) || defined(__clang__))\n    __asm__ volatile(\"hlt\" ::: \"memory\");\n#elif defined(__GNUC__) || defined(__clang__)\n    __asm__ volatile(\"\" ::: \"memory\");\n#endif\n}\n";
+        out << "DMC_VOLATILE_INLINE void cpu_cli(void) {\n#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)) && (defined(__GNUC__) || defined(__clang__))\n    __asm__ volatile(\"cli\" ::: \"memory\");\n#elif defined(__GNUC__) || defined(__clang__)\n    __asm__ volatile(\"\" ::: \"memory\");\n#endif\n}\n";
+        out << "DMC_VOLATILE_INLINE void cpu_sti(void) {\n#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)) && (defined(__GNUC__) || defined(__clang__))\n    __asm__ volatile(\"sti\" ::: \"memory\");\n#elif defined(__GNUC__) || defined(__clang__)\n    __asm__ volatile(\"\" ::: \"memory\");\n#endif\n}\n";
+        out << "DMC_VOLATILE_INLINE uint64_t cpu_rdtsc(void) {\n#if (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)) && (defined(__GNUC__) || defined(__clang__))\n    uint32_t lo, hi;\n    __asm__ volatile(\"rdtsc\" : \"=a\"(lo), \"=d\"(hi));\n    return ((uint64_t)hi << 32) | lo;\n#elif defined(_MSC_VER) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))\n    return __rdtsc();\n#else\n    return 0;\n#endif\n}\n\n";
+        out << "DMC_VOLATILE_INLINE void* ptr_add(void *ptr, long long offset_bytes) { return (void*)((char*)(ptr) + (offset_bytes)); }\n";
+        out << "DMC_VOLATILE_INLINE long long ptr_diff(void *p1, void *p2) { return (long long)((char*)(p1) - (char*)(p2)); }\n";
+        out << "DMC_VOLATILE_INLINE uint8_t ptr_read8(void *p) { return *(unsigned char*)(p); }\n";
+        out << "DMC_VOLATILE_INLINE void ptr_write8(void *p, uint8_t v) { *(unsigned char*)(p) = (unsigned char)(v); }\n";
+        out << "DMC_VOLATILE_INLINE uint16_t ptr_read16(void *p) { return *(uint16_t*)(p); }\n";
+        out << "DMC_VOLATILE_INLINE void ptr_write16(void *p, uint16_t v) { *(uint16_t*)(p) = (uint16_t)(v); }\n";
+        out << "DMC_VOLATILE_INLINE uint32_t ptr_read32(void *p) { return *(uint32_t*)(p); }\n";
+        out << "DMC_VOLATILE_INLINE void ptr_write32(void *p, uint32_t v) { *(uint32_t*)(p) = (uint32_t)(v); }\n";
+        out << "DMC_VOLATILE_INLINE uint64_t ptr_read64(void *p) { return *(uint64_t*)(p); }\n";
+        out << "DMC_VOLATILE_INLINE void ptr_write64(void *p, uint64_t v) { *(uint64_t*)(p) = (uint64_t)(v); }\n\n";
         for (const auto& h : c_headers_) {
             if (h.rfind("<", 0) == 0 || h.rfind("\"", 0) == 0) out << "#include " << h << "\n";
             else out << "#include <" << h << ">\n";
@@ -165,7 +217,21 @@ public:
         if (!freestanding_) emit_runtime(out);
         out << str_runtime_c() << "\n";
         for (const auto& s : structs_) {
-            out << "typedef struct " << s.name << " {\n";
+            bool is_packed = false;
+            std::string attr_str = "";
+            for (const auto& a : s.attributes) {
+                if (a == "packed" || a == "repr(packed)") {
+                    is_packed = true;
+                    attr_str += " __attribute__((packed))";
+                } else if (a.rfind("align(", 0) == 0 && a.back() == ')') {
+                    std::string n = a.substr(6, a.size() - 7);
+                    attr_str += " __attribute__((aligned(" + n + ")))";
+                } else if (a.rfind("repr(align(", 0) == 0 && a.back() == ')') {
+                    std::string n = a.substr(11, a.size() - 12);
+                    attr_str += " __attribute__((aligned(" + n + ")))";
+                }
+            }
+            out << "typedef struct" << attr_str << " " << s.name << " {\n";
             for (const auto& f : s.fields) {
                 out << "    ";
                 if (f.type.size() >= 3 && f.type.front() == '[') {
@@ -173,7 +239,37 @@ public:
                     out << ctype(f.type.substr(1, sep - 1)) << " " << f.name
                         << "[" << f.type.substr(sep + 1, f.type.size() - sep - 2) << "];\n";
                 } else {
-                    out << ctype(f.type) << " " << f.name << ";\n";
+                    bool is_uk = (f.type.size() >= 2 && f.type[0] == 'u');
+                    bool is_ik = (f.type.size() >= 2 && f.type[0] == 'i');
+                    bool is_k = false;
+                    int K = 0;
+                    if (is_uk || is_ik) {
+                        bool all_digits = true;
+                        for (size_t i = 1; i < f.type.size(); ++i) {
+                            if (!std::isdigit(static_cast<unsigned char>(f.type[i]))) {
+                                all_digits = false;
+                                break;
+                            }
+                        }
+                        if (all_digits) {
+                            try {
+                                K = std::stoi(f.type.substr(1));
+                                if (K >= 1 && K <= 64) is_k = true;
+                            } catch (...) {}
+                        }
+                    }
+                    bool non_standard = is_k && (K != 8 && K != 16 && K != 32 && K != 64);
+                    if (is_k && (non_standard || is_packed)) {
+                        if (K > 32) {
+                            if (is_uk) out << "unsigned long long " << f.name << " : " << K << ";\n";
+                            else out << "long long " << f.name << " : " << K << ";\n";
+                        } else {
+                            if (is_uk) out << "unsigned int " << f.name << " : " << K << ";\n";
+                            else out << "int " << f.name << " : " << K << ";\n";
+                        }
+                    } else {
+                        out << ctype(f.type) << " " << f.name << ";\n";
+                    }
                 }
             }
             out << "} " << s.name << ";\n";
@@ -308,7 +404,9 @@ public:
         if (!extern_fns.empty()) {
             out << "#ifdef __cplusplus\nextern \"C\" {\n#endif\n";
             for (const auto& fn : extern_fns) {
-                out << "extern " << ctype(fn.ret_type) << " " << fn.name << "(";
+                out << "extern ";
+                if (fn.is_pure) out << "__attribute__((pure)) ";
+                out << ctype(fn.ret_type) << " " << fn.name << "(";
                 if (fn.params.empty()) {
                     out << "void";
                 } else {
@@ -330,6 +428,17 @@ public:
         }
         
         for (const auto& fn : normal_fns) {
+            for (const auto& attr : fn.attributes) {
+                if (attr == "naked") out << "__attribute__((naked)) ";
+                else if (attr.rfind("section(", 0) == 0 && attr.back() == ')') {
+                    std::string sec = attr.substr(8, attr.size() - 9);
+                    if (sec.size() >= 2 && sec.front() == '"' && sec.back() == '"') {
+                        sec = sec.substr(1, sec.size() - 2);
+                    }
+                    out << "__attribute__((section(\"" << sec << "\"))) ";
+                }
+            }
+            if (fn.is_pure) out << "__attribute__((pure)) ";
             if (fn.is_export) out << "DMC_EXPORT ";
             out << ctype(fn.ret_type) << " " << fn.name << "(";
             if (fn.params.empty()) out << "void";
@@ -341,6 +450,17 @@ public:
         }
         
         for (const auto& fn : test_fns) {
+            for (const auto& attr : fn.attributes) {
+                if (attr == "naked") out << "__attribute__((naked)) ";
+                else if (attr.rfind("section(", 0) == 0 && attr.back() == ')') {
+                    std::string sec = attr.substr(8, attr.size() - 9);
+                    if (sec.size() >= 2 && sec.front() == '"' && sec.back() == '"') {
+                        sec = sec.substr(1, sec.size() - 2);
+                    }
+                    out << "__attribute__((section(\"" << sec << "\"))) ";
+                }
+            }
+            if (fn.is_pure) out << "__attribute__((pure)) ";
             out << ctype(fn.ret_type) << " " << fn.name << "(";
             if (fn.params.empty()) out << "void";
             for (size_t i = 0; i < fn.params.size(); ++i) {
@@ -351,6 +471,7 @@ public:
         }
         
         for (const auto& fn : bench_fns) {
+            if (fn.is_pure) out << "__attribute__((pure)) ";
             out << ctype(fn.ret_type) << " " << fn.name << "(";
             if (fn.params.empty()) out << "void";
             for (size_t i = 0; i < fn.params.size(); ++i) {
@@ -437,10 +558,27 @@ private:
                     fn.is_export = true;
                     functions_.push_back(fn);
                 } else if (peek() == "#[") {
-                    if (index_ + 1 < tokens_.size() && tokens_[index_ + 1].text == "link") {
-                        parse_link_attribute();
+                    auto attrs = parse_attributes();
+                    if (peek() == "struct") {
+                        Struct s = structure(attrs);
+                        if (!s.name.empty()) {
+                            structs_.push_back(s);
+                        }
+                    } else if (peek() == "module") {
+                        parse_module(attrs);
+                    } else if (peek() == "fn" || peek() == "pure") {
+                        functions_.push_back(function(attrs));
+                    } else if (peek() == "export") {
+                        take();
+                        Function fn = function(attrs);
+                        fn.is_export = true;
+                        functions_.push_back(fn);
+                    } else if (peek() == "extern") {
+                        parse_extern_decl();
                     } else {
-                        functions_.push_back(function());
+                        if (peek() != "<eof>" && (attrs.empty() || attrs.front().rfind("link(", 0) != 0)) {
+                            functions_.push_back(function(attrs));
+                        }
                     }
                 } else if (peek() == "struct") {
                     Struct s = structure();
@@ -459,7 +597,9 @@ private:
                     top_level_c_.push_back(ctype(ctype_str) + " " + cname + " = " + cval + ";");
                 } else if (peek() == "enum") {
                     enums_.push_back(parse_enum());
-                } else if (peek() == "fn") {
+                } else if (peek() == "module") {
+                    parse_module();
+                } else if (peek() == "fn" || peek() == "pure") {
                     functions_.push_back(function());
                 } else if (peek() == ";") {
                     take();
@@ -585,6 +725,10 @@ private:
         if (peek() == ";") { take(); return; }
         Function fn;
         fn.is_extern = true;
+        if (peek() == "pure") {
+            take();
+            fn.is_pure = true;
+        }
         if (peek() == "fn") {
             take();
             fn.name = take();
@@ -617,6 +761,10 @@ private:
             if (peek() == ";") take();
             functions_.push_back(fn);
         } else {
+            if (peek() == "pure") {
+                take();
+                fn.is_pure = true;
+            }
             std::string ret_t = type_name();
             std::string name = take();
             fn.name = name;
@@ -687,6 +835,7 @@ private:
             if (peek() == "struct" || peek() == "enum" || peek() == "fn" || peek() == "import" ||
                 peek() == "summon" || peek() == "include" || peek() == "#include" ||
                 peek() == "link" || peek() == "#link" || peek() == "extern" ||
+                peek() == "#[" || peek() == "module" ||
                 peek() == "c_code" || peek() == "__c__" || peek() == "let" || peek() == "const" || peek() == "var") return;
             ++index_;
         }
@@ -795,6 +944,11 @@ private:
         for (auto& f : functions_) {
             if (!target->has_function(f.name)) target->functions_.push_back(f);
         }
+        for (auto& m : modules_) {
+            bool seen = false;
+            for (auto& existing : target->modules_) if (existing.name == m.name) seen = true;
+            if (!seen) target->modules_.push_back(m);
+        }
         for (auto& i : imports_) target->imports_.insert(i);
         for (auto& h : c_headers_) target->c_headers_.insert(h);
         for (auto& v : specialized_vectors_) target->specialized_vectors_.insert(v);
@@ -869,7 +1023,8 @@ private:
         out << "  return _dmc_mem[h][i];\n";
         out << "}\n";
         out << "int mem_map(void *addr, long long sz) { int h = _dmc_next++; if (_dmc_ensure(h) != 0) return -1; _dmc_mem[h] = (unsigned char*)addr; _dmc_mem_sz[h] = (size_t)sz; return h; }\n";
-        out << "int mem_unmap(long long h) { if (h < 0 || h >= _dmc_mem_cap) return -1; _dmc_mem[h] = NULL; _dmc_mem_sz[h] = 0; return 0; }\n\n";
+        out << "int mem_unmap(long long h) { if (h < 0 || h >= _dmc_mem_cap) return -1; _dmc_mem[h] = NULL; _dmc_mem_sz[h] = 0; return 0; }\n";
+        out << "uint64_t mem_ptr(long long h) { if (h < 0 || h >= _dmc_mem_cap || !_dmc_mem[h]) return 0; return (uint64_t)(uintptr_t)_dmc_mem[h]; }\n\n";
         out << "int file_open(const char *p, const char *m) {\n";
         out << "  if (!p || !m) return -1;\n";
         out << "  int h = _dmc_next++; if (_dmc_ensure(h) != 0) return -1;\n";
@@ -1397,18 +1552,20 @@ const char *sha256(const char *str) {
     return res;
 }
 )DMC_SYSTEM";
-        out << "static unsigned char *_dmc_arenas[1024];\n";
-        out << "static size_t _dmc_arena_sz[1024];\n";
-        out << "static long long _dmc_arena_top[1024];\n";
-        out << "long long arena_new(long long cap) { if (cap < 0) return -1; int h = _dmc_next++; _dmc_arenas[h] = (unsigned char*)malloc((size_t)(cap ? cap : 1)); _dmc_arena_sz[h] = (size_t)cap; _dmc_arena_top[h] = 0; return h; }\n";
-        out << "long long arena_alloc(long long h, long long n) { if (!_dmc_arenas[h] || n < 0 || _dmc_arena_top[h] + n > (long long)_dmc_arena_sz[h]) return -1; long long off = _dmc_arena_top[h]; _dmc_arena_top[h] += n; return off; }\n";
-        out << "long long arena_write(long long h, long long off, long long i, long long v) { if (!_dmc_arenas[h] || off < 0 || i < 0 || (size_t)(off + i) >= _dmc_arena_sz[h]) return -1; _dmc_arenas[h][(size_t)(off + i)] = (unsigned char)v; return 0; }\n";
-        out << "long long arena_read(long long h, long long off, long long i) { if (!_dmc_arenas[h] || off < 0 || i < 0 || (size_t)(off + i) >= _dmc_arena_sz[h]) return -1; return _dmc_arenas[h][(size_t)(off + i)]; }\n";
-        out << "long long arena_reset(long long h) { if (!_dmc_arenas[h]) return -1; _dmc_arena_top[h] = 0; return 0; }\n";
-        out << "long long arena_top(long long h) { return _dmc_arenas[h] ? _dmc_arena_top[h] : -1; }\n";
-        out << "long long arena_free(long long h) { if (!_dmc_arenas[h]) return -1; free(_dmc_arenas[h]); _dmc_arenas[h] = NULL; _dmc_arena_top[h] = 0; _dmc_arena_sz[h] = 0; return 0; }\n";
-        out << "long long arena_used(long long h) { return arena_top(h); }\n";
-        out << "long long arena_alloc_bytes(long long h, long long n) { return arena_alloc(h, n); }\n\n";
+        if (!find_function("arena_new")) {
+            out << "static unsigned char *_dmc_arenas[1024];\n";
+            out << "static size_t _dmc_arena_sz[1024];\n";
+            out << "static long long _dmc_arena_top[1024];\n";
+            out << "long long arena_new(long long cap) { if (cap < 0) return -1; int h = _dmc_next++; _dmc_arenas[h] = (unsigned char*)malloc((size_t)(cap ? cap : 1)); _dmc_arena_sz[h] = (size_t)cap; _dmc_arena_top[h] = 0; return h; }\n";
+            out << "long long arena_alloc(long long h, long long n) { if (!_dmc_arenas[h] || n < 0 || _dmc_arena_top[h] + n > (long long)_dmc_arena_sz[h]) return -1; long long off = _dmc_arena_top[h]; _dmc_arena_top[h] += n; return off; }\n";
+            out << "long long arena_write(long long h, long long off, long long i, long long v) { if (!_dmc_arenas[h] || off < 0 || i < 0 || (size_t)(off + i) >= _dmc_arena_sz[h]) return -1; _dmc_arenas[h][(size_t)(off + i)] = (unsigned char)v; return 0; }\n";
+            out << "long long arena_read(long long h, long long off, long long i) { if (!_dmc_arenas[h] || off < 0 || i < 0 || (size_t)(off + i) >= _dmc_arena_sz[h]) return -1; return _dmc_arenas[h][(size_t)(off + i)]; }\n";
+            out << "long long arena_reset(long long h) { if (!_dmc_arenas[h]) return -1; _dmc_arena_top[h] = 0; return 0; }\n";
+            out << "long long arena_top(long long h) { return _dmc_arenas[h] ? _dmc_arena_top[h] : -1; }\n";
+            out << "long long arena_free(long long h) { if (!_dmc_arenas[h]) return -1; free(_dmc_arenas[h]); _dmc_arenas[h] = NULL; _dmc_arena_top[h] = 0; _dmc_arena_sz[h] = 0; return 0; }\n";
+            out << "long long arena_used(long long h) { return arena_top(h); }\n";
+            out << "long long arena_alloc_bytes(long long h, long long n) { return arena_alloc(h, n); }\n\n";
+        }
         out << "#if (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))\n";
         out << "static int _dmc_io_allowed = 0;\n";
         out << "long long port_init(void) {\n";
@@ -2354,7 +2511,43 @@ long long task_pool_free(long long h) {
 )DMC_CONCURRENCY";
     }
 
-    Struct structure() {
+    std::vector<std::string> parse_attributes() {
+        std::vector<std::string> attrs;
+        while (peek() == "#[") {
+            take();
+            std::string attr = take();
+            if (peek() == "(") {
+                take();
+                int depth = 1;
+                std::string arg = "";
+                while (depth > 0 && peek() != "<eof>") {
+                    if (peek() == "(") depth++;
+                    else if (peek() == ")") {
+                        depth--;
+                        if (depth == 0) {
+                            take();
+                            break;
+                        }
+                    }
+                    std::string t = take();
+                    if (t.size() >= 2 && t.front() == '"' && t.back() == '"') {
+                        t = t.substr(1, t.size() - 2);
+                    }
+                    if (!arg.empty() && t != ")" && arg.back() != '(') arg += " ";
+                    arg += t;
+                }
+                if (attr == "link") {
+                    link_libs_.insert(arg);
+                }
+                attr = attr + "(" + arg + ")";
+            }
+            expect("]");
+            attrs.push_back(attr);
+        }
+        return attrs;
+    }
+
+    Struct structure(const std::vector<std::string>& attrs = {}) {
         expect("struct");
         std::string sname = take();
         std::vector<std::string> tparams;
@@ -2381,9 +2574,9 @@ long long task_pool_free(long long h) {
         if (peek() == ";") take();
         if (!tparams.empty()) {
             generic_structs_[sname] = {sname, tparams, fields};
-            return Struct{"", {}};
+            return Struct{"", {}, {}};
         }
-        return Struct{sname, fields};
+        return Struct{sname, fields, attrs};
     }
 
     void instantiate_generic_struct(const std::string& base, const std::vector<std::string>& args) {
@@ -2448,34 +2641,24 @@ long long task_pool_free(long long h) {
         return result;
     }
 
-    Function function() {
+    Function function(std::vector<std::string> attrs = {}) {
         defer_stack_.clear();
-        std::vector<std::string> attrs;
-        while (peek() == "#[") {
-            take();
-            std::string attr = take();
-            if (peek() == "(") {
-                take();
-                std::string arg = take();
-                if (arg.size() >= 2 && arg.front() == '"' && arg.back() == '"') {
-                    arg = arg.substr(1, arg.size() - 2);
-                }
-                expect(")");
-                if (attr == "link") {
-                    link_libs_.insert(arg);
-                }
-                attr = attr + "(" + arg + ")";
-            }
-            expect("]");
-            attrs.push_back(attr);
+        if (attrs.empty()) {
+            attrs = parse_attributes();
         }
         int fn_line = index_ < tokens_.size() ? tokens_[index_].line : 1;
+        bool is_pure = false;
+        if (peek() == "pure") {
+            take();
+            is_pure = true;
+        }
         expect("fn");
         Function result;
         result.name = take();
         result.ret_type = "int";
         result.attributes = attrs;
         result.line = fn_line;
+        result.is_pure = is_pure;
         for (const auto& a : attrs) {
             if (a == "export" || a == "no_mangle") result.is_export = true;
         }
@@ -2494,6 +2677,22 @@ long long task_pool_free(long long h) {
         }
         expect(")");
         if (peek() == "->") { take(); result.ret_type = type_name(); }
+        while (peek() == "requires" || peek() == "ensures") {
+            if (peek() == "requires") {
+                take();
+                expect("(");
+                result.requires_clause = expression(")");
+                expect(")");
+            } else if (peek() == "ensures") {
+                take();
+                expect("(");
+                if (result.ret_type != "void") {
+                    bind_type("result", result.ret_type);
+                }
+                result.ensures_clause = expression(")");
+                expect(")");
+            }
+        }
         std::string saved_ret = current_ret_;
         current_ret_ = result.ret_type;
         result.body = block();
@@ -2942,46 +3141,72 @@ long long task_pool_free(long long h) {
         if (stype.empty()) stype = "int";
         std::string pre_assign = ctype(stype) + " " + match_var + " = " + scrutinee + ";\n";
         std::string switch_target = (matched_enum && matched_enum->has_payload()) ? (match_var + ".tag") : match_var;
-        std::string out = pre_assign + "    switch (" + switch_target + ") {\n";
+
+        struct MatchArmInfo {
+            bool is_default = false;
+            std::string pat_prefix;
+            std::string pat_variant;
+            std::string bind_name;
+            std::string payload_type;
+            std::string guard_expr;
+            std::string case_label;
+            bool is_block = false;
+            std::vector<std::string> body_lines;
+            std::string single_stmt;
+        };
+
+        std::vector<MatchArmInfo> arms;
+        std::set<std::string> seen_case_labels;
+        bool has_duplicate_or_guard = false;
         std::set<std::string> covered_variants;
         bool has_default = false;
+
         while (peek() != "}") {
+            MatchArmInfo arm;
             if (peek() == "_" || peek() == "default") {
+                arm.is_default = true;
                 has_default = true;
                 take();
-                expect("=>");
-                out += "        default: {\n";
-                if (peek() == "{") {
-                    auto body = block();
-                    for (const auto& s : body) out += "            " + s + "\n";
-                } else {
-                    std::string s = statement();
-                    out += "            " + s + "\n";
+                if (peek() == "if") {
+                    take();
+                    arm.guard_expr = expression("=>");
+                    has_duplicate_or_guard = true;
                 }
-                out += "            break;\n        }\n";
+                expect("=>");
+                if (seen_case_labels.count("__default__")) {
+                    has_duplicate_or_guard = true;
+                }
+                seen_case_labels.insert("__default__");
+                if (peek() == "{") {
+                    arm.is_block = true;
+                    arm.body_lines = block();
+                } else {
+                    arm.is_block = false;
+                    arm.single_stmt = statement();
+                }
+                arms.push_back(arm);
                 if (peek() == "," || peek() == ";") take();
                 continue;
             }
-            std::string pat_prefix = "";
-            std::string pat_variant = take();
+
+            arm.pat_prefix = "";
+            arm.pat_variant = take();
             if (peek() == "::") {
                 take();
-                pat_prefix = pat_variant;
-                pat_variant = take();
+                arm.pat_prefix = arm.pat_variant;
+                arm.pat_variant = take();
             }
-            std::string bind_name = "";
             if (peek() == "(") {
                 take();
-                bind_name = take();
+                arm.bind_name = take();
                 expect(")");
             }
-            expect("=>");
             const Enum* arm_enum = matched_enum;
             const EnumVariant* arm_var = nullptr;
             if (!arm_enum) {
                 for (const auto& e : enums_) {
                     for (const auto& v : e.variants) {
-                        if ((pat_prefix.empty() || e.name == pat_prefix) && (v.name == pat_variant || e.name + "_" + v.name == pat_variant)) {
+                        if ((arm.pat_prefix.empty() || e.name == arm.pat_prefix) && (v.name == arm.pat_variant || e.name + "_" + v.name == arm.pat_variant)) {
                             arm_enum = &e;
                             arm_var = &v;
                             break;
@@ -2991,50 +3216,134 @@ long long task_pool_free(long long h) {
                 }
             } else {
                 for (const auto& v : arm_enum->variants) {
-                    if (v.name == pat_variant || arm_enum->name + "_" + v.name == pat_variant) {
+                    if (v.name == arm.pat_variant || arm_enum->name + "_" + v.name == arm.pat_variant) {
                         arm_var = &v;
                         break;
                     }
                 }
             }
-            std::string case_label;
+            if (arm_var && !arm_var->payload.empty()) {
+                arm.payload_type = arm_var->payload;
+            }
+            scopes_.emplace_back();
+            if (!arm.bind_name.empty() && !arm.payload_type.empty()) {
+                bind_type(arm.bind_name, arm.payload_type);
+            }
+            if (peek() == "if") {
+                take();
+                arm.guard_expr = expression("=>");
+                has_duplicate_or_guard = true;
+            }
+            expect("=>");
             if (arm_enum && arm_var) {
                 covered_variants.insert(arm_var->name);
                 if (arm_enum->has_payload()) {
-                    case_label = arm_enum->name + "_Tag_" + arm_var->name;
+                    arm.case_label = arm_enum->name + "_Tag_" + arm_var->name;
                 } else {
-                    case_label = arm_enum->name + "_" + arm_var->name;
+                    arm.case_label = arm_enum->name + "_" + arm_var->name;
                 }
             } else {
-                case_label = pat_prefix.empty() ? pat_variant : (pat_prefix + "_" + pat_variant);
+                arm.case_label = arm.pat_prefix.empty() ? arm.pat_variant : (arm.pat_prefix + "_" + arm.pat_variant);
             }
-            out += "        case " + case_label + ": {\n";
-            std::string payload_type = (arm_var && !arm_var->payload.empty()) ? arm_var->payload : "";
-            if (!bind_name.empty() && !payload_type.empty()) {
-                std::string c_p = ctype(payload_type);
-                out += "            " + c_p + " " + bind_name + " = " + match_var + ".data." + arm_var->name + ";\n";
+            if (seen_case_labels.count(arm.case_label)) {
+                has_duplicate_or_guard = true;
             }
+            seen_case_labels.insert(arm.case_label);
+
             if (peek() == "{") {
-                auto body = block(!bind_name.empty() ? bind_name : "", payload_type);
-                for (const auto& s : body) out += "            " + s + "\n";
+                arm.is_block = true;
+                arm.body_lines = block(!arm.bind_name.empty() ? arm.bind_name : "", arm.payload_type);
             } else {
-                scopes_.emplace_back();
-                if (!bind_name.empty() && !payload_type.empty()) {
-                    bind_type(bind_name, payload_type);
-                }
-                std::string s = statement();
-                scopes_.pop_back();
-                out += "            " + s + "\n";
+                arm.is_block = false;
+                arm.single_stmt = statement();
             }
-            out += "            break;\n        }\n";
+            scopes_.pop_back();
+            arms.push_back(arm);
             if (peek() == "," || peek() == ";") take();
         }
         expect("}");
+
         if (matched_enum && !has_default) {
             for (const auto& v : matched_enum->variants) {
                 if (covered_variants.find(v.name) == covered_variants.end()) {
                     type_warn("non-exhaustive match: missing variant '" + v.name + "' of enum '" + matched_enum->name + "'");
                 }
+            }
+        }
+
+        if (has_duplicate_or_guard) {
+            std::string out = pre_assign + "    do {\n";
+            for (const auto& arm : arms) {
+                if (arm.is_default) {
+                    if (!arm.guard_expr.empty()) {
+                        out += "        if (" + arm.guard_expr + ") {\n";
+                        if (arm.is_block) {
+                            for (const auto& s : arm.body_lines) out += "            " + s + "\n";
+                        } else {
+                            out += "            " + arm.single_stmt + "\n";
+                        }
+                        out += "            break;\n        }\n";
+                    } else {
+                        out += "        {\n";
+                        if (arm.is_block) {
+                            for (const auto& s : arm.body_lines) out += "            " + s + "\n";
+                        } else {
+                            out += "            " + arm.single_stmt + "\n";
+                        }
+                        out += "            break;\n        }\n";
+                    }
+                } else {
+                    std::string cond = (matched_enum && matched_enum->has_payload()) ? (match_var + ".tag == " + arm.case_label) : (match_var + " == " + arm.case_label);
+                    out += "        if (" + cond + ") {\n";
+                    if (!arm.bind_name.empty() && !arm.payload_type.empty()) {
+                        std::string c_p = ctype(arm.payload_type);
+                        out += "            " + c_p + " " + arm.bind_name + " = " + match_var + ".data." + arm.pat_variant + ";\n";
+                    }
+                    if (!arm.guard_expr.empty()) {
+                        out += "            if (" + arm.guard_expr + ") {\n";
+                        if (arm.is_block) {
+                            for (const auto& s : arm.body_lines) out += "                " + s + "\n";
+                        } else {
+                            out += "                " + arm.single_stmt + "\n";
+                        }
+                        out += "                break;\n            }\n";
+                    } else {
+                        if (arm.is_block) {
+                            for (const auto& s : arm.body_lines) out += "            " + s + "\n";
+                        } else {
+                            out += "            " + arm.single_stmt + "\n";
+                        }
+                        out += "            break;\n";
+                    }
+                    out += "        }\n";
+                }
+            }
+            out += "    } while (0);";
+            return out;
+        }
+
+        std::string out = pre_assign + "    switch (" + switch_target + ") {\n";
+        for (const auto& arm : arms) {
+            if (arm.is_default) {
+                out += "        default: {\n";
+                if (arm.is_block) {
+                    for (const auto& s : arm.body_lines) out += "            " + s + "\n";
+                } else {
+                    out += "            " + arm.single_stmt + "\n";
+                }
+                out += "            break;\n        }\n";
+            } else {
+                out += "        case " + arm.case_label + ": {\n";
+                if (!arm.bind_name.empty() && !arm.payload_type.empty()) {
+                    std::string c_p = ctype(arm.payload_type);
+                    out += "            " + c_p + " " + arm.bind_name + " = " + match_var + ".data." + arm.pat_variant + ";\n";
+                }
+                if (arm.is_block) {
+                    for (const auto& s : arm.body_lines) out += "            " + s + "\n";
+                } else {
+                    out += "            " + arm.single_stmt + "\n";
+                }
+                out += "            break;\n        }\n";
             }
         }
         out += "    }";
@@ -3043,6 +3352,9 @@ long long task_pool_free(long long h) {
 
     std::string asm_statement() {
         take();
+        if (peek() == "volatile") {
+            take();
+        }
         if (peek() == "{") {
             take();
             std::string result = "__asm__ volatile(";
@@ -3056,6 +3368,31 @@ long long task_pool_free(long long h) {
             expect("}");
             result += ");";
             return result;
+        }
+        if (peek() == "(") {
+            take();
+            std::string content = "";
+            int depth = 1;
+            while (depth > 0 && peek() != "<eof>") {
+                std::string tok = take();
+                if (tok == "(") {
+                    depth++;
+                    content += tok;
+                } else if (tok == ")") {
+                    depth--;
+                    if (depth == 0) break;
+                    content += tok;
+                } else if (tok == ":" || tok == ",") {
+                    content += " " + tok + " ";
+                } else {
+                    if (!content.empty() && content.back() != '(' && content.back() != ' ') {
+                        content += " ";
+                    }
+                    content += tok;
+                }
+            }
+            if (peek() == ";") take();
+            return "__asm__ volatile(" + content + ");";
         }
         std::string asm_str = take();
         expect(";");
@@ -3804,8 +4141,23 @@ long long task_pool_free(long long h) {
             for (char& c : clean) if (c == '\\') c = '/';
             out << "#line " << fn.line << " \"" << clean << "\"\n";
         }
+        std::string req_esc;
+        for (char c : fn.requires_clause) {
+            if (c == '"') req_esc += "\\\"";
+            else if (c == '\\') req_esc += "\\\\";
+            else req_esc += c;
+        }
+        std::string ens_esc;
+        for (char c : fn.ensures_clause) {
+            if (c == '"') ens_esc += "\\\"";
+            else if (c == '\\') ens_esc += "\\\\";
+            else ens_esc += c;
+        }
         if (fn.name == "main") {
             out << "int __dmc_main_body(void) {\n";
+            if (!fn.requires_clause.empty()) {
+                out << "    if (!(" << fn.requires_clause << ")) { fprintf(stderr, \"Contract violation: requires(%s) failed in %s\\n\", \"" << req_esc << "\", \"" << fn.name << "\"); exit(1); }\n";
+            }
             for (auto& s : fn.body) out << "    " << s << "\n";
             if (fn.body.empty() || fn.body.back().rfind("return", 0) != 0) {
                 out << "    return 0;\n";
@@ -3818,6 +4170,81 @@ long long task_pool_free(long long h) {
             out << "}\n\n";
             return out.str();
         }
+        bool is_naked = false;
+        for (const auto& attr : fn.attributes) {
+            if (attr == "naked") {
+                is_naked = true;
+            }
+        }
+        if (!fn.ensures_clause.empty()) {
+            std::string impl_name = "__dmc_" + fn.name + "_impl";
+            out << "static inline ";
+            if (fn.is_pure) out << "__attribute__((pure)) ";
+            out << ctype(fn.ret_type) << " " << impl_name << "(";
+            if (fn.params.empty()) out << "void";
+            for (size_t i = 0; i < fn.params.size(); ++i) {
+                if (i) out << ", ";
+                out << ctype(fn.params[i].type) << " " << fn.params[i].name;
+            }
+            out << ") {\n";
+            for (auto& s : fn.body) out << "    " << s << "\n";
+            if (!is_naked && fn.ret_type == "int" && (fn.body.empty() || fn.body.back().rfind("return", 0) != 0)) {
+                out << "    return 0;\n";
+            }
+            out << "}\n\n";
+
+            for (const auto& attr : fn.attributes) {
+                if (attr == "naked") {
+                    out << "__attribute__((naked)) ";
+                } else if (attr.rfind("section(", 0) == 0 && attr.back() == ')') {
+                    std::string sec = attr.substr(8, attr.size() - 9);
+                    if (sec.size() >= 2 && sec.front() == '"' && sec.back() == '"') {
+                        sec = sec.substr(1, sec.size() - 2);
+                    }
+                    out << "__attribute__((section(\"" << sec << "\"))) ";
+                }
+            }
+            if (fn.is_pure) out << "__attribute__((pure)) ";
+            if (fn.is_export) out << "DMC_EXPORT ";
+            out << ctype(fn.ret_type) << " " << fn.name << "(";
+            if (fn.params.empty()) out << "void";
+            for (size_t i = 0; i < fn.params.size(); ++i) {
+                if (i) out << ", ";
+                out << ctype(fn.params[i].type) << " " << fn.params[i].name;
+            }
+            out << ") {\n";
+            if (!fn.requires_clause.empty()) {
+                out << "    if (!(" << fn.requires_clause << ")) { fprintf(stderr, \"Contract violation: requires(%s) failed in %s\\n\", \"" << req_esc << "\", \"" << fn.name << "\"); exit(1); }\n";
+            }
+            std::string call_args;
+            for (size_t i = 0; i < fn.params.size(); ++i) {
+                if (i) call_args += ", ";
+                call_args += fn.params[i].name;
+            }
+            if (fn.ret_type != "void") {
+                out << "    " << ctype(fn.ret_type) << " result = " << impl_name << "(" << call_args << ");\n";
+                out << "    if (!(" << fn.ensures_clause << ")) { fprintf(stderr, \"Contract violation: ensures(%s) failed in %s\\n\", \"" << ens_esc << "\", \"" << fn.name << "\"); exit(1); }\n";
+                out << "    return result;\n";
+            } else {
+                out << "    " << impl_name << "(" << call_args << ");\n";
+                out << "    if (!(" << fn.ensures_clause << ")) { fprintf(stderr, \"Contract violation: ensures(%s) failed in %s\\n\", \"" << ens_esc << "\", \"" << fn.name << "\"); exit(1); }\n";
+            }
+            out << "}";
+            return out.str();
+        }
+
+        for (const auto& attr : fn.attributes) {
+            if (attr == "naked") {
+                out << "__attribute__((naked)) ";
+            } else if (attr.rfind("section(", 0) == 0 && attr.back() == ')') {
+                std::string sec = attr.substr(8, attr.size() - 9);
+                if (sec.size() >= 2 && sec.front() == '"' && sec.back() == '"') {
+                    sec = sec.substr(1, sec.size() - 2);
+                }
+                out << "__attribute__((section(\"" << sec << "\"))) ";
+            }
+        }
+        if (fn.is_pure) out << "__attribute__((pure)) ";
         if (fn.is_export) out << "DMC_EXPORT ";
         out << (fn.name == "main" ? "int" : ctype(fn.ret_type)) << " " << fn.name << "(";
         if (fn.params.empty()) out << "void";
@@ -3826,8 +4253,11 @@ long long task_pool_free(long long h) {
             out << ctype(fn.params[i].type) << " " << fn.params[i].name;
         }
         out << ") {\n";
+        if (!fn.requires_clause.empty()) {
+            out << "    if (!(" << fn.requires_clause << ")) { fprintf(stderr, \"Contract violation: requires(%s) failed in %s\\n\", \"" << req_esc << "\", \"" << fn.name << "\"); exit(1); }\n";
+        }
         for (auto& s : fn.body) out << "    " << s << "\n";
-        if (fn.ret_type == "int" && (fn.body.empty() || fn.body.back().rfind("return", 0) != 0)) {
+        if (!is_naked && fn.ret_type == "int" && (fn.body.empty() || fn.body.back().rfind("return", 0) != 0)) {
             out << "    return 0;\n";
         }
         out << "}";
@@ -3987,7 +4417,10 @@ long long task_pool_free(long long h) {
         if (val.rfind("dmc_i32x4_get(", 0) == 0) return "int";
         if (val.rfind("DMC_SIMD_F32X4", 0) == 0 || val.rfind("dmc_f32x4", 0) == 0 || val.rfind("simd_f32x4", 0) == 0) return "f32x4";
         if (val.rfind("DMC_SIMD_I32X4", 0) == 0 || val.rfind("dmc_i32x4", 0) == 0 || val.rfind("simd_i32x4", 0) == 0) return "i32x4";
-        if (val.rfind("arena_new(", 0) == 0) return "arena";
+        if (val.rfind("arena_new(", 0) == 0) {
+            const Function* fn_an = find_function("arena_new");
+            return fn_an ? fn_an->ret_type : "arena";
+        }
         if (val.rfind("Vector_", 0) == 0 && val.find("_new(") != std::string::npos) {
             auto pos1 = val.find("Vector_");
             auto pos2 = val.find("_new(");
@@ -4014,6 +4447,26 @@ long long task_pool_free(long long h) {
         if (val.rfind("ffi_call_f", 0) == 0) return "f64";
         if (val.rfind("ffi_symbol(", 0) == 0) return "*void";
         if (val.rfind("ffi_open(", 0) == 0 || val.rfind("ffi_close(", 0) == 0 || val.rfind("py_init(", 0) == 0 || val.rfind("py_finalize(", 0) == 0 || val.rfind("py_run(", 0) == 0 || val.rfind("py_import(", 0) == 0 || val.rfind("js_run(", 0) == 0 || val.rfind("task_pool_new(", 0) == 0 || val.rfind("task_pool_submit(", 0) == 0 || val.rfind("task_pool_free(", 0) == 0) return "int";
+        if (val.rfind("ptr_add(", 0) == 0) return "*void";
+        if (val.rfind("ptr_diff(", 0) == 0) return "i64";
+        if (val.rfind("ptr_read8(", 0) == 0) return "u8";
+        if (val.rfind("ptr_write8(", 0) == 0) return "void";
+        if (val.rfind("ptr_read16(", 0) == 0) return "u16";
+        if (val.rfind("ptr_write16(", 0) == 0) return "void";
+        if (val.rfind("ptr_read32(", 0) == 0) return "u32";
+        if (val.rfind("ptr_write32(", 0) == 0) return "void";
+        if (val.rfind("ptr_read64(", 0) == 0) return "u64";
+        if (val.rfind("ptr_write64(", 0) == 0) return "void";
+        if (val.rfind("volatile_load8(", 0) == 0) return "u8";
+        if (val.rfind("volatile_load16(", 0) == 0) return "u16";
+        if (val.rfind("volatile_load32(", 0) == 0) return "u32";
+        if (val.rfind("volatile_load64(", 0) == 0) return "u64";
+        if (val.rfind("volatile_store8(", 0) == 0 || val.rfind("volatile_store16(", 0) == 0 ||
+            val.rfind("volatile_store32(", 0) == 0 || val.rfind("volatile_store64(", 0) == 0) return "void";
+        if (val.rfind("cpu_rdtsc(", 0) == 0 || val.rfind("mem_ptr(", 0) == 0) return "u64";
+        if (val.rfind("cpu_barrier(", 0) == 0 || val.rfind("cpu_pause(", 0) == 0 ||
+            val.rfind("cpu_hlt(", 0) == 0 || val.rfind("cpu_cli(", 0) == 0 ||
+            val.rfind("cpu_sti(", 0) == 0) return "void";
         for (const auto& s : structs_) {
             std::string prefix = "(" + s.name + "){";
             if (val.find(prefix) != std::string::npos || val.rfind(s.name + " {", 0) == 0 || val.rfind(s.name + "{", 0) == 0) {
@@ -4137,7 +4590,12 @@ long long task_pool_free(long long h) {
             "atomic_add", "atomic_sub", "atomic_load", "atomic_store",
             "channel_new", "channel_send", "channel_recv", "channel_try_recv", "channel_close", "channel_free",
             "time_now_ms", "time_sleep_ms", "rand_seed", "rand_int", "proc_pid", "datetime_now", "datetime_format", "datetime_unix",
-            "task_pool_new", "task_pool_submit", "task_pool_free"
+            "task_pool_new", "task_pool_submit", "task_pool_free",
+            "volatile_load8", "volatile_store8", "volatile_load16", "volatile_store16",
+            "volatile_load32", "volatile_store32", "volatile_load64", "volatile_store64",
+            "cpu_barrier", "cpu_pause", "cpu_hlt", "cpu_cli", "cpu_sti", "cpu_rdtsc", "mem_ptr",
+            "ptr_add", "ptr_diff", "ptr_read8", "ptr_write8", "ptr_read16", "ptr_write16",
+            "ptr_read32", "ptr_write32", "ptr_read64", "ptr_write64"
         };
         for (auto& f : fns) if (f == name) return true;
         return false;
@@ -4211,6 +4669,567 @@ long long task_pool_free(long long h) {
         structs_.push_back(s);
     }
 
+    std::string translate_hdl_expr_to_c(const std::vector<Token>& tokens, size_t& i,
+                                        const std::set<std::string>& reg_names,
+                                        const std::set<std::string>& out_port_names,
+                                        const std::string& stop_tok) {
+        std::string expr;
+        int paren_depth = 0;
+        int brace_depth = 0;
+        while (i < tokens.size()) {
+            const std::string& t = tokens[i].text;
+            if (paren_depth == 0 && brace_depth == 0) {
+                if (t == stop_tok || (stop_tok.empty() && (t == ";" || t == "{"))) break;
+            }
+            if (t == "(") paren_depth++;
+            else if (t == ")") {
+                if (paren_depth > 0) paren_depth--;
+                else if (stop_tok == ")") break;
+            } else if (t == "{") brace_depth++;
+            else if (t == "}") {
+                if (brace_depth > 0) brace_depth--;
+                else if (stop_tok == "}") break;
+            }
+            if (t == "*" && i + 1 < tokens.size() && out_port_names.count(tokens[i + 1].text)) {
+                i++;
+                expr += "(*" + tokens[i].text + ")";
+            } else if (reg_names.count(t)) {
+                if (!expr.empty() && expr.back() != '(' && expr.back() != '!' && expr.back() != '~') expr += " ";
+                expr += "state->" + t;
+            } else {
+                if (!expr.empty() && expr.back() != '(' && expr.back() != '!' && expr.back() != '~' && t != ")" && t != "," && t != ";") {
+                    expr += " ";
+                }
+                expr += t;
+            }
+            i++;
+        }
+        return expr;
+    }
+
+    void translate_hdl_block_to_c(const std::vector<Token>& tokens,
+                                  const std::set<std::string>& reg_names,
+                                  const std::set<std::string>& wire_names,
+                                  const std::set<std::string>& out_port_names,
+                                  const std::set<std::string>& in_port_names,
+                                  bool is_sync,
+                                  std::vector<std::string>& body) {
+        size_t i = 0;
+        while (i < tokens.size()) {
+            const std::string& t = tokens[i].text;
+            if (t == "if") {
+                i++;
+                if (i < tokens.size() && tokens[i].text == "(") i++;
+                std::string cond = translate_hdl_expr_to_c(tokens, i, reg_names, out_port_names, ")");
+                if (i < tokens.size() && tokens[i].text == ")") i++;
+                if (i < tokens.size() && tokens[i].text == "{") i++;
+                body.push_back("if (" + cond + ") {");
+            } else if (t == "else") {
+                i++;
+                if (!body.empty() && body.back() == "}") {
+                    body.pop_back();
+                }
+                if (i < tokens.size() && tokens[i].text == "if") {
+                    i++;
+                    if (i < tokens.size() && tokens[i].text == "(") i++;
+                    std::string cond = translate_hdl_expr_to_c(tokens, i, reg_names, out_port_names, ")");
+                    if (i < tokens.size() && tokens[i].text == ")") i++;
+                    if (i < tokens.size() && tokens[i].text == "{") i++;
+                    body.push_back("} else if (" + cond + ") {");
+                } else {
+                    if (i < tokens.size() && tokens[i].text == "{") i++;
+                    body.push_back("} else {");
+                }
+            } else if (t == "}") {
+                i++;
+                body.push_back("}");
+            } else if (t == "{") {
+                i++;
+            } else if (t == ";") {
+                i++;
+            } else if (t == "*" && i + 1 < tokens.size() && out_port_names.count(tokens[i + 1].text)) {
+                i++;
+                std::string pname = tokens[i++].text;
+                if (i < tokens.size() && (tokens[i].text == "=" || tokens[i].text == "<=")) i++;
+                std::string rhs = translate_hdl_expr_to_c(tokens, i, reg_names, out_port_names, ";");
+                if (i < tokens.size() && tokens[i].text == ";") i++;
+                body.push_back("if (" + pname + ") *" + pname + " = " + rhs + ";");
+            } else if (out_port_names.count(t) && i + 1 < tokens.size() && (tokens[i + 1].text == "=" || tokens[i + 1].text == "<=")) {
+                std::string pname = tokens[i++].text;
+                i++;
+                std::string rhs = translate_hdl_expr_to_c(tokens, i, reg_names, out_port_names, ";");
+                if (i < tokens.size() && tokens[i].text == ";") i++;
+                body.push_back("if (" + pname + ") *" + pname + " = " + rhs + ";");
+            } else if (reg_names.count(t) && i + 1 < tokens.size() && (tokens[i + 1].text == "=" || tokens[i + 1].text == "<=")) {
+                std::string rname = tokens[i++].text;
+                i++;
+                std::string rhs = translate_hdl_expr_to_c(tokens, i, reg_names, out_port_names, ";");
+                if (i < tokens.size() && tokens[i].text == ";") i++;
+                if (is_sync) {
+                    body.push_back("next_" + rname + " = " + rhs + ";");
+                } else {
+                    body.push_back("state->" + rname + " = " + rhs + ";");
+                }
+            } else if (wire_names.count(t) && i + 1 < tokens.size() && tokens[i + 1].text == "=") {
+                std::string wname = tokens[i++].text;
+                i++;
+                std::string rhs = translate_hdl_expr_to_c(tokens, i, reg_names, out_port_names, ";");
+                if (i < tokens.size() && tokens[i].text == ";") i++;
+                body.push_back(wname + " = " + rhs + ";");
+            } else if (t == "let" || t == "var") {
+                i++;
+                std::string vname = (i < tokens.size()) ? tokens[i++].text : "_tmp";
+                std::string vtype = "int";
+                if (i < tokens.size() && tokens[i].text == ":") {
+                    i++;
+                    if (i < tokens.size()) vtype = tokens[i++].text;
+                }
+                if (i < tokens.size() && tokens[i].text == "=") i++;
+                std::string rhs = translate_hdl_expr_to_c(tokens, i, reg_names, out_port_names, ";");
+                if (i < tokens.size() && tokens[i].text == ";") i++;
+                body.push_back(ctype(vtype) + " " + vname + " = " + rhs + ";");
+            } else {
+                std::string stmt = translate_hdl_expr_to_c(tokens, i, reg_names, out_port_names, ";");
+                if (i < tokens.size() && tokens[i].text == ";") i++;
+                if (!stmt.empty()) body.push_back(stmt + ";");
+            }
+        }
+    }
+
+    void build_module_simulation_body(const HdlModule& mod, std::vector<std::string>& body) {
+        body.push_back("if (!state) return;");
+
+        std::set<std::string> reg_names;
+        for (const auto& r : mod.regs) {
+            reg_names.insert(r.name);
+            body.push_back(ctype(r.type) + " next_" + r.name + " = state->" + r.name + ";");
+        }
+
+        std::set<std::string> wire_names;
+        for (const auto& w : mod.wires) {
+            wire_names.insert(w.name);
+            std::string line = ctype(w.type) + " " + w.name;
+            if (!w.init_val.empty()) line += " = " + w.init_val;
+            line += ";";
+            body.push_back(line);
+        }
+
+        std::set<std::string> out_port_names;
+        std::set<std::string> in_port_names;
+        for (const auto& p : mod.ports) {
+            if (p.is_output) out_port_names.insert(p.name);
+            else in_port_names.insert(p.name);
+        }
+
+        for (const auto& sb : mod.sync_blocks) {
+            std::string sync_cond;
+            for (size_t i = 0; i < sb.sensitivities.size(); ++i) {
+                if (i > 0) sync_cond += " || ";
+                if (sb.sensitivities[i].edge == "negedge") {
+                    sync_cond += "!" + sb.sensitivities[i].signal;
+                } else {
+                    sync_cond += sb.sensitivities[i].signal;
+                }
+            }
+            if (sync_cond.empty()) sync_cond = "1";
+            body.push_back("if (" + sync_cond + ") {");
+            translate_hdl_block_to_c(sb.tokens, reg_names, wire_names, out_port_names, in_port_names, true, body);
+            body.push_back("}");
+            for (const auto& r : mod.regs) {
+                body.push_back("state->" + r.name + " = next_" + r.name + ";");
+            }
+        }
+
+        for (const auto& cb : mod.comb_blocks) {
+            translate_hdl_block_to_c(cb.tokens, reg_names, wire_names, out_port_names, in_port_names, false, body);
+        }
+    }
+
+    void parse_module(const std::vector<std::string>& attrs = {}) {
+        expect("module");
+        HdlModule mod;
+        mod.name = take();
+        expect("(");
+        if (peek() != ")") {
+            while (true) {
+                std::string pname = take();
+                expect(":");
+                std::string ptype = type_name();
+                bool is_out = (!ptype.empty() && ptype.front() == '*');
+                int w = hdl_type_width(ptype);
+                mod.ports.push_back({pname, ptype, is_out, w});
+                if (peek() != ",") break;
+                take();
+            }
+        }
+        expect(")");
+        expect("{");
+        while (peek() != "}" && peek() != "<eof>") {
+            if (peek() == "reg") {
+                take();
+                std::string rname = take();
+                expect(":");
+                std::string rtype = type_name();
+                std::string rinit = "0";
+                if (peek() == "=") {
+                    take();
+                    rinit = expression(";");
+                }
+                expect(";");
+                int rw = hdl_type_width(rtype);
+                mod.regs.push_back({rname, rtype, rw, rinit});
+            } else if (peek() == "wire") {
+                take();
+                std::string wname = take();
+                expect(":");
+                std::string wtype = type_name();
+                std::string winit = "";
+                if (peek() == "=") {
+                    take();
+                    winit = expression(";");
+                }
+                expect(";");
+                int ww = hdl_type_width(wtype);
+                mod.wires.push_back({wname, wtype, ww, winit});
+            } else if (peek() == "sync") {
+                take();
+                expect("(");
+                HdlSyncBlock sb;
+                while (peek() != ")") {
+                    std::string edge = "posedge";
+                    if (peek() == "posedge" || peek() == "negedge") {
+                        edge = take();
+                    }
+                    std::string sig = take();
+                    if (peek() == ".") {
+                        take();
+                        std::string e = take();
+                        if (e == "posedge" || e == "negedge") edge = e;
+                    }
+                    sb.sensitivities.push_back({sig, edge});
+                    if (peek() == ",") take();
+                    else break;
+                }
+                expect(")");
+                expect("{");
+                int depth = 1;
+                while (depth > 0 && peek() != "<eof>") {
+                    Token t = tokens_[index_++];
+                    if (t.text == "{") {
+                        depth++;
+                        sb.tokens.push_back(t);
+                    } else if (t.text == "}") {
+                        depth--;
+                        if (depth > 0) sb.tokens.push_back(t);
+                    } else {
+                        sb.tokens.push_back(t);
+                    }
+                }
+                if (peek() == ";") take();
+                mod.sync_blocks.push_back(sb);
+            } else if (peek() == "comb") {
+                take();
+                expect("{");
+                HdlCombBlock cb;
+                int depth = 1;
+                while (depth > 0 && peek() != "<eof>") {
+                    Token t = tokens_[index_++];
+                    if (t.text == "{") {
+                        depth++;
+                        cb.tokens.push_back(t);
+                    } else if (t.text == "}") {
+                        depth--;
+                        if (depth > 0) cb.tokens.push_back(t);
+                    } else {
+                        cb.tokens.push_back(t);
+                    }
+                }
+                if (peek() == ";") take();
+                mod.comb_blocks.push_back(cb);
+            } else if (peek() == ";") {
+                take();
+            } else {
+                take();
+            }
+        }
+        expect("}");
+
+        modules_.push_back(mod);
+
+        Struct s;
+        s.name = mod.name;
+        for (const auto& r : mod.regs) {
+            s.fields.push_back({r.name, r.type});
+        }
+        if (s.fields.empty()) {
+            s.fields.push_back({"_unused", "u8"});
+        }
+        bool struct_seen = false;
+        for (auto& existing : structs_) {
+            if (existing.name == s.name) {
+                struct_seen = true;
+                break;
+            }
+        }
+        if (!struct_seen) structs_.push_back(s);
+
+        Function fn_new;
+        fn_new.name = mod.name + "_new";
+        fn_new.ret_type = mod.name;
+        fn_new.body.push_back(mod.name + " _state;");
+        fn_new.body.push_back("memset(&_state, 0, sizeof(_state));");
+        for (const auto& r : mod.regs) {
+            if (!r.init_val.empty()) {
+                fn_new.body.push_back("_state." + r.name + " = " + r.init_val + ";");
+            }
+        }
+        fn_new.body.push_back("return _state;");
+        if (!has_function(fn_new.name)) functions_.push_back(fn_new);
+
+        Function fn_init;
+        fn_init.name = mod.name + "_init";
+        fn_init.ret_type = mod.name;
+        fn_init.body = fn_new.body;
+        if (!has_function(fn_init.name)) functions_.push_back(fn_init);
+
+        Function fn_tick;
+        fn_tick.name = mod.name + "_tick";
+        fn_tick.ret_type = "void";
+        fn_tick.params.push_back({"state", "*" + mod.name});
+        for (const auto& p : mod.ports) {
+            fn_tick.params.push_back({p.name, p.type});
+        }
+        build_module_simulation_body(mod, fn_tick.body);
+        if (!has_function(fn_tick.name)) functions_.push_back(fn_tick);
+    }
+
+    std::string translate_hdl_expr_to_verilog(const std::vector<Token>& tokens,
+                                              size_t& i,
+                                              const std::set<std::string>& out_ports,
+                                              const std::string& stop_tok) const {
+        std::string expr;
+        int paren_depth = 0;
+        int brace_depth = 0;
+        while (i < tokens.size()) {
+            const std::string& t = tokens[i].text;
+            if (paren_depth == 0 && brace_depth == 0) {
+                if (t == stop_tok || (stop_tok.empty() && (t == ";" || t == "{"))) break;
+            }
+            if (t == "(") paren_depth++;
+            else if (t == ")") {
+                if (paren_depth > 0) paren_depth--;
+                else if (stop_tok == ")") break;
+            } else if (t == "{") brace_depth++;
+            else if (t == "}") {
+                if (brace_depth > 0) brace_depth--;
+                else if (stop_tok == "}") break;
+            }
+            if (t == "*" && i + 1 < tokens.size() && out_ports.count(tokens[i + 1].text)) {
+                i++;
+                expr += tokens[i].text;
+            } else if (t == "hdl_slice" && i + 1 < tokens.size() && tokens[i + 1].text == "(") {
+                i += 2;
+                std::string s_val = translate_hdl_expr_to_verilog(tokens, i, out_ports, ",");
+                if (i < tokens.size() && tokens[i].text == ",") i++;
+                std::string s_high = translate_hdl_expr_to_verilog(tokens, i, out_ports, ",");
+                if (i < tokens.size() && tokens[i].text == ",") i++;
+                std::string s_low = translate_hdl_expr_to_verilog(tokens, i, out_ports, ")");
+                if (i < tokens.size() && tokens[i].text == ")") i++;
+                expr += s_val + "[" + s_high + ":" + s_low + "]";
+                continue;
+            } else if (t == "hdl_bit" && i + 1 < tokens.size() && tokens[i + 1].text == "(") {
+                i += 2;
+                std::string b_val = translate_hdl_expr_to_verilog(tokens, i, out_ports, ",");
+                if (i < tokens.size() && tokens[i].text == ",") i++;
+                std::string b_idx = translate_hdl_expr_to_verilog(tokens, i, out_ports, ")");
+                if (i < tokens.size() && tokens[i].text == ")") i++;
+                expr += b_val + "[" + b_idx + "]";
+                continue;
+            } else if (t == "hdl_concat" && i + 1 < tokens.size() && tokens[i + 1].text == "(") {
+                i += 2;
+                std::string c_a = translate_hdl_expr_to_verilog(tokens, i, out_ports, ",");
+                if (i < tokens.size() && tokens[i].text == ",") i++;
+                std::string c_abits = translate_hdl_expr_to_verilog(tokens, i, out_ports, ",");
+                if (i < tokens.size() && tokens[i].text == ",") i++;
+                std::string c_b = translate_hdl_expr_to_verilog(tokens, i, out_ports, ",");
+                if (i < tokens.size() && tokens[i].text == ",") i++;
+                std::string c_bbits = translate_hdl_expr_to_verilog(tokens, i, out_ports, ")");
+                if (i < tokens.size() && tokens[i].text == ")") i++;
+                expr += "{" + c_a + ", " + c_b + "}";
+                continue;
+            } else {
+                if (!expr.empty() && expr.back() != '(' && expr.back() != '!' && expr.back() != '~' && t != ")" && t != "," && t != ";") {
+                    expr += " ";
+                }
+                expr += t;
+            }
+            i++;
+        }
+        return expr;
+    }
+
+    void emit_verilog_block_body(const std::vector<Token>& tokens,
+                                 const std::set<std::string>& out_ports,
+                                 std::ostringstream& out,
+                                 int indent) const {
+        size_t i = 0;
+        std::string pad(indent, ' ');
+        while (i < tokens.size()) {
+            const std::string& t = tokens[i].text;
+            if (t == "if") {
+                i++;
+                if (i < tokens.size() && tokens[i].text == "(") i++;
+                std::string cond = translate_hdl_expr_to_verilog(tokens, i, out_ports, ")");
+                if (i < tokens.size() && tokens[i].text == ")") i++;
+                if (i < tokens.size() && tokens[i].text == "{") i++;
+                out << pad << "if (" << cond << ") begin\n";
+                indent += 4;
+                pad = std::string(indent, ' ');
+            } else if (t == "}") {
+                i++;
+                indent = std::max(0, indent - 4);
+                pad = std::string(indent, ' ');
+                if (i < tokens.size() && tokens[i].text == "else") {
+                    i++;
+                    if (i < tokens.size() && tokens[i].text == "if") {
+                        i++;
+                        if (i < tokens.size() && tokens[i].text == "(") i++;
+                        std::string cond = translate_hdl_expr_to_verilog(tokens, i, out_ports, ")");
+                        if (i < tokens.size() && tokens[i].text == ")") i++;
+                        if (i < tokens.size() && tokens[i].text == "{") i++;
+                        out << pad << "end else if (" << cond << ") begin\n";
+                        indent += 4;
+                        pad = std::string(indent, ' ');
+                    } else {
+                        if (i < tokens.size() && tokens[i].text == "{") i++;
+                        out << pad << "end else begin\n";
+                        indent += 4;
+                        pad = std::string(indent, ' ');
+                    }
+                } else {
+                    out << pad << "end\n";
+                }
+            } else if (t == "{") {
+                i++;
+            } else if (t == ";") {
+                i++;
+            } else {
+                std::string lhs;
+                if (t == "*") {
+                    i++;
+                    if (i < tokens.size()) lhs = tokens[i++].text;
+                } else {
+                    lhs = tokens[i++].text;
+                }
+                std::string op = "=";
+                if (i < tokens.size() && (tokens[i].text == "=" || tokens[i].text == "<=")) {
+                    op = tokens[i++].text;
+                }
+                std::string rhs = translate_hdl_expr_to_verilog(tokens, i, out_ports, ";");
+                if (i < tokens.size() && tokens[i].text == ";") i++;
+                out << pad << lhs << " " << op << " " << rhs << ";\n";
+            }
+        }
+    }
+
+    void emit_single_verilog_module(const HdlModule& mod, std::ostringstream& out) const {
+        out << "module " << mod.name << " (\n";
+        for (size_t i = 0; i < mod.ports.size(); ++i) {
+            const auto& p = mod.ports[i];
+            out << "    ";
+            if (!p.is_output) {
+                out << "input ";
+                if (p.width > 1) {
+                    out << "[" << (p.width - 1) << ":0] ";
+                }
+                out << p.name;
+            } else {
+                out << "output reg ";
+                if (p.width > 1) {
+                    out << "[" << (p.width - 1) << ":0] ";
+                }
+                out << p.name;
+            }
+            if (i + 1 < mod.ports.size()) out << ",";
+            out << "\n";
+        }
+        out << ");\n\n";
+
+        for (const auto& r : mod.regs) {
+            out << "reg ";
+            if (r.width > 1) {
+                out << "[" << (r.width - 1) << ":0] ";
+            }
+            out << r.name << ";\n";
+        }
+        if (!mod.regs.empty()) out << "\n";
+
+        for (const auto& w : mod.wires) {
+            out << "wire ";
+            if (w.width > 1) {
+                out << "[" << (w.width - 1) << ":0] ";
+            }
+            out << w.name;
+            if (!w.init_val.empty()) out << " = " << w.init_val;
+            out << ";\n";
+        }
+        if (!mod.wires.empty()) out << "\n";
+
+        std::set<std::string> out_port_names;
+        for (const auto& p : mod.ports) {
+            if (p.is_output) out_port_names.insert(p.name);
+        }
+
+        for (const auto& sb : mod.sync_blocks) {
+            out << "always @(";
+            for (size_t i = 0; i < sb.sensitivities.size(); ++i) {
+                if (i > 0) out << " or ";
+                out << sb.sensitivities[i].edge << " " << sb.sensitivities[i].signal;
+            }
+            out << ") begin\n";
+            emit_verilog_block_body(sb.tokens, out_port_names, out, 4);
+            out << "end\n\n";
+        }
+
+        for (const auto& cb : mod.comb_blocks) {
+            out << "always @(*) begin\n";
+            emit_verilog_block_body(cb.tokens, out_port_names, out, 4);
+            out << "end\n\n";
+        }
+
+        out << "endmodule\n";
+    }
+
+    std::string generate_verilog(const std::string& top_module = "") const {
+        std::ostringstream out;
+        std::vector<HdlModule> target_mods;
+        if (!top_module.empty()) {
+            bool found = false;
+            for (const auto& m : modules_) {
+                if (m.name == top_module) {
+                    target_mods.push_back(m);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                throw std::runtime_error("top module '" + top_module + "' not found");
+            }
+        } else {
+            target_mods = modules_;
+        }
+        if (target_mods.empty()) {
+            throw std::runtime_error("no hardware modules found to synthesize");
+        }
+
+        for (size_t mi = 0; mi < target_mods.size(); ++mi) {
+            const auto& mod = target_mods[mi];
+            if (mi > 0) out << "\n";
+            emit_single_verilog_module(mod, out);
+        }
+        return out.str();
+    }
+
     std::string peek() const { return tokens_[index_].text; }
     std::string take() { if (peek() == "<eof>") fail("unexpected end of file"); return tokens_[index_++].text; }
     void expect(const std::string& value) { if (peek() != value) fail("expected '" + value + "', got '" + peek() + "'"); ++index_; }
@@ -4224,6 +5243,8 @@ long long task_pool_free(long long h) {
     size_t index_ = 0;
     std::vector<Function> functions_;
     std::vector<Struct> structs_;
+    std::vector<HdlModule> modules_;
+    bool declarations_collected_ = false;
     std::unordered_map<std::string, GenericStruct> generic_structs_;
     int match_counter_ = 0;
     int tuple_counter_ = 0;
@@ -7906,11 +8927,112 @@ static int cmd_tree(int argc, char** argv) {
     return 0;
 }
 
+static int cmd_synth(int argc, char** argv) {
+    std::string source_path;
+    std::string output_path;
+    std::string top_mod;
+    std::vector<std::string> include_dirs;
+    std::vector<std::string> args;
+    for (int i = 0; i < argc; ++i) {
+        if (i == 0 && std::string(argv[i]) == "synth") continue;
+        args.push_back(argv[i]);
+    }
+    for (size_t i = 0; i < args.size(); ++i) {
+        const std::string& arg = args[i];
+        if (arg == "-o") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "dmc synth: -o requires an argument\n";
+                return 1;
+            }
+            output_path = args[++i];
+        } else if (arg == "--top") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "dmc synth: --top requires an argument\n";
+                return 1;
+            }
+            top_mod = args[++i];
+        } else if (arg == "-I") {
+            if (i + 1 >= args.size()) {
+                std::cerr << "dmc synth: -I requires an argument\n";
+                return 1;
+            }
+            include_dirs.push_back(args[++i]);
+        } else if (arg.rfind("-I", 0) == 0 && arg.size() > 2) {
+            include_dirs.push_back(arg.substr(2));
+        } else if (arg == "-h" || arg == "--help") {
+            std::cout << "usage: dmc synth <source.dmc> [-o <out.v>] [--top <mod_name>]\n";
+            return 0;
+        } else if (!arg.empty() && arg[0] == '-') {
+            std::cerr << "dmc synth: unknown option '" << arg << "'\n";
+            return 1;
+        } else if (source_path.empty()) {
+            source_path = arg;
+        }
+    }
+    if (source_path.empty()) {
+        std::cerr << "dmc synth: source file required\nusage: dmc synth <source.dmc> [-o <out.v>] [--top <mod_name>]\n";
+        return 1;
+    }
+    if (!std::filesystem::exists(source_path)) {
+        std::cerr << "dmc synth: file '" << source_path << "' does not exist\n";
+        return 1;
+    }
+    try {
+        std::ifstream input(source_path);
+        if (!input) {
+            std::cerr << "dmc synth: failed to open source file '" << source_path << "'\n";
+            return 1;
+        }
+        std::ostringstream ss;
+        ss << input.rdbuf();
+        std::string src_content = ss.str();
+        Parser parser(lex(src_content), source_path);
+        parser.add_include_dir(".");
+        parser.add_include_dir("stdlib");
+        std::filesystem::path sp(source_path);
+        if (sp.has_parent_path()) {
+            parser.add_include_dir(sp.parent_path().string());
+        }
+        for (const auto& inc : include_dirs) {
+            parser.add_include_dir(inc);
+        }
+        std::string verilog = parser.emit_verilog(top_mod);
+        if (parser.has_errors()) {
+            for (const auto& d : parser.diagnostics()) {
+                print_diagnostic(source_path, src_content, d, "error");
+            }
+            return 1;
+        }
+        if (output_path.empty()) {
+            if (source_path.size() >= 4 && source_path.compare(source_path.size() - 4, 4, ".dmc") == 0) {
+                output_path = source_path.substr(0, source_path.size() - 4) + ".v";
+            } else {
+                output_path = source_path + ".v";
+            }
+        }
+        if (output_path == "-") {
+            std::cout << verilog;
+        } else {
+            std::ofstream out(output_path);
+            if (!out) {
+                std::cerr << "dmc synth: failed to open output file '" << output_path << "'\n";
+                return 1;
+            }
+            out << verilog;
+        }
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "dmc synth: " << e.what() << "\n";
+        return 1;
+    }
+}
+
 static void print_usage() {
     std::cout << "usage: dmc <source.dmc> [args...]       compile and run Demonic C program\n"
               << "       dmc run <source.dmc> [args...]   compile and run Demonic C program\n"
               << "       dmc build <source.dmc> [options] compile to executable, shared lib, or wasm\n"
               << "       dmc bindgen <header.h> [options] generate Demonic C bindings from C header\n"
+              << "       dmc synth <source.dmc> [options] synthesize hardware module to IEEE 1364 Verilog\n"
               << "       dmc <source.dmc> -o <file.c>     transpile to C code\n\n"
               << "options:\n"
               << "  -o <file>       write generated C/binary to <file>\n"
@@ -7965,6 +9087,7 @@ static void print_usage() {
               << "  init            initialize project in current directory\n"
               << "  fmt [--check]   format or check .dmc files\n"
               << "  lint [--fix]    lint .dmc files for issues\n"
+              << "  synth <src>     synthesize hardware modules to IEEE 1364 Verilog\n"
               << "  doc             generate documentation\n\n"
               << "pkg commands:\n"
               << "  pkg add <git-url>   clone Git package and add to dependencies\n"
@@ -8079,6 +9202,7 @@ int main(int argc, char** argv) {
     if (!args.empty() && args[0] == "tokens") return cmd_tokens(argc - 1, argv + 1);
     if (!args.empty() && args[0] == "tree") return cmd_tree(argc - 1, argv + 1);
 
+    if (!args.empty() && args[0] == "synth") return cmd_synth(argc - 1, argv + 1);
     if (!args.empty() && args[0] == "doc") return cmd_doc(argc - 1, argv + 1);
     if (!args.empty() && (args[0] == "--py" || args[0] == "--python" || args[0] == "--rust")) return cmd_bindgen(argc, argv);
     if (!args.empty() && (args[0] == "bindgen" || args[0] == "bindings" || args[0] == "binding")) return cmd_bindgen(argc - 1, argv + 1);
@@ -8180,7 +9304,8 @@ int main(int argc, char** argv) {
             "build", "run", "test", "bench", "new", "init", "fmt", "lint",
             "bindgen", "bindings", "doc", "repl", "watch", "pkg", "update",
             "upgrade", "heal", "doctor", "clean", "check", "info", "env",
-            "tokens", "tree", "bundle", "eval", "explain", "version", "help"
+            "tokens", "tree", "bundle", "eval", "explain", "version", "help",
+            "synth"
         };
         for (const auto& cmd : known_commands) {
             int len1 = (int)source_path.size();

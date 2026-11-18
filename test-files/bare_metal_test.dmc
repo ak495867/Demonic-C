@@ -1,0 +1,136 @@
+#[naked]
+fn naked_ret_fn() -> void {
+    asm volatile ("ret");
+}
+
+#[section(".text.custom")]
+fn custom_section_fn() -> int {
+    return 777;
+}
+
+#[no_mangle]
+fn unmanagled_fn() -> int {
+    return 888;
+}
+
+#[test]
+fn test_arbitrary_width_integers() -> int {
+    let a: u1 = 1;
+    let b: u1 = 0;
+    let c: u1 = a + b;
+    if (c != 1) {
+        return 1;
+    }
+    let d: u4 = 15;
+    let e: u4 = 2;
+    let f: u4 = d - e;
+    if (f != 13) {
+        return 2;
+    }
+    let g: u16 = 1000;
+    let h: u16 = 2000;
+    let i: u16 = g + h;
+    if (i != 3000) {
+        return 3;
+    }
+    let j: u32 = 70000;
+    let k: u32 = 30000;
+    let l: u32 = j + k;
+    if (l != 100000) {
+        return 4;
+    }
+    let m: u64 = 5000000000;
+    let n: u64 = 5000000000;
+    let o: u64 = m + n;
+    if (o != 10000000000) {
+        return 5;
+    }
+    let sz: usize = 1024;
+    let sz2: usize = sz * 2;
+    if (sz2 != 2048) {
+        return 6;
+    }
+    let conv1: u64 = d as u64;
+    if (conv1 != 15) {
+        return 7;
+    }
+    if (conv1 + (a as u64) != 16) {
+        return 8;
+    }
+    return 0;
+}
+
+#[test]
+fn test_volatile_mmio() -> int {
+    let h: int = mem_alloc(64);
+    if (h < 0) {
+        return 1;
+    }
+    let addr: u64 = mem_ptr(h);
+    if (addr == 0) {
+        mem_free(h);
+        return 2;
+    }
+    volatile_store32(addr, 305419896);
+    let val: u32 = volatile_load32(addr);
+    if (val != 305419896) {
+        mem_free(h);
+        return 3;
+    }
+    volatile_store8(addr + 4, 171);
+    let v8: u8 = volatile_load8(addr + 4);
+    if (v8 != 171) {
+        mem_free(h);
+        return 4;
+    }
+    volatile_store16(addr + 8, 4660);
+    let v16: u16 = volatile_load16(addr + 8);
+    if (v16 != 4660) {
+        mem_free(h);
+        return 5;
+    }
+    volatile_store64(addr + 16, 81985529216486895);
+    let v64: u64 = volatile_load64(addr + 16);
+    if (v64 != 81985529216486895) {
+        mem_free(h);
+        return 6;
+    }
+    mem_free(h);
+    return 0;
+}
+
+#[test]
+fn test_cpu_intrinsics() -> int {
+    cpu_barrier();
+    cpu_pause();
+    let t1: u64 = cpu_rdtsc();
+    cpu_pause();
+    let t2: u64 = cpu_rdtsc();
+    if (t2 < t1) {
+        return 1;
+    }
+    return 0;
+}
+
+#[test]
+fn test_extended_asm() -> int {
+    let src: int = 42;
+    var dst: int = 0;
+    asm volatile ("mov %1, %0" : "=r"(dst) : "r"(src) : "memory");
+    if (dst != 42) {
+        return 1;
+    }
+    return 0;
+}
+
+#[test]
+fn test_bare_metal_attributes() -> int {
+    naked_ret_fn();
+    if (custom_section_fn() != 777) {
+        return 1;
+    }
+    if (unmanagled_fn() != 888) {
+        return 2;
+    }
+    return 0;
+}
