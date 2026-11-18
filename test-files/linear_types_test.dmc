@@ -1,0 +1,25 @@
+#[must_use]
+fn allocate_resource(id: int) -> int {
+    return id * 2;
+}
+
+#[must_use]
+fn acquire_handle(name: string) -> int {
+    if (name == "admin") {
+        return 100;
+    }
+    return 200;
+}
+
+#[test]
+fn test_must_use_return_checked() -> int {
+    let r: int = allocate_resource(42);
+    if (r != 84) {
+        return 1;
+    }
+    let h: int = acquire_handle("admin");
+    if (h != 100) {
+        return 2;
+    }
+    return 0;
+}

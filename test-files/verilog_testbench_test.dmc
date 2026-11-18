@@ -1,0 +1,208 @@
+import "testbench";
+
+#[test]
+fn test_tb_config() -> int {
+    let cfg: TestbenchConfig = tb_config_new("Counter8", 10, 500);
+    if (cfg.module_name != "Counter8") {
+        return 1;
+    }
+    if (cfg.clk_period_ns != 10) {
+        return 2;
+    }
+    if (cfg.sim_time_ns != 500) {
+        return 3;
+    }
+
+    let cfg2: TestbenchConfig = tb_config_new("ALU32", 4, 1000);
+    if (cfg2.module_name != "ALU32") {
+        return 4;
+    }
+    if (cfg2.clk_period_ns != 4) {
+        return 5;
+    }
+    if (cfg2.sim_time_ns != 1000) {
+        return 6;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_tb_clock_generation() -> int {
+    let clk10: string = tb_emit_clock_gen(10);
+    if (text_contains(clk10, "initial begin") == 0) {
+        return 1;
+    }
+    if (text_contains(clk10, "clk = 0;") == 0) {
+        return 2;
+    }
+    if (text_contains(clk10, "forever #5 clk = ~clk;") == 0) {
+        return 3;
+    }
+    if (text_contains(clk10, "end\n") == 0) {
+        return 4;
+    }
+
+    let clk4: string = tb_emit_clock_gen(4);
+    if (text_contains(clk4, "forever #2 clk = ~clk;") == 0) {
+        return 5;
+    }
+
+    let clk1: string = tb_emit_clock_gen(1);
+    if (text_contains(clk1, "forever #1 clk = ~clk;") == 0) {
+        return 6;
+    }
+
+    let clk0: string = tb_emit_clock_gen(0);
+    if (text_contains(clk0, "forever #1 clk = ~clk;") == 0) {
+        return 7;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_tb_reset_sequence() -> int {
+    let rst20: string = tb_emit_reset_seq(20);
+    if (text_contains(rst20, "rst = 1;") == 0) {
+        return 1;
+    }
+    if (text_contains(rst20, "#20;") == 0) {
+        return 2;
+    }
+    if (text_contains(rst20, "rst = 0;") == 0) {
+        return 3;
+    }
+
+    let rst50: string = tb_emit_reset_seq(50);
+    if (text_contains(rst50, "#50;") == 0) {
+        return 4;
+    }
+
+    let rst0: string = tb_emit_reset_seq(0);
+    if (text_contains(rst0, "#0;") == 0) {
+        return 5;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_tb_format_check() -> int {
+    let chk: string = tb_format_check("out", 42);
+    if (text_contains(chk, "if (out !== 42) begin") == 0) {
+        return 1;
+    }
+    if (text_contains(chk, "ASSERTION FAILED: out != %d (expected 42)") == 0) {
+        return 2;
+    }
+    if (text_contains(chk, "$finish;") == 0) {
+        return 3;
+    }
+
+    let chk2: string = tb_format_check("ready", 1);
+    if (text_contains(chk2, "if (ready !== 1) begin") == 0) {
+        return 4;
+    }
+    if (text_contains(chk2, "expected 1") == 0) {
+        return 5;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_tb_full_testbench_generation() -> int {
+    var cfg: TestbenchConfig = tb_config_new("Counter8", 10, 500);
+    var ports: string = "    reg clk;\n    reg rst;\n    reg en;\n    wire [7:0] out;\n\n    Counter8 dut (\n        .clk(clk),\n        .rst(rst),\n        .en(en),\n        .out(out)\n    );\n";
+    var stim: string = tb_emit_reset_seq(20);
+    stim = stim + "    en = 1;\n    #50;\n";
+    stim = stim + tb_format_check("out", 5);
+
+    var tb: string = tb_emit_full_testbench(&cfg, ports, stim);
+
+    if (text_contains(tb, "`timescale 1ns / 1ps") == 0) {
+        return 1;
+    }
+    if (text_contains(tb, "module Counter8_tb;") == 0) {
+        return 2;
+    }
+    if (text_contains(tb, "reg clk;") == 0) {
+        return 3;
+    }
+    if (text_contains(tb, "Counter8 dut (") == 0) {
+        return 4;
+    }
+    if (text_contains(tb, "forever #5 clk = ~clk;") == 0) {
+        return 5;
+    }
+    if (text_contains(tb, "rst = 1;") == 0) {
+        return 6;
+    }
+    if (text_contains(tb, "#20;") == 0) {
+        return 7;
+    }
+    if (text_contains(tb, "out !== 5") == 0) {
+        return 8;
+    }
+    if (text_contains(tb, "#500;") == 0) {
+        return 9;
+    }
+    if (text_contains(tb, "$finish;") == 0) {
+        return 10;
+    }
+    if (text_contains(tb, "endmodule") == 0) {
+        return 11;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_tb_combinational_testbench() -> int {
+    var cfg: TestbenchConfig = tb_config_new("Adder32", 0, 100);
+    var ports: string = "    reg [31:0] a;\n    reg [31:0] b;\n    wire [31:0] sum;\n";
+    var stim: string = "    a = 10;\n    b = 20;\n    #10;\n";
+    stim = stim + tb_format_check("sum", 30);
+
+    var tb: string = tb_emit_full_testbench(&cfg, ports, stim);
+
+    if (text_contains(tb, "module Adder32_tb;") == 0) {
+        return 1;
+    }
+    if (text_contains(tb, "forever") != 0) {
+        return 2;
+    }
+    if (text_contains(tb, "sum !== 30") == 0) {
+        return 3;
+    }
+    if (text_contains(tb, "#100;") == 0) {
+        return 4;
+    }
+    if (text_contains(tb, "endmodule") == 0) {
+        return 5;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_tb_preformatted_initial() -> int {
+    var cfg: TestbenchConfig = tb_config_new("Mux2", 0, 50);
+    var ports: string = "    reg sel;\n";
+    var stim: string = "initial begin\n    sel = 0;\n    #10;\n    sel = 1;\nend\n";
+
+    var tb: string = tb_emit_full_testbench(&cfg, ports, stim);
+
+    if (text_contains(tb, "module Mux2_tb;") == 0) {
+        return 1;
+    }
+    if (text_contains(tb, "sel = 1;") == 0) {
+        return 2;
+    }
+    if (text_contains(tb, "endmodule") == 0) {
+        return 3;
+    }
+
+    return 0;
+}

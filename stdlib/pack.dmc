@@ -1,0 +1,150 @@
+struct PacketBuffer {
+    data: string,
+    length: int,
+    offset: int
+}
+
+fn packet_new() -> PacketBuffer {
+    let pb: PacketBuffer = PacketBuffer {
+        data: "",
+        length: 0,
+        offset: 0
+    };
+    return pb;
+}
+
+fn packet_write_u8(pb: *PacketBuffer, val: int) -> int {
+    c_code {
+        if (!pb) return 0;
+        size_t cur_len = (size_t)pb->length;
+        char *buf = (char*)malloc(cur_len + 2);
+        if (buf) {
+            if (cur_len > 0 && pb->data) {
+                memcpy(buf, pb->data, cur_len);
+            }
+            buf[cur_len] = (char)(val & 255);
+            buf[cur_len + 1] = 0;
+            pb->data = buf;
+            pb->length = (int)(cur_len + 1);
+        }
+    }
+    return 1;
+}
+
+fn packet_write_u16(pb: *PacketBuffer, val: int) -> int {
+    packet_write_u8(pb, (val >> 8) & 255);
+    packet_write_u8(pb, val & 255);
+    return 2;
+}
+
+fn packet_write_u32(pb: *PacketBuffer, val: int) -> int {
+    packet_write_u8(pb, (val >> 24) & 255);
+    packet_write_u8(pb, (val >> 16) & 255);
+    packet_write_u8(pb, (val >> 8) & 255);
+    packet_write_u8(pb, val & 255);
+    return 4;
+}
+
+fn packet_write_str(pb: *PacketBuffer, s: string) -> int {
+    var slen: int = 0;
+    c_code {
+        if (!pb || !s) return 0;
+        size_t s_bytes = strlen(s);
+        slen = (int)s_bytes;
+        size_t cur_len = (size_t)pb->length;
+        char *buf = (char*)malloc(cur_len + s_bytes + 1);
+        if (buf) {
+            if (cur_len > 0 && pb->data) {
+                memcpy(buf, pb->data, cur_len);
+            }
+            if (s_bytes > 0) {
+                memcpy(buf + cur_len, s, s_bytes);
+            }
+            buf[cur_len + s_bytes] = 0;
+            pb->data = buf;
+            pb->length = (int)(cur_len + s_bytes);
+        }
+    }
+    return slen;
+}
+
+fn packet_read_u8(pb: *PacketBuffer) -> int {
+    var res: int = 0;
+    c_code {
+        if (!pb || !pb->data || pb->offset >= pb->length) {
+            return 0;
+        }
+        res = (unsigned char)pb->data[pb->offset];
+        pb->offset = pb->offset + 1;
+    }
+    return res;
+}
+
+fn packet_read_u16(pb: *PacketBuffer) -> int {
+    if (pb.offset + 2 > pb.length) {
+        return 0;
+    }
+    let b0: int = packet_read_u8(pb);
+    let b1: int = packet_read_u8(pb);
+    return (b0 << 8) | b1;
+}
+
+fn packet_read_u32(pb: *PacketBuffer) -> int {
+    if (pb.offset + 4 > pb.length) {
+        return 0;
+    }
+    let b0: int = packet_read_u8(pb);
+    let b1: int = packet_read_u8(pb);
+    let b2: int = packet_read_u8(pb);
+    let b3: int = packet_read_u8(pb);
+    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+}
+
+fn packet_read_str(pb: *PacketBuffer, len: int) -> string {
+    var out: string = "";
+    c_code {
+        if (!pb || !pb->data || len <= 0 || pb->offset >= pb->length) {
+            return "";
+        }
+        size_t available = (size_t)(pb->length - pb->offset);
+        size_t read_bytes = (size_t)len;
+        if (read_bytes > available) {
+            read_bytes = available;
+        }
+        char *buf = (char*)malloc(read_bytes + 1);
+        if (buf) {
+            memcpy(buf, pb->data + pb->offset, read_bytes);
+            buf[read_bytes] = 0;
+            out = buf;
+            pb->offset = pb->offset + (int)read_bytes;
+        }
+    }
+    return out;
+}
+
+fn pack_crc32_step(crc: int, byte_val: int) -> int {
+    var c: int = 0;
+    c_code {
+        uint32_t cur = (uint32_t)crc ^ (uint32_t)(byte_val & 255);
+        for (int i = 0; i < 8; i = i + 1) {
+            if (cur & 1) {
+                cur = (cur >> 1) ^ 0xEDB88320;
+            } else {
+                cur = cur >> 1;
+            }
+        }
+        c = (int)cur;
+    }
+    return c;
+}
+
+fn pack_json_field(key: string, val_str: string, is_numeric: int) -> string {
+    if (is_numeric != 0) {
+        return "\"" + key + "\":" + val_str;
+    }
+    return "\"" + key + "\":\"" + val_str + "\"";
+}
+
+fn pack_json_obj(content: string) -> string {
+    return "{" + content + "}";
+}

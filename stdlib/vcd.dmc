@@ -45,7 +45,7 @@ fn vcd_to_binary_str(val: int, width: int) -> string {
 
 fn vcd_format_header(w: *VcdWriter, sig0: string, id0: string, w0: int, sig1: string, id1: string, w1: int) -> string {
     var out: string = "$date 2026-11-18 $end\n";
-    out = out + "$version Demonic C 2.0.6 Silicon Synthesizer $end\n";
+    out = out + "$version Demonic C 2.0.7 Silicon Synthesizer $end\n";
     out = out + "$timescale " + w.timescale + " $end\n";
     out = out + "$scope module " + w.module_name + " $end\n";
     out = out + "$var wire " + text_from_int(w0) + " " + id0 + " " + sig0 + " $end\n";

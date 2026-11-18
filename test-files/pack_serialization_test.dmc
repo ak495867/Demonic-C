@@ -1,0 +1,314 @@
+import "pack";
+
+#[test]
+fn test_packet_init() -> int {
+    let pb: PacketBuffer = packet_new();
+    if (pb.length != 0) {
+        return 1;
+    }
+    if (pb.offset != 0) {
+        return 2;
+    }
+    if (pb.data != "") {
+        return 3;
+    }
+    return 0;
+}
+
+#[test]
+fn test_pack_read_u8() -> int {
+    var pb: PacketBuffer = packet_new();
+    let w1: int = packet_write_u8(&pb, 0);
+    let w2: int = packet_write_u8(&pb, 127);
+    let w3: int = packet_write_u8(&pb, 255);
+    let w4: int = packet_write_u8(&pb, 42);
+
+    if (w1 != 1 || w2 != 1 || w3 != 1 || w4 != 1) {
+        return 1;
+    }
+    if (pb.length != 4) {
+        return 2;
+    }
+
+    let r1: int = packet_read_u8(&pb);
+    let r2: int = packet_read_u8(&pb);
+    let r3: int = packet_read_u8(&pb);
+    let r4: int = packet_read_u8(&pb);
+
+    if (r1 != 0) {
+        return 3;
+    }
+    if (r2 != 127) {
+        return 4;
+    }
+    if (r3 != 255) {
+        return 5;
+    }
+    if (r4 != 42) {
+        return 6;
+    }
+    if (pb.offset != 4) {
+        return 7;
+    }
+
+    let eof: int = packet_read_u8(&pb);
+    if (eof != 0) {
+        return 8;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_pack_read_u16() -> int {
+    var pb: PacketBuffer = packet_new();
+    let w1: int = packet_write_u16(&pb, 0);
+    let w2: int = packet_write_u16(&pb, 65535);
+    let w3: int = packet_write_u16(&pb, 4660);
+
+    if (w1 != 2 || w2 != 2 || w3 != 2) {
+        return 1;
+    }
+    if (pb.length != 6) {
+        return 2;
+    }
+
+    let r1: int = packet_read_u16(&pb);
+    let r2: int = packet_read_u16(&pb);
+    let r3: int = packet_read_u16(&pb);
+
+    if (r1 != 0) {
+        return 3;
+    }
+    if (r2 != 65535) {
+        return 4;
+    }
+    if (r3 != 4660) {
+        return 5;
+    }
+    if (pb.offset != 6) {
+        return 6;
+    }
+
+    let eof: int = packet_read_u16(&pb);
+    if (eof != 0) {
+        return 7;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_pack_read_u32() -> int {
+    var pb: PacketBuffer = packet_new();
+    let w1: int = packet_write_u32(&pb, 0);
+    let w2: int = packet_write_u32(&pb, 305419896);
+    let w3: int = packet_write_u32(&pb, 2147483647);
+
+    if (w1 != 4 || w2 != 4 || w3 != 4) {
+        return 1;
+    }
+    if (pb.length != 12) {
+        return 2;
+    }
+
+    let r1: int = packet_read_u32(&pb);
+    let r2: int = packet_read_u32(&pb);
+    let r3: int = packet_read_u32(&pb);
+
+    if (r1 != 0) {
+        return 3;
+    }
+    if (r2 != 305419896) {
+        return 4;
+    }
+    if (r3 != 2147483647) {
+        return 5;
+    }
+    if (pb.offset != 12) {
+        return 6;
+    }
+
+    let eof: int = packet_read_u32(&pb);
+    if (eof != 0) {
+        return 7;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_pack_read_str() -> int {
+    var pb: PacketBuffer = packet_new();
+    let w1: int = packet_write_str(&pb, "Hello");
+    let w2: int = packet_write_str(&pb, " ");
+    let w3: int = packet_write_str(&pb, "Demonic");
+
+    if (w1 != 5 || w2 != 1 || w3 != 7) {
+        return 1;
+    }
+    if (pb.length != 13) {
+        return 2;
+    }
+
+    let s1: string = packet_read_str(&pb, 5);
+    let s2: string = packet_read_str(&pb, 1);
+    let s3: string = packet_read_str(&pb, 7);
+
+    if (s1 != "Hello") {
+        return 3;
+    }
+    if (s2 != " ") {
+        return 4;
+    }
+    if (s3 != "Demonic") {
+        return 5;
+    }
+    if (pb.offset != 13) {
+        return 6;
+    }
+
+    let eof: string = packet_read_str(&pb, 5);
+    if (eof != "") {
+        return 7;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_packet_protocol_roundtrip() -> int {
+    var pb: PacketBuffer = packet_new();
+    packet_write_u16(&pb, 57005);
+    packet_write_u8(&pb, 1);
+    let payload: string = "ZeroBoilerplate";
+    let plen: int = text_len(payload);
+    packet_write_u16(&pb, plen);
+    packet_write_str(&pb, payload);
+    packet_write_u32(&pb, 99999);
+
+    if (pb.length != 2 + 1 + 2 + plen + 4) {
+        return 1;
+    }
+
+    let magic: int = packet_read_u16(&pb);
+    if (magic != 57005) {
+        return 2;
+    }
+
+    let ptype: int = packet_read_u8(&pb);
+    if (ptype != 1) {
+        return 3;
+    }
+
+    let read_len: int = packet_read_u16(&pb);
+    if (read_len != plen) {
+        return 4;
+    }
+
+    let read_payload: string = packet_read_str(&pb, read_len);
+    if (read_payload != payload) {
+        return 5;
+    }
+
+    let seq_id: int = packet_read_u32(&pb);
+    if (seq_id != 99999) {
+        return 6;
+    }
+
+    if (pb.offset != pb.length) {
+        return 7;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_pack_crc32() -> int {
+    var crc: int = 4294967295;
+    let s: string = "123456789";
+    var i: int = 0;
+    while (i < text_len(s)) {
+        crc = pack_crc32_step(crc, text_char_at(s, i));
+        i = i + 1;
+    }
+    let final_crc: int = crc ^ 4294967295;
+    if (final_crc != -873187034) {
+        return 1;
+    }
+
+    var c0: int = pack_crc32_step(0, 65);
+    var c1: int = pack_crc32_step(0, 65);
+    if (c0 != c1) {
+        return 2;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_pack_json() -> int {
+    let f1: string = pack_json_field("name", "SerializationEngine", 0);
+    if (f1 != "\"name\":\"SerializationEngine\"") {
+        return 1;
+    }
+
+    let f2: string = pack_json_field("version", "2", 1);
+    if (f2 != "\"version\":2") {
+        return 2;
+    }
+
+    let f3: string = pack_json_field("active", "1", 1);
+    if (f3 != "\"active\":1") {
+        return 3;
+    }
+
+    let obj: string = pack_json_obj(f1 + "," + f2 + "," + f3);
+    if (obj != "{\"name\":\"SerializationEngine\",\"version\":2,\"active\":1}") {
+        return 4;
+    }
+
+    let empty_obj: string = pack_json_obj("");
+    if (empty_obj != "{}") {
+        return 5;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_pack_boundaries() -> int {
+    var pb: PacketBuffer = packet_new();
+    let r_u8: int = packet_read_u8(&pb);
+    if (r_u8 != 0) {
+        return 1;
+    }
+
+    let r_u16: int = packet_read_u16(&pb);
+    if (r_u16 != 0) {
+        return 2;
+    }
+
+    let r_u32: int = packet_read_u32(&pb);
+    if (r_u32 != 0) {
+        return 3;
+    }
+
+    let r_str: string = packet_read_str(&pb, 10);
+    if (r_str != "") {
+        return 4;
+    }
+
+    packet_write_u8(&pb, 250);
+    let r_short_u16: int = packet_read_u16(&pb);
+    if (r_short_u16 != 0) {
+        return 5;
+    }
+
+    let r_valid: int = packet_read_u8(&pb);
+    if (r_valid != 250) {
+        return 6;
+    }
+
+    return 0;
+}

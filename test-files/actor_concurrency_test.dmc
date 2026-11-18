@@ -1,0 +1,223 @@
+import "actor";
+
+#[test]
+fn test_actor_creation() -> int {
+    var a: Actor = actor_new(101);
+    if (a.id != 101) {
+        return 1;
+    }
+    if (a.state != 0) {
+        return 2;
+    }
+    if (a.mailbox_len != 0) {
+        return 3;
+    }
+    if (a.restart_count != 0) {
+        return 4;
+    }
+    if (a.status != 0) {
+        return 5;
+    }
+    if (actor_is_active(&a) != 1) {
+        return 6;
+    }
+    return 0;
+}
+
+#[test]
+fn test_actor_message_dispatch() -> int {
+    var a: Actor = actor_new(202);
+    var msg1: ActorMessage = actor_message_new(0, 1, 15, "msg1");
+    if (msg1.msg_type != 0 || msg1.sender_id != 1 || msg1.payload_int != 15 || msg1.payload_str != "msg1") {
+        return 1;
+    }
+    let res1: int = actor_send(&a, msg1);
+    if (res1 != 1) {
+        return 2;
+    }
+    if (a.mailbox_len != 1) {
+        return 3;
+    }
+    var msg2: ActorMessage = actor_message_new(0, 2, 25, "msg2");
+    let res2: int = actor_send(&a, msg2);
+    if (res2 != 1) {
+        return 4;
+    }
+    if (a.mailbox_len != 2) {
+        return 5;
+    }
+    return 0;
+}
+
+#[test]
+fn test_actor_state_update() -> int {
+    var a: Actor = actor_new(303);
+    var msg_add: ActorMessage = actor_message_new(0, 1, 50, "");
+    actor_send(&a, msg_add);
+    let h1: int = actor_handle_message(&a, msg_add);
+    if (h1 != 1) {
+        return 1;
+    }
+    if (a.state != 50) {
+        return 2;
+    }
+    if (a.mailbox_len != 0) {
+        return 3;
+    }
+
+    var msg_mul: ActorMessage = actor_message_new(2, 1, 3, "");
+    actor_send(&a, msg_mul);
+    let h2: int = actor_handle_message(&a, msg_mul);
+    if (h2 != 1) {
+        return 4;
+    }
+    if (a.state != 150) {
+        return 5;
+    }
+
+    var msg_set: ActorMessage = actor_message_new(1, 1, 42, "");
+    actor_send(&a, msg_set);
+    let h3: int = actor_handle_message(&a, msg_set);
+    if (h3 != 1) {
+        return 6;
+    }
+    if (a.state != 42) {
+        return 7;
+    }
+
+    var msg_reset: ActorMessage = actor_message_new(3, 1, 0, "");
+    actor_send(&a, msg_reset);
+    let h4: int = actor_handle_message(&a, msg_reset);
+    if (h4 != 1) {
+        return 8;
+    }
+    if (a.state != 0) {
+        return 9;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_actor_lifecycle_and_invalidation() -> int {
+    var a: Actor = actor_new(404);
+    var msg_stop: ActorMessage = actor_message_new(4, 1, 0, "stop");
+    actor_send(&a, msg_stop);
+    let h_stop: int = actor_handle_message(&a, msg_stop);
+    if (h_stop != 0) {
+        return 1;
+    }
+    if (a.status != 1) {
+        return 2;
+    }
+    if (actor_is_stopped(&a) != 1) {
+        return 3;
+    }
+    if (actor_is_active(&a) != 0) {
+        return 4;
+    }
+
+    var msg_after_stop: ActorMessage = actor_message_new(0, 1, 10, "");
+    let send_dead: int = actor_send(&a, msg_after_stop);
+    if (send_dead != 0) {
+        return 5;
+    }
+    let handle_dead: int = actor_handle_message(&a, msg_after_stop);
+    if (handle_dead != 0) {
+        return 6;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_supervisor_restart_logic() -> int {
+    var s: Supervisor = supervisor_new(0, 2);
+    if (s.policy != 0) {
+        return 1;
+    }
+    if (s.max_restarts != 2) {
+        return 2;
+    }
+    if (s.actor_count != 0) {
+        return 3;
+    }
+    let cnt: int = supervisor_add_actor(&s);
+    if (cnt != 1 || s.actor_count != 1) {
+        return 4;
+    }
+
+    var a: Actor = actor_new(505);
+    var msg_work: ActorMessage = actor_message_new(0, 1, 99, "");
+    actor_send(&a, msg_work);
+    actor_handle_message(&a, msg_work);
+    if (a.state != 99) {
+        return 5;
+    }
+
+    actor_fail(&a);
+    if (a.status != 2 || actor_is_failed(&a) != 1) {
+        return 6;
+    }
+
+    let r1: int = supervisor_restart_actor(&s, &a);
+    if (r1 != 1) {
+        return 7;
+    }
+    if (a.status != 0 || a.restart_count != 1 || a.state != 0 || a.mailbox_len != 0) {
+        return 8;
+    }
+
+    actor_fail(&a);
+    let r2: int = supervisor_restart_actor(&s, &a);
+    if (r2 != 1) {
+        return 9;
+    }
+    if (a.status != 0 || a.restart_count != 2) {
+        return 10;
+    }
+
+    actor_fail(&a);
+    let r3: int = supervisor_restart_actor(&s, &a);
+    if (r3 != 0) {
+        return 11;
+    }
+    if (a.status != 2 || a.restart_count != 2) {
+        return 12;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_supervisor_policies() -> int {
+    var s_one: Supervisor = supervisor_new(0, 5);
+    var s_all: Supervisor = supervisor_new(1, 5);
+    if (s_one.policy != 0) {
+        return 1;
+    }
+    if (s_all.policy != 1) {
+        return 2;
+    }
+
+    var a1: Actor = actor_new(601);
+    var a2: Actor = actor_new(602);
+    supervisor_add_actor(&s_all);
+    supervisor_add_actor(&s_all);
+    if (s_all.actor_count != 2) {
+        return 3;
+    }
+
+    actor_fail(&a1);
+    actor_fail(&a2);
+    let ok1: int = supervisor_restart_actor(&s_all, &a1);
+    let ok2: int = supervisor_restart_actor(&s_all, &a2);
+    if (ok1 != 1 || ok2 != 1) {
+        return 4;
+    }
+    if (a1.status != 0 || a2.status != 0) {
+        return 5;
+    }
+
+    return 0;
+}

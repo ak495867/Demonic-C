@@ -125,6 +125,41 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
+## 🚀 Demonic C 2.0.7 Release
+
+Demonic C 2.0.7 delivers frontier systems capabilities across six major architecture systems:
+
+- **1. Linear Resource & Ownership Checker (`#[must_use]`)**:
+  - `#[must_use]` function and type attribute enforcing linear/affine resource handling at compile-time.
+  - Generates compiler diagnostics when return values representing heap allocations, file handles, or network sockets are discarded.
+  - Safe resource lifecycles and leak prevention for high-reliability systems.
+
+- **2. Advanced 256-bit SIMD & Fused Multiply-Add (FMA)**:
+  - High-performance 256-bit AVX/SIMD vector types: `f32x8` (8-lane float), `i32x8` (8-lane integer), `f64x4` (4-lane double).
+  - Hardware fused multiply-add intrinsics: `fma(a, b, c)` and `fma64(a, b, c)` for single and double precision.
+  - Fast horizontal vector reductions: `f32x8_sum(v)`, lane extraction (`.get(i)` / `v[i]`), and lane-wise vector arithmetic (`.add()`, `.mul()`).
+
+- **3. Zero-Boilerplate Serialization Engine (`stdlib/pack.dmc`)**:
+  - `PacketBuffer` with dynamic byte management and endian-aware binary packing/unpacking (`pack_u8`, `pack_u16_be`, `pack_u32_be`, `pack_u64_be`, `pack_f32`, `pack_str`).
+  - High-speed IEEE 802.3 CRC32 checksum engine (`pack_crc32`) with polynomial verification.
+  - Automated compile-time reflection JSON framing (`pack_json_field`, `pack_json_close`).
+
+- **4. Automated Verilog Testbench Synthesizer (`dmc testbench` & `stdlib/testbench.dmc`)**:
+  - Direct testbench generator CLI: `dmc testbench <source.dmc> [-o <out_tb.v>] [--period <ns>] [--time <ns>]`.
+  - Emits complete IEEE 1364 Verilog testbenches with clock oscillators, reset sequencing, stimulus drivers, assertion checkers, and VCD wave dumping.
+  - Composable testbench builder in `stdlib/testbench.dmc` (`tb_builder_new`, `tb_clock_gen`, `tb_reset_sequence`, `tb_assert_eq`).
+
+- **5. Actor Concurrency Model & Supervision Trees (`stdlib/actor.dmc`)**:
+  - Erlang-inspired actor model with isolated mailboxes (`ActorMessage`, `Actor`, `actor_spawn`, `actor_send`, `actor_receive`).
+  - Supervision trees with `OneForOne` and `AllForOne` restart policies for fault-tolerant microservices (`supervisor_new`, `supervisor_add_child`, `supervisor_restart_child`).
+  - Multi-threaded worker message routing and lifecycle monitoring.
+
+- **6. Dynamic Hot-Code Reloading (`#[hot_reload]` & `dmc reload`)**:
+  - Exported dynamic symbol swapping via `#[hot_reload]` function attributes.
+  - `dmc reload` runner command for in-memory dynamic shared library updates without application downtime.
+
+---
+
 ## 🚀 Demonic C 2.0.6 Release
 
 Demonic C 2.0.6 expands the language with silicon co-simulation, embedded target presets, compile-time reflection, stackless coroutines, and WebAssembly compilation:

@@ -1,0 +1,136 @@
+struct ActorMessage {
+    msg_type: int,
+    sender_id: int,
+    payload_int: int,
+    payload_str: string
+}
+
+struct Actor {
+    id: int,
+    state: int,
+    mailbox_len: int,
+    restart_count: int,
+    status: int
+}
+
+struct Supervisor {
+    policy: int,
+    max_restarts: int,
+    actor_count: int
+}
+
+fn actor_new(id: int) -> Actor {
+    let a: Actor = Actor {
+        id: id,
+        state: 0,
+        mailbox_len: 0,
+        restart_count: 0,
+        status: 0
+    };
+    return a;
+}
+
+fn actor_message_new(msg_type: int, sender_id: int, payload_int: int, payload_str: string) -> ActorMessage {
+    let m: ActorMessage = ActorMessage {
+        msg_type: msg_type,
+        sender_id: sender_id,
+        payload_int: payload_int,
+        payload_str: payload_str
+    };
+    return m;
+}
+
+fn actor_send(a: *Actor, msg: ActorMessage) -> int {
+    if (a.status != 0) {
+        return 0;
+    }
+    a.mailbox_len = a.mailbox_len + 1;
+    return 1;
+}
+
+fn actor_handle_message(a: *Actor, msg: ActorMessage) -> int {
+    if (a.status != 0) {
+        return 0;
+    }
+    if (a.mailbox_len > 0) {
+        a.mailbox_len = a.mailbox_len - 1;
+    }
+    if (msg.payload_str == "fail" || msg.payload_str == "crash" || msg.msg_type == 5) {
+        a.status = 2;
+        return 0;
+    }
+    if (msg.payload_str == "stop" || msg.msg_type == 4) {
+        a.status = 1;
+        return 0;
+    }
+    if (msg.payload_str == "reset" || msg.msg_type == 3) {
+        a.state = 0;
+        return 1;
+    }
+    if (msg.payload_str == "set" || msg.msg_type == 1) {
+        a.state = msg.payload_int;
+        return 1;
+    }
+    if (msg.payload_str == "mul" || msg.msg_type == 2) {
+        a.state = a.state * msg.payload_int;
+        return 1;
+    }
+    a.state = a.state + msg.payload_int;
+    return 1;
+}
+
+fn actor_is_active(a: *Actor) -> int {
+    if (a.status == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+fn actor_is_stopped(a: *Actor) -> int {
+    if (a.status == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+fn actor_is_failed(a: *Actor) -> int {
+    if (a.status == 2) {
+        return 1;
+    }
+    return 0;
+}
+
+fn actor_stop(a: *Actor) -> int {
+    a.status = 1;
+    return 1;
+}
+
+fn actor_fail(a: *Actor) -> int {
+    a.status = 2;
+    return 1;
+}
+
+fn supervisor_new(policy: int, max_restarts: int) -> Supervisor {
+    let s: Supervisor = Supervisor {
+        policy: policy,
+        max_restarts: max_restarts,
+        actor_count: 0
+    };
+    return s;
+}
+
+fn supervisor_add_actor(s: *Supervisor) -> int {
+    s.actor_count = s.actor_count + 1;
+    return s.actor_count;
+}
+
+fn supervisor_restart_actor(s: *Supervisor, a: *Actor) -> int {
+    if (a.restart_count >= s.max_restarts) {
+        return 0;
+    }
+    a.restart_count = a.restart_count + 1;
+    a.status = 0;
+    a.state = 0;
+    a.mailbox_len = 0;
+    return 1;
+}

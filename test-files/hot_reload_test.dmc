@@ -1,0 +1,22 @@
+#[hot_reload]
+fn reloadable_compute(x: int, y: int) -> int {
+    return x * x + y * y;
+}
+
+#[hot_reload]
+fn reloadable_version() -> int {
+    return 207;
+}
+
+#[test]
+fn test_hot_reload_dispatch() -> int {
+    let c: int = reloadable_compute(3, 4);
+    if (c != 25) {
+        return 1;
+    }
+    let v: int = reloadable_version();
+    if (v != 207) {
+        return 2;
+    }
+    return 0;
+}

@@ -1,0 +1,90 @@
+struct TestbenchConfig {
+    module_name: string,
+    clk_period_ns: int,
+    sim_time_ns: int
+}
+
+fn tb_config_new(mod_name: string, clk_period: int, sim_time: int) -> TestbenchConfig {
+    let cfg: TestbenchConfig = TestbenchConfig {
+        module_name: mod_name,
+        clk_period_ns: clk_period,
+        sim_time_ns: sim_time
+    };
+    return cfg;
+}
+
+fn tb_emit_clock_gen(clk_period: int) -> string {
+    var half: int = clk_period / 2;
+    if (half <= 0) {
+        half = 1;
+    }
+    var out: string = "initial begin\n";
+    out = out + "    clk = 0;\n";
+    out = out + "    forever #" + text_from_int(half) + " clk = ~clk;\n";
+    out = out + "end\n";
+    return out;
+}
+
+fn tb_emit_reset_seq(reset_duration: int) -> string {
+    var dur: int = reset_duration;
+    if (dur < 0) {
+        dur = 0;
+    }
+    var out: string = "rst = 1;\n";
+    out = out + "#" + text_from_int(dur) + ";\n";
+    out = out + "rst = 0;\n";
+    return out;
+}
+
+fn tb_format_check(signal_name: string, expected_val: int) -> string {
+    var out: string = "if (" + signal_name + " !== " + text_from_int(expected_val) + ") begin\n";
+    out = out + "    $display(\"ASSERTION FAILED: " + signal_name + " != %d (expected " + text_from_int(expected_val) + ")\", " + signal_name + ");\n";
+    out = out + "    $finish;\n";
+    out = out + "end\n";
+    return out;
+}
+
+fn tb_emit_full_testbench(cfg: *TestbenchConfig, port_signals: string, stimulus: string) -> string {
+    var out: string = "`timescale 1ns / 1ps\n\n";
+    out = out + "module " + cfg.module_name + "_tb;\n\n";
+
+    if (text_len(port_signals) > 0) {
+        out = out + port_signals;
+        if (text_char_at(port_signals, text_len(port_signals) - 1) != 10) {
+            out = out + "\n";
+        }
+        out = out + "\n";
+    }
+
+    if (cfg.clk_period_ns > 0) {
+        out = out + tb_emit_clock_gen(cfg.clk_period_ns);
+        out = out + "\n";
+    }
+
+    if (text_len(stimulus) > 0) {
+        if (text_contains(stimulus, "initial begin") != 0) {
+            out = out + stimulus;
+            if (text_char_at(stimulus, text_len(stimulus) - 1) != 10) {
+                out = out + "\n";
+            }
+        } else {
+            out = out + "initial begin\n";
+            out = out + stimulus;
+            if (text_char_at(stimulus, text_len(stimulus) - 1) != 10) {
+                out = out + "\n";
+            }
+            out = out + "end\n";
+        }
+        out = out + "\n";
+    }
+
+    if (cfg.sim_time_ns > 0) {
+        out = out + "initial begin\n";
+        out = out + "    #" + text_from_int(cfg.sim_time_ns) + ";\n";
+        out = out + "    $finish;\n";
+        out = out + "end\n\n";
+    }
+
+    out = out + "endmodule\n";
+    return out;
+}

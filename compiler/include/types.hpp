@@ -50,6 +50,9 @@ static inline std::string ctype(const std::string& type) {
     if (type == "size_t") return "size_t";
     if (type == "f32x4") return "dmc_f32x4";
     if (type == "i32x4") return "dmc_i32x4";
+    if (type == "f32x8") return "dmc_f32x8";
+    if (type == "i32x8") return "dmc_i32x8";
+    if (type == "f64x4") return "dmc_f64x4";
     if (type == "vec" || type == "map" || type == "queue") return "int";
     if (type == "arena") return "long long";
     if (type.rfind("?*", 0) == 0) return ctype(type.substr(2)) + "*";

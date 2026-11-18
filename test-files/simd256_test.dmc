@@ -1,0 +1,49 @@
+#[test]
+fn test_simd256_f32x8() -> int {
+    let v: f32x8 = f32x8(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0);
+    let s: float = f32x8_sum(v);
+    if (s < 35.9 || s > 36.1) {
+        return 1;
+    }
+    let e0: float = f32x8_get(v, 0);
+    if (e0 < 0.9 || e0 > 1.1) {
+        return 2;
+    }
+    let e7: float = f32x8_get(v, 7);
+    if (e7 < 7.9 || e7 > 8.1) {
+        return 3;
+    }
+    return 0;
+}
+
+#[test]
+fn test_simd256_i32x8() -> int {
+    let vi: i32x8 = i32x8(10, 20, 30, 40, 50, 60, 70, 80);
+    let i0: int = i32x8_get(vi, 0);
+    if (i0 != 10) {
+        return 1;
+    }
+    let i5: int = i32x8_get(vi, 5);
+    if (i5 != 60) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_simd256_f64x4_and_fma() -> int {
+    let vf: f64x4 = f64x4(1.5, 2.5, 3.5, 4.5);
+    let d1: double = f64x4_get(vf, 1);
+    if (d1 < 2.4 || d1 > 2.6) {
+        return 1;
+    }
+    let res: float = fma(2.0, 3.0, 4.0);
+    if (res < 9.9 || res > 10.1) {
+        return 2;
+    }
+    let res64: double = fma64(2.0, 3.0, 4.0);
+    if (res64 < 9.9 || res64 > 10.1) {
+        return 3;
+    }
+    return 0;
+}
