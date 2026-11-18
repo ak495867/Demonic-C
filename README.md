@@ -125,6 +125,37 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
+## 🚀 Demonic C 2.0.5 Release
+
+Demonic C 2.0.5 establishes the unified systems architecture spanning bare-metal electron manipulation, custom memory layouts, formal verification contracts, and hardware FPGA synthesis across 4 architectural pillars:
+
+- **Pillar I: Bare-Metal MMIO & Hardware Bits**:
+  - Arbitrary bit-widths (`u1` through `u64`, `i1` through `i64`, `usize`, `isize`) with binary literal syntax (`0b1010_0011`).
+  - Memory-mapped I/O with volatile intrinsics: `volatile_load8`, `volatile_load16`, `volatile_load32`, `volatile_load64`, `volatile_store8`, `volatile_store16`, `volatile_store32`, `volatile_store64`.
+  - CPU control primitives: `cpu_barrier`, `cpu_pause`, `cpu_hlt`, `cpu_cli`, `cpu_sti`, `cpu_rdtsc`, `mem_ptr`.
+  - Extended inline assembly: `asm volatile ("..." : ...);`.
+  - Execution attributes: `#[naked]`, `#[section("...")]` with cross-platform Mach-O / ELF normalization, and `#[no_mangle]`.
+
+- **Pillar II: Memory Layout & Packed Bitfields**:
+  - Explicit memory representations: `#[repr(packed)]` and `#[align(N)]`.
+  - Sub-byte packed bitfield syntax within structs.
+  - Raw pointer arithmetic and dereference builtins: `ptr_add`, `ptr_diff`, `ptr_read8/16/32/64`, `ptr_write8/16/32/64`.
+  - Freestanding memory allocators in `stdlib/alloc.dmc`: bump-pointer `ArenaAllocator` and fixed-size chunk `PoolAllocator`.
+
+- **Pillar III: Formal Contracts & ADTs**:
+  - Design-by-Contract function validation with preconditions (`requires`) and postconditions (`ensures` binding `result`).
+  - Side-effect-free pure functions via `pure fn`.
+  - Pattern matching with conditional arm guards: `Pattern(v) if v > condition =>`.
+  - Formal invariant and transition verification via `stdlib/policy.dmc`.
+
+- **Pillar IV: Hardware Synthesis & FPGA HDL**:
+  - Synthesizable IEEE 1364 Verilog code generator (`dmc synth <file.dmc> -o <file.v>`).
+  - Hardware description primitives: `module <Name>`, `reg`, `wire`, synchronous clocked blocks (`sync`), and combinational blocks (`comb`).
+  - Automated cycle-accurate C software simulation emission (`<Name>_tick`).
+  - Bit-level HDL manipulation functions in `stdlib/hdl.dmc` (`hdl_slice`, `hdl_concat`, `hdl_bit`, `hdl_set_bit`).
+
+---
+
 ## 🚀 Demonic C 2.0.4 Release
 
 Demonic C 2.0.4 delivers the second major wave of the Standard Library, adding 12 high-performance, zero-dependency modules (24 extended standard library modules total):
