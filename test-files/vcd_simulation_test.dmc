@@ -1,0 +1,52 @@
+import "vcd";
+
+#[test]
+fn test_vcd_binary_format() -> int {
+    var b1: string = vcd_to_binary_str(1, 1);
+    if (b1 != "1") {
+        return 1;
+    }
+
+    var b4: string = vcd_to_binary_str(5, 4);
+    if (b4 != "0101") {
+        return 2;
+    }
+
+    var b8: string = vcd_to_binary_str(15, 8);
+    if (b8 != "00001111") {
+        return 3;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_vcd_trace_generation() -> int {
+    var w: VcdWriter = vcd_new("1ns", "counter");
+    if (w.timescale != "1ns") {
+        return 1;
+    }
+    if (w.module_name != "counter") {
+        return 2;
+    }
+
+    var hdr: string = vcd_format_header(&w, "clk", "!", 1, "val", "\"", 4);
+    if (hdr == "") {
+        return 3;
+    }
+
+    var chg: string = vcd_format_change(20, "!", 1, 1);
+    if (chg != "#20\n1!\n") {
+        return 4;
+    }
+
+    if (sim_assert_cycle(42, 42, 5) != 1) {
+        return 5;
+    }
+
+    if (sim_assert_cycle(42, 99, 5) != 0) {
+        return 6;
+    }
+
+    return 0;
+}

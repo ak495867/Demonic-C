@@ -1,0 +1,26 @@
+#[export]
+#[no_mangle]
+fn wasm_add(a: int, b: int) -> int {
+    return a + b;
+}
+
+#[export]
+#[no_mangle]
+fn wasm_bit_shift(val: int, shift: int) -> int {
+    return val << shift;
+}
+
+#[test]
+fn test_wasm_exports() -> int {
+    var sum: int = wasm_add(15, 27);
+    if (sum != 42) {
+        return 1;
+    }
+
+    var shifted: int = wasm_bit_shift(1, 4);
+    if (shifted != 16) {
+        return 2;
+    }
+
+    return 0;
+}

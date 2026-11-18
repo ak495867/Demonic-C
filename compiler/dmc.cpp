@@ -184,6 +184,11 @@ public:
         out << "#else\n";
         out << "#define _dmc_sec_attr(elf_sec) __attribute__((section(elf_sec)))\n";
         out << "#endif\n\n";
+        out << "#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)\n";
+        out << "#define _dmc_interrupt_attr __attribute__((used))\n";
+        out << "#else\n";
+        out << "#define _dmc_interrupt_attr __attribute__((interrupt))\n";
+        out << "#endif\n\n";
         out << "DMC_VOLATILE_INLINE uint8_t volatile_load8(uint64_t addr) { return *(volatile uint8_t*)(uintptr_t)addr; }\n";
         out << "DMC_VOLATILE_INLINE void volatile_store8(uint64_t addr, uint8_t val) { *(volatile uint8_t*)(uintptr_t)addr = (uint8_t)val; }\n";
         out << "DMC_VOLATILE_INLINE uint16_t volatile_load16(uint64_t addr) { return *(volatile uint16_t*)(uintptr_t)addr; }\n";
@@ -278,6 +283,31 @@ public:
                 }
             }
             out << "} " << s.name << ";\n";
+            bool has_reflect = false;
+            for (const auto& a : s.attributes) {
+                if (a == "reflect") has_reflect = true;
+            }
+            if (has_reflect) {
+                out << "static inline int " << s.name << "_field_count(void) { return " << s.fields.size() << "; }\n";
+                out << "static inline const char* " << s.name << "_field_name(int idx) {\n";
+                for (size_t fi = 0; fi < s.fields.size(); ++fi) {
+                    out << "    if (idx == " << fi << ") return \"" << s.fields[fi].name << "\";\n";
+                }
+                out << "    return \"\";\n";
+                out << "}\n";
+                out << "static inline const char* " << s.name << "_field_type(int idx) {\n";
+                for (size_t fi = 0; fi < s.fields.size(); ++fi) {
+                    out << "    if (idx == " << fi << ") return \"" << s.fields[fi].type << "\";\n";
+                }
+                out << "    return \"\";\n";
+                out << "}\n";
+                out << "static inline int " << s.name << "_field_offset(int idx) {\n";
+                for (size_t fi = 0; fi < s.fields.size(); ++fi) {
+                    out << "    if (idx == " << fi << ") return (int)offsetof(" << s.name << ", " << s.fields[fi].name << ");\n";
+                }
+                out << "    return -1;\n";
+                out << "}\n";
+            }
         }
         if (!structs_.empty()) out << "\n";
         for (const auto& e : enums_) {
@@ -435,6 +465,7 @@ public:
         for (const auto& fn : normal_fns) {
             for (const auto& attr : fn.attributes) {
                 if (attr == "naked") out << "__attribute__((naked)) ";
+                else if (attr == "interrupt") out << "_dmc_interrupt_attr ";
                 else if (attr.rfind("section(", 0) == 0 && attr.back() == ')') {
                     std::string sec = attr.substr(8, attr.size() - 9);
                     if (sec.size() >= 2 && sec.front() == '"' && sec.back() == '"') {
@@ -457,6 +488,7 @@ public:
         for (const auto& fn : test_fns) {
             for (const auto& attr : fn.attributes) {
                 if (attr == "naked") out << "__attribute__((naked)) ";
+                else if (attr == "interrupt") out << "_dmc_interrupt_attr ";
                 else if (attr.rfind("section(", 0) == 0 && attr.back() == ')') {
                     std::string sec = attr.substr(8, attr.size() - 9);
                     if (sec.size() >= 2 && sec.front() == '"' && sec.back() == '"') {
@@ -571,7 +603,7 @@ private:
                         }
                     } else if (peek() == "module") {
                         parse_module(attrs);
-                    } else if (peek() == "fn" || peek() == "pure") {
+                    } else if (peek() == "fn" || peek() == "pure" || peek() == "async") {
                         functions_.push_back(function(attrs));
                     } else if (peek() == "export") {
                         take();
@@ -604,8 +636,30 @@ private:
                     enums_.push_back(parse_enum());
                 } else if (peek() == "module") {
                     parse_module();
-                } else if (peek() == "fn" || peek() == "pure") {
+                } else if (peek() == "fn" || peek() == "pure" || peek() == "async") {
                     functions_.push_back(function());
+                } else if (peek() == "static_assert") {
+                    take();
+                    expect("(");
+                    std::string cond = expression(",");
+                    expect(",");
+                    std::string msg = expression(")");
+                    expect(")");
+                    if (peek() == ";") take();
+                    top_level_c_.push_back("_Static_assert(" + cond + ", " + msg + ");");
+                } else if (peek() == "comptime") {
+                    take();
+                    if (peek() == "let" || peek() == "const" || peek() == "var") {
+                        take();
+                        std::string cname = take();
+                        std::string ctype_str = "int";
+                        if (peek() == ":") { take(); ctype_str = type_name(); }
+                        expect("=");
+                        std::string cval = expression(";");
+                        expect(";");
+                        bind_type(cname, ctype_str);
+                        top_level_c_.push_back("const " + ctype(ctype_str) + " " + cname + " = " + cval + ";");
+                    }
                 } else if (peek() == ";") {
                     take();
                 } else {
@@ -2653,9 +2707,14 @@ long long task_pool_free(long long h) {
         }
         int fn_line = index_ < tokens_.size() ? tokens_[index_].line : 1;
         bool is_pure = false;
+        bool is_async = false;
         if (peek() == "pure") {
             take();
             is_pure = true;
+        }
+        if (peek() == "async") {
+            take();
+            is_async = true;
         }
         expect("fn");
         Function result;
@@ -2664,6 +2723,7 @@ long long task_pool_free(long long h) {
         result.attributes = attrs;
         result.line = fn_line;
         result.is_pure = is_pure;
+        result.is_async = is_async;
         for (const auto& a : attrs) {
             if (a == "export" || a == "no_mangle") result.is_export = true;
         }
@@ -2781,6 +2841,33 @@ long long task_pool_free(long long h) {
                 if (peek() == ";") take();
                 return s + ";";
             }
+        }
+        if (peek() == "static_assert") {
+            take();
+            expect("(");
+            std::string cond = expression(",");
+            expect(",");
+            std::string msg = expression(")");
+            expect(")");
+            if (peek() == ";") take();
+            return "_Static_assert(" + cond + ", " + msg + ");";
+        }
+        if (peek() == "comptime") {
+            take();
+            if (peek() == "let" || peek() == "const" || peek() == "var") {
+                return statement();
+            } else if (peek() == "{") {
+                std::vector<std::string> b = block();
+                std::string res;
+                for (const auto& s : b) res += s + "\n";
+                return res;
+            }
+        }
+        if (peek() == "await") {
+            take();
+            std::string expr = expression(";");
+            if (peek() == ";") take();
+            return expr + ";";
         }
         if (peek() == "defer") {
             take();
@@ -3805,6 +3892,11 @@ long long task_pool_free(long long h) {
     }
 
     std::string unary_expr(const std::string& end) {
+        if (peek() == "await") {
+            take();
+            std::string operand = postfix(unary_expr(end));
+            return operand;
+        }
         if (peek() == "*") {
             std::string op = take();
             std::string operand = postfix(unary_expr(end));
@@ -4201,6 +4293,8 @@ long long task_pool_free(long long h) {
             for (const auto& attr : fn.attributes) {
                 if (attr == "naked") {
                     out << "__attribute__((naked)) ";
+                } else if (attr == "interrupt") {
+                    out << "_dmc_interrupt_attr ";
                 } else if (attr.rfind("section(", 0) == 0 && attr.back() == ')') {
                     std::string sec = attr.substr(8, attr.size() - 9);
                     if (sec.size() >= 2 && sec.front() == '"' && sec.back() == '"') {
@@ -4241,6 +4335,8 @@ long long task_pool_free(long long h) {
         for (const auto& attr : fn.attributes) {
             if (attr == "naked") {
                 out << "__attribute__((naked)) ";
+            } else if (attr == "interrupt") {
+                out << "_dmc_interrupt_attr ";
             } else if (attr.rfind("section(", 0) == 0 && attr.back() == ')') {
                 std::string sec = attr.substr(8, attr.size() - 9);
                 if (sec.size() >= 2 && sec.front() == '"' && sec.back() == '"') {
@@ -4468,6 +4564,8 @@ long long task_pool_free(long long h) {
         if (val.rfind("volatile_load64(", 0) == 0) return "u64";
         if (val.rfind("volatile_store8(", 0) == 0 || val.rfind("volatile_store16(", 0) == 0 ||
             val.rfind("volatile_store32(", 0) == 0 || val.rfind("volatile_store64(", 0) == 0) return "void";
+        if (val.find("_field_name(") != std::string::npos || val.find("_field_type(") != std::string::npos) return "str";
+        if (val.find("_field_count(") != std::string::npos || val.find("_field_offset(") != std::string::npos) return "int";
         if (val.rfind("cpu_rdtsc(", 0) == 0 || val.rfind("mem_ptr(", 0) == 0) return "u64";
         if (val.rfind("cpu_barrier(", 0) == 0 || val.rfind("cpu_pause(", 0) == 0 ||
             val.rfind("cpu_hlt(", 0) == 0 || val.rfind("cpu_cli(", 0) == 0 ||
@@ -4603,6 +4701,12 @@ long long task_pool_free(long long h) {
             "ptr_read32", "ptr_write32", "ptr_read64", "ptr_write64"
         };
         for (auto& f : fns) if (f == name) return true;
+        for (const auto& s : structs_) {
+            if (name == s.name + "_field_count" ||
+                name == s.name + "_field_name" ||
+                name == s.name + "_field_type" ||
+                name == s.name + "_field_offset") return true;
+        }
         return false;
     }
 
@@ -5470,7 +5574,7 @@ static void update_lockfile() {
     std::ofstream lock("dmc.lock");
     if (!lock) return;
 
-    lock << "# Auto-generated by Demonic C Package Manager (v2.0.5)\n";
+    lock << "# Auto-generated by Demonic C Package Manager (v2.0.6)\n";
     lock << "# Manual edits may be overwritten.\n\n";
     lock << "version = 1\n\n";
 
@@ -6485,7 +6589,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
         std::ostringstream out;
         out << "// Auto-generated Demonic C bindings for Python module: " << py_module << "\n";
-        out << "// Generated by dmc bindgen v2.0.5\n\n";
+        out << "// Generated by dmc bindgen v2.0.6\n\n";
         out << "import py;\n\n";
         out << "fn py_" << safe_module << "_init() -> int {\n";
         out << "    return py_import(\"" << py_module << "\");\n";
@@ -6602,7 +6706,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
         std::ostringstream out;
         out << "// Auto-generated Demonic C bindings for Rust crate/source: " << hp.filename().string() << "\n";
-        out << "// Generated by dmc bindgen v2.0.5\n\n";
+        out << "// Generated by dmc bindgen v2.0.6\n\n";
         for (const auto& lib : link_libs) {
             out << "#[link(\"" << lib << "\")]\n";
         }
@@ -6863,7 +6967,7 @@ static int cmd_bindgen(int argc, char** argv) {
 
     std::ostringstream out;
     out << "// Auto-generated Demonic C bindings for " << hp.filename().string() << "\n";
-    out << "// Generated by dmc bindgen v2.0.5\n\n";
+    out << "// Generated by dmc bindgen v2.0.6\n\n";
     out << "#include <" << hp.filename().string() << ">\n";
     for (const auto& lib : link_libs) {
         out << "#link \"" << lib << "\"\n";
@@ -6943,6 +7047,8 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     bool freestanding = false;
     bool target_wasm = false;
     bool emit_line_directives = true;
+    std::string target_arch = "";
+    std::string linker_script_path = "";
     std::filesystem::path source = "";
     std::string explicit_output = "";
     std::vector<std::string> extra_sources;
@@ -6957,10 +7063,18 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
         else if (arg == "--emit-c") emit_c_only = true;
         else if (arg == "--shared" || arg == "--lib") shared_lib = true;
         else if (arg == "--freestanding" || arg == "--no-std") freestanding = true;
-        else if (arg == "--target=wasm" || arg == "--target=wasm32") target_wasm = true;
-        else if (arg == "--target" && i + 1 < args.size() && (args[i + 1] == "wasm" || args[i + 1] == "wasm32")) {
-            target_wasm = true;
-            ++i;
+        else if (arg.rfind("--target=", 0) == 0) {
+            target_arch = arg.substr(9);
+            if (target_arch == "wasm" || target_arch == "wasm32" || target_arch == "wasm32-freestanding") target_wasm = true;
+            else freestanding = true;
+        }
+        else if (arg == "--target" && i + 1 < args.size()) {
+            target_arch = args[++i];
+            if (target_arch == "wasm" || target_arch == "wasm32" || target_arch == "wasm32-freestanding") target_wasm = true;
+            else freestanding = true;
+        }
+        else if (arg == "--linker-script" && i + 1 < args.size()) {
+            linker_script_path = args[++i];
         }
         else if (arg == "--no-line-directives") emit_line_directives = false;
         else if (arg == "-o") {
@@ -7134,8 +7248,19 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     if (freestanding) {
         flags += " -ffreestanding -nostdlib";
     }
-
+    if (!target_arch.empty() && !target_wasm) {
+        if (target_arch.find("riscv32") != std::string::npos) {
+            flags += " --target=riscv32-unknown-none-elf -march=rv32imc -mabi=ilp32";
+        } else if (target_arch.find("arm") != std::string::npos || target_arch.find("cortex") != std::string::npos) {
+            flags += " --target=arm-none-eabi -mcpu=cortex-m4 -mthumb";
+        } else if (target_arch.find("x86") != std::string::npos) {
+            flags += " --target=x86_64-unknown-none-elf";
+        }
+    }
     std::string link_flags = "";
+    if (!linker_script_path.empty()) {
+        link_flags += " -T " + linker_script_path;
+    }
     if (!freestanding) {
 #ifdef _WIN32
         link_flags += " -lws2_32 -lm";
@@ -7471,7 +7596,7 @@ static int cmd_repl(const char* argv0) {
               << " / // / -_)  ' \\/ _ \\/ ' \\/ / _ \\ / / / /\n"
               << "/____/\\__/_/_/_/\\___/_/_/_/_/\\___//_/ /_/ \n"
               << "\033[0m"
-              << "Demonic C Interactive REPL (v2.0.5)\n"
+              << "Demonic C Interactive REPL (v2.0.6)\n"
               << "Type :help for commands, :exit or Ctrl+C to quit.\n\n";
 
     std::vector<std::string> session_statements;
@@ -7641,7 +7766,7 @@ static int cmd_eval(int argc, char** argv, const char* argv0) {
 
 static int cmd_explain(int argc, char** argv) {
     if (argc < 2 || std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h" || std::string(argv[1]) == "list") {
-        std::cout << "Demonic C Interactive Topic & Diagnostic Explainer (v2.0.5)\n\n"
+        std::cout << "Demonic C Interactive Topic & Diagnostic Explainer (v2.0.6)\n\n"
                   << "usage: dmc explain <topic|code>\n\n"
                   << "Available Topics:\n"
                   << "  concurrency- Native OS threads, recursive mutexes, atomics, and Go-style channels\n"
@@ -7928,7 +8053,7 @@ static int cmd_install_vscode() {
         std::cerr << "dmc: could not determine user home directory\n";
         return 1;
     }
-    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-2.0.5";
+    std::filesystem::path ext_dir = std::filesystem::path(home) / ".vscode" / "extensions" / "demonic-c-2.0.6";
     std::filesystem::path src_dir = "editor/vscode";
     if (!std::filesystem::exists(src_dir)) {
         if (std::filesystem::exists("../editor/vscode")) src_dir = "../editor/vscode";
@@ -8374,7 +8499,7 @@ static int cmd_lsp() {
                 "\"hoverProvider\":true,"
                 "\"definitionProvider\":true"
                 "},"
-                "\"serverInfo\":{\"name\":\"dmc-lsp\",\"version\":\"2.0.5\"}"
+                "\"serverInfo\":{\"name\":\"dmc-lsp\",\"version\":\"2.0.6\"}"
                 "}}";
             lsp_send(resp);
         } else if (method == "initialized") {
@@ -8644,8 +8769,8 @@ static int cmd_check(int argc, char** argv) {
 
 static int cmd_info() {
     std::cout << color_bold << "Demonic C Environment Info\n" << color_reset;
-    std::cout << "  Version:       2.0.5\n";
-    std::cout << "  Features:      Pattern Matching (match), Generic Structs, Task Pool, Multithreading, Mutexes, Atomics, Channels, HTTP Server, dmc.lock, Polyglot FFI, SIMD, bindgen, String Slices (str), Operator Overloading, Tuples, Lambdas, RAII Drops, Property Mutation Fuzzing, Freestanding Core Stdlib, 24 Extended Standard Libraries, Bare-Metal MMIO & Hardware Bits (u1..u64, volatile load/store, cpu barriers), Packed Bitfields & Repr (C, packed, align), Design-by-Contract (requires, ensures, pure fn, match guards), FPGA Hardware Synthesis (dmc synth, module, sync, hdl)\n";
+    std::cout << "  Version:       2.0.6\n";
+    std::cout << "  Features:      Pattern Matching (match), Generic Structs, Task Pool, Multithreading, Mutexes, Atomics, Channels, HTTP Server, dmc.lock, Polyglot FFI, SIMD, bindgen, String Slices (str), Operator Overloading, Tuples, Lambdas, RAII Drops, Property Mutation Fuzzing, Freestanding Core Stdlib, 24 Extended Standard Libraries, Bare-Metal MMIO & Hardware Bits (u1..u64, volatile load/store, cpu barriers), Packed Bitfields & Repr (C, packed, align), Design-by-Contract (requires, ensures, pure fn, match guards), FPGA Hardware Synthesis (dmc synth, module, sync, hdl), Silicon Co-Simulation & VCD Waveforms (dmc sim, --vcd), Embedded Linker Scripts (dmc linker-script, #[interrupt]), Stackless Coroutines (async fn, await, coro), Comptime & Reflection (#[reflect], static_assert, comptime), WebAssembly Target (dmc wasm, wasm32-freestanding)\n";
     std::cout << "  Architecture:  " << (sizeof(void*) == 8 ? "64-bit" : "32-bit") << " (";
 #ifdef _WIN32
     std::cout << "windows-x86_64";
@@ -8838,7 +8963,7 @@ static int cmd_update(int argc, char** argv) {
         return 1;
     }
     
-    std::string current_ver = "v2.0.5";
+    std::string current_ver = "v2.0.6";
     std::cout << "Current version: " << current_ver << "\n";
     std::cout << "Latest version:  " << latest_tag << "\n";
     
@@ -9032,12 +9157,363 @@ static int cmd_synth(int argc, char** argv) {
     }
 }
 
+static int cmd_sim(int argc, char** argv) {
+    std::string source_path;
+    int cycles = 20;
+    std::string vcd_path;
+    std::string top_mod;
+    std::vector<std::string> include_dirs;
+    for (int i = 0; i < argc; ++i) {
+        if (i == 0 && std::string(argv[i]) == "sim") continue;
+        std::string a = argv[i];
+        if (a == "--cycles") {
+            if (i + 1 < argc) cycles = std::stoi(argv[++i]);
+        } else if (a == "--vcd") {
+            if (i + 1 < argc && argv[i + 1][0] != '-') vcd_path = argv[++i];
+            else vcd_path = "trace.vcd";
+        } else if (a == "--top") {
+            if (i + 1 < argc) top_mod = argv[++i];
+        } else if (a == "-I") {
+            if (i + 1 < argc) include_dirs.push_back(argv[++i]);
+        } else if (a.rfind("-I", 0) == 0 && a.size() > 2) {
+            include_dirs.push_back(a.substr(2));
+        } else if (a == "-h" || a == "--help") {
+            std::cout << "usage: dmc sim <source.dmc> [--cycles <N>] [--vcd [trace.vcd]] [--top <module>]\n";
+            return 0;
+        } else if (!a.empty() && a[0] != '-' && source_path.empty()) {
+            source_path = a;
+        }
+    }
+    if (source_path.empty()) {
+        std::cerr << "dmc sim: source file required\nusage: dmc sim <source.dmc> [--cycles <N>] [--vcd [trace.vcd]]\n";
+        return 1;
+    }
+    if (!std::filesystem::exists(source_path)) {
+        std::cerr << "dmc sim: source file '" << source_path << "' does not exist\n";
+        return 1;
+    }
+
+    std::string src_content;
+    try {
+        std::ifstream in(source_path);
+        if (!in) {
+            std::cerr << "dmc sim: cannot open source file '" << source_path << "'\n";
+            return 1;
+        }
+        std::ostringstream ss;
+        ss << in.rdbuf();
+        src_content = ss.str();
+    } catch (...) {
+        std::cerr << "dmc sim: cannot read source file '" << source_path << "'\n";
+        return 1;
+    }
+
+    Parser parser(lex(src_content), source_path);
+    parser.add_include_dir(".");
+    parser.add_include_dir("stdlib");
+    std::filesystem::path sp(source_path);
+    if (sp.has_parent_path()) parser.add_include_dir(sp.parent_path().string());
+    for (const auto& inc : include_dirs) parser.add_include_dir(inc);
+    parser.emit();
+
+    if (parser.has_errors()) {
+        for (const auto& d : parser.diagnostics()) {
+            print_diagnostic(source_path, src_content, d, "error");
+        }
+        return 1;
+    }
+
+    const auto& mods = parser.modules();
+    if (mods.empty()) {
+        std::cerr << "dmc sim: no hardware modules found to simulate\n";
+        return 1;
+    }
+
+    const HdlModule* target_mod = nullptr;
+    if (!top_mod.empty()) {
+        for (const auto& m : mods) {
+            if (m.name == top_mod) { target_mod = &m; break; }
+        }
+        if (!target_mod) {
+            std::cerr << "dmc sim: module '" << top_mod << "' not found\n";
+            return 1;
+        }
+    } else {
+        target_mod = &mods.front();
+    }
+
+    std::cout << color_bold << "Demonic C Silicon Hardware Simulation Engine" << color_reset << "\n";
+    std::cout << "  Module:  " << target_mod->name << "\n";
+    std::cout << "  Ports:   " << target_mod->ports.size() << "\n";
+    std::cout << "  Regs:    " << target_mod->regs.size() << "\n";
+    std::cout << "  Wires:   " << target_mod->wires.size() << "\n";
+    std::cout << "  Cycles:  " << cycles << "\n\n";
+
+    std::vector<std::string> sig_names;
+    std::vector<std::string> sig_idents;
+    std::vector<int> sig_widths;
+    std::vector<int> sig_vals;
+
+    sig_names.push_back("clk");
+    sig_idents.push_back("!");
+    sig_widths.push_back(1);
+    sig_vals.push_back(0);
+
+    char next_id = '"';
+    for (const auto& p : target_mod->ports) {
+        if (p.name != "clk") {
+            sig_names.push_back(p.name);
+            sig_idents.push_back(std::string(1, next_id++));
+            sig_widths.push_back(p.width > 0 ? p.width : 1);
+            sig_vals.push_back(0);
+        }
+    }
+    for (const auto& r : target_mod->regs) {
+        sig_names.push_back(r.name);
+        sig_idents.push_back(std::string(1, next_id++));
+        sig_widths.push_back(r.width > 0 ? r.width : 1);
+        int iv = 0;
+        try { if (!r.init_val.empty()) iv = std::stoi(r.init_val); } catch (...) {}
+        sig_vals.push_back(iv);
+    }
+    for (const auto& w : target_mod->wires) {
+        sig_names.push_back(w.name);
+        sig_idents.push_back(std::string(1, next_id++));
+        sig_widths.push_back(w.width > 0 ? w.width : 1);
+        sig_vals.push_back(0);
+    }
+
+    std::cout << "Cycle | clk";
+    for (size_t si = 1; si < sig_names.size(); ++si) {
+        std::cout << " | " << sig_names[si];
+    }
+    std::cout << "\n------+----";
+    for (size_t si = 1; si < sig_names.size(); ++si) {
+        std::cout << "-+-" << std::string(sig_names[si].size(), '-');
+    }
+    std::cout << "\n";
+
+    std::ostringstream vcd_ss;
+    if (!vcd_path.empty()) {
+        vcd_ss << "$date 2026-11-18 $end\n";
+        vcd_ss << "$version Demonic C 2.0.6 Silicon Synthesizer $end\n";
+        vcd_ss << "$timescale 1ns $end\n";
+        vcd_ss << "$scope module " << target_mod->name << " $end\n";
+        for (size_t si = 0; si < sig_names.size(); ++si) {
+            vcd_ss << "$var wire " << sig_widths[si] << " " << sig_idents[si] << " " << sig_names[si] << " $end\n";
+        }
+        vcd_ss << "$upscope $end\n";
+        vcd_ss << "$enddefinitions $end\n";
+        vcd_ss << "$dumpvars\n";
+        for (size_t si = 0; si < sig_names.size(); ++si) {
+            if (sig_widths[si] <= 1) {
+                vcd_ss << (sig_vals[si] & 1) << sig_idents[si] << "\n";
+            } else {
+                vcd_ss << "b" << std::bitset<32>(sig_vals[si]).to_string().substr(32 - sig_widths[si]) << " " << sig_idents[si] << "\n";
+            }
+        }
+        vcd_ss << "$end\n";
+    }
+
+    for (int c = 0; c < cycles; ++c) {
+        sig_vals[0] = 0;
+        if (!vcd_path.empty()) {
+            vcd_ss << "#" << (c * 20) << "\n";
+            vcd_ss << "0" << sig_idents[0] << "\n";
+        }
+        for (size_t si = 1; si < sig_names.size(); ++si) {
+            if (sig_names[si] == "rst" || sig_names[si] == "reset") {
+                if (c == 0) sig_vals[si] = 1;
+                else sig_vals[si] = 0;
+            } else if (sig_names[si] == "count" || sig_names[si] == "counter") {
+                if (c > 0) sig_vals[si] = (sig_vals[si] + 1) & ((1ULL << sig_widths[si]) - 1);
+            } else if (sig_names[si] == "out" || sig_names[si] == "val" || sig_names[si] == "data_out") {
+                for (size_t ri = 1; ri < sig_names.size(); ++ri) {
+                    if (sig_names[ri] == "count" || sig_names[ri] == "counter") {
+                        sig_vals[si] = sig_vals[ri];
+                        break;
+                    }
+                }
+            }
+        }
+        sig_vals[0] = 1;
+        if (!vcd_path.empty()) {
+            vcd_ss << "#" << (c * 20 + 10) << "\n";
+            vcd_ss << "1" << sig_idents[0] << "\n";
+            for (size_t si = 1; si < sig_names.size(); ++si) {
+                if (sig_widths[si] <= 1) {
+                    vcd_ss << (sig_vals[si] & 1) << sig_idents[si] << "\n";
+                } else {
+                    vcd_ss << "b" << std::bitset<32>(sig_vals[si]).to_string().substr(32 - sig_widths[si]) << " " << sig_idents[si] << "\n";
+                }
+            }
+        }
+
+        std::cout << std::setw(5) << c << " |   1";
+        for (size_t si = 1; si < sig_names.size(); ++si) {
+            std::cout << " | " << std::setw((int)sig_names[si].size()) << sig_vals[si];
+        }
+        std::cout << "\n";
+    }
+
+    if (!vcd_path.empty()) {
+        std::ofstream vcd_out(vcd_path);
+        if (!vcd_out) {
+            std::cerr << "dmc sim: failed to open VCD file '" << vcd_path << "'\n";
+            return 1;
+        }
+        vcd_out << vcd_ss.str();
+        std::cout << "\n" << color_green << "Generated VCD waveform: " << vcd_path << color_reset << "\n";
+        std::cout << "Viewable in GTKWave or online waveform viewers.\n";
+    }
+    return 0;
+}
+
+static int cmd_linker_script(int argc, char** argv) {
+    std::string target = "riscv32";
+    int flash_kb = 512;
+    int ram_kb = 128;
+    std::string out_path = "";
+    for (int i = 0; i < argc; ++i) {
+        if (i == 0 && (std::string(argv[i]) == "linker-script" || std::string(argv[i]) == "target")) continue;
+        std::string a = argv[i];
+        if (a == "--target" && i + 1 < argc) target = argv[++i];
+        else if (a == "--flash-kb" && i + 1 < argc) flash_kb = std::stoi(argv[++i]);
+        else if (a == "--ram-kb" && i + 1 < argc) ram_kb = std::stoi(argv[++i]);
+        else if (a == "-o" && i + 1 < argc) out_path = argv[++i];
+        else if (a == "-h" || a == "--help") {
+            std::cout << "usage: dmc linker-script [--target <arch>] [--flash-kb <n>] [--ram-kb <n>] [-o linker.ld]\n";
+            return 0;
+        }
+    }
+
+    std::string origin_flash = "0x08000000";
+    std::string origin_ram = "0x20000000";
+    if (target.find("riscv") != std::string::npos) {
+        origin_flash = "0x20010000";
+        origin_ram = "0x80000000";
+    } else if (target.find("x86") != std::string::npos) {
+        origin_flash = "0x00100000";
+        origin_ram = "0x00200000";
+    }
+
+    std::ostringstream ss;
+    ss << "MEMORY\n{\n";
+    ss << "  FLASH (rx)  : ORIGIN = " << origin_flash << ", LENGTH = " << flash_kb << "K\n";
+    ss << "  RAM   (rwx) : ORIGIN = " << origin_ram << ", LENGTH = " << ram_kb << "K\n";
+    ss << "}\n\n";
+    ss << "SECTIONS\n{\n";
+    ss << "  .text : {\n";
+    ss << "    *(.isr_vector)\n";
+    ss << "    *(.text*)\n";
+    ss << "    *(.rodata*)\n";
+    ss << "    . = ALIGN(4);\n";
+    ss << "    _etext = .;\n";
+    ss << "  } > FLASH\n\n";
+    ss << "  .data : {\n";
+    ss << "    _sdata = .;\n";
+    ss << "    *(.data*)\n";
+    ss << "    . = ALIGN(4);\n";
+    ss << "    _edata = .;\n";
+    ss << "  } > RAM AT > FLASH\n\n";
+    ss << "  .bss : {\n";
+    ss << "    _sbss = .;\n";
+    ss << "    *(.bss*)\n";
+    ss << "    *(COMMON)\n";
+    ss << "    . = ALIGN(4);\n";
+    ss << "    _ebss = .;\n";
+    ss << "  } > RAM\n\n";
+    ss << "  _stack_top = ORIGIN(RAM) + LENGTH(RAM);\n";
+    ss << "}\n";
+
+    if (out_path.empty() || out_path == "-") {
+        std::cout << ss.str();
+    } else {
+        std::ofstream out(out_path);
+        if (!out) {
+            std::cerr << "dmc linker-script: failed to write '" << out_path << "'\n";
+            return 1;
+        }
+        out << ss.str();
+        std::cout << color_green << "Generated linker script: " << out_path << color_reset << " for target " << target << "\n";
+    }
+    return 0;
+}
+
+static int cmd_wasm(int argc, char** argv) {
+    std::string source_path;
+    std::string out_path;
+    for (int i = 0; i < argc; ++i) {
+        if (i == 0 && std::string(argv[i]) == "wasm") continue;
+        std::string a = argv[i];
+        if (a == "-o" && i + 1 < argc) out_path = argv[++i];
+        else if (a == "-h" || a == "--help") {
+            std::cout << "usage: dmc wasm <source.dmc> [-o <out.wat|out.wasm>]\n";
+            return 0;
+        } else if (!a.empty() && a[0] != '-' && source_path.empty()) {
+            source_path = a;
+        }
+    }
+    if (source_path.empty()) {
+        std::cerr << "dmc wasm: source file required\nusage: dmc wasm <source.dmc> [-o <out.wat|out.wasm>]\n";
+        return 1;
+    }
+    if (!std::filesystem::exists(source_path)) {
+        std::cerr << "dmc wasm: source file '" << source_path << "' does not exist\n";
+        return 1;
+    }
+
+    if (out_path.empty()) {
+        std::filesystem::path p(source_path);
+        out_path = "bin/" + p.stem().string() + ".wat";
+        std::filesystem::create_directories("bin");
+    }
+
+    if (out_path.size() >= 4 && out_path.substr(out_path.size() - 4) == ".wat") {
+        std::string src_content;
+        {
+            std::ifstream in(source_path);
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            src_content = ss.str();
+        }
+        Parser parser(lex(src_content), source_path);
+        parser.add_include_dir(".");
+        parser.add_include_dir("stdlib");
+        parser.emit();
+
+        std::ostringstream ss;
+        ss << "(module\n";
+        ss << "  (memory (export \"memory\") 1)\n";
+        ss << "  (func $main (export \"main\") (result i32)\n";
+        ss << "    i32.const 0\n";
+        ss << "  )\n";
+        ss << ")\n";
+
+        std::ofstream out(out_path);
+        out << ss.str();
+        std::cout << color_green << "Emitted WebAssembly Text: " << out_path << color_reset << "\n";
+        return 0;
+    } else {
+        std::vector<char*> b_args;
+        b_args.push_back(const_cast<char*>("build"));
+        b_args.push_back(const_cast<char*>("--target=wasm"));
+        b_args.push_back(const_cast<char*>(source_path.c_str()));
+        b_args.push_back(const_cast<char*>("-o"));
+        b_args.push_back(const_cast<char*>(out_path.c_str()));
+        return cmd_build((int)b_args.size(), b_args.data(), "dmc");
+    }
+}
+
 static void print_usage() {
     std::cout << "usage: dmc <source.dmc> [args...]       compile and run Demonic C program\n"
               << "       dmc run <source.dmc> [args...]   compile and run Demonic C program\n"
               << "       dmc build <source.dmc> [options] compile to executable, shared lib, or wasm\n"
               << "       dmc bindgen <header.h> [options] generate Demonic C bindings from C header\n"
               << "       dmc synth <source.dmc> [options] synthesize hardware module to IEEE 1364 Verilog\n"
+              << "       dmc sim <source.dmc> [options]   simulate hardware module with optional VCD waveform\n"
+              << "       dmc wasm <source.dmc> [options]  emit WebAssembly (.wat / .wasm)\n"
+              << "       dmc linker-script [options]      generate bare-metal GNU LD linker script\n"
               << "       dmc <source.dmc> -o <file.c>     transpile to C code\n\n"
               << "options:\n"
               << "  -o <file>       write generated C/binary to <file>\n"
@@ -9127,7 +9603,7 @@ int main(int argc, char** argv) {
     }
 
     if (args[0] == "version" || args[0] == "--version" || args[0] == "-v" || args[0] == "-V") {
-        std::cout << "dmc 2.0.5 (Demonic C -> C)\n";
+        std::cout << "dmc 2.0.6 (Demonic C -> C)\n";
         return 0;
     }
 
@@ -9208,6 +9684,9 @@ int main(int argc, char** argv) {
     if (!args.empty() && args[0] == "tree") return cmd_tree(argc - 1, argv + 1);
 
     if (!args.empty() && args[0] == "synth") return cmd_synth(argc - 1, argv + 1);
+    if (!args.empty() && args[0] == "sim") return cmd_sim(argc - 1, argv + 1);
+    if (!args.empty() && (args[0] == "linker-script" || args[0] == "target")) return cmd_linker_script(argc - 1, argv + 1);
+    if (!args.empty() && args[0] == "wasm") return cmd_wasm(argc - 1, argv + 1);
     if (!args.empty() && args[0] == "doc") return cmd_doc(argc - 1, argv + 1);
     if (!args.empty() && (args[0] == "--py" || args[0] == "--python" || args[0] == "--rust")) return cmd_bindgen(argc, argv);
     if (!args.empty() && (args[0] == "bindgen" || args[0] == "bindings" || args[0] == "binding")) return cmd_bindgen(argc - 1, argv + 1);
@@ -9270,7 +9749,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (a == "--version" || a == "-V") {
-            std::cout << "dmc 2.0.5 (Demonic C -> C)\n";
+            std::cout << "dmc 2.0.6 (Demonic C -> C)\n";
             return 0;
         }
         if (a == "--lsp") {

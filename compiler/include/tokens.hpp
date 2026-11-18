@@ -20,6 +20,7 @@ struct Function {
     bool is_variadic = false;
     bool is_export = false;
     bool is_pure = false;
+    bool is_async = false;
     int line = 0;
 };
 struct Struct { std::string name; std::vector<Field> fields; std::vector<std::string> attributes; };

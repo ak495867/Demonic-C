@@ -1,0 +1,130 @@
+struct TargetProfile {
+    name: string,
+    arch: string,
+    triple: string,
+    flash_kb: int,
+    ram_kb: int,
+    is_freestanding: int
+}
+
+fn target_profile_riscv32() -> TargetProfile {
+    let p: TargetProfile = TargetProfile {
+        name: "riscv32-none-elf",
+        arch: "riscv32",
+        triple: "riscv32-unknown-none-elf",
+        flash_kb: 512,
+        ram_kb: 128,
+        is_freestanding: 1
+    };
+    return p;
+}
+
+fn target_profile_arm_cortex_m4() -> TargetProfile {
+    let p: TargetProfile = TargetProfile {
+        name: "arm-cortex-m4",
+        arch: "arm",
+        triple: "arm-none-eabi",
+        flash_kb: 1024,
+        ram_kb: 256,
+        is_freestanding: 1
+    };
+    return p;
+}
+
+fn target_profile_x86_64_bare() -> TargetProfile {
+    let p: TargetProfile = TargetProfile {
+        name: "x86_64-freestanding",
+        arch: "x86_64",
+        triple: "x86_64-unknown-none-elf",
+        flash_kb: 4096,
+        ram_kb: 16384,
+        is_freestanding: 1
+    };
+    return p;
+}
+
+fn target_profile_wasm32() -> TargetProfile {
+    let p: TargetProfile = TargetProfile {
+        name: "wasm32-freestanding",
+        arch: "wasm32",
+        triple: "wasm32-unknown-unknown",
+        flash_kb: 64,
+        ram_kb: 64,
+        is_freestanding: 1
+    };
+    return p;
+}
+
+fn target_triple(arch: string) -> string {
+    if (arch == "riscv32" || arch == "riscv") {
+        return "riscv32-unknown-none-elf";
+    }
+    if (arch == "arm" || arch == "cortex-m4") {
+        return "arm-none-eabi";
+    }
+    if (arch == "x86_64" || arch == "x86") {
+        return "x86_64-unknown-none-elf";
+    }
+    if (arch == "wasm" || arch == "wasm32") {
+        return "wasm32-unknown-unknown";
+    }
+    return "unknown";
+}
+
+fn target_is_bare_metal(arch: string) -> int {
+    if (arch == "riscv32" || arch == "arm" || arch == "x86_64" || arch == "wasm32") {
+        return 1;
+    }
+    return 0;
+}
+
+fn target_page_size(arch: string) -> int {
+    if (arch == "wasm32" || arch == "wasm") {
+        return 65536;
+    }
+    if (arch == "arm" || arch == "riscv32") {
+        return 1024;
+    }
+    return 4096;
+}
+
+fn target_linker_script(arch: string, flash_kb: int, ram_kb: int) -> string {
+    var origin_flash: string = "0x08000000";
+    var origin_ram: string = "0x20000000";
+    if (arch == "riscv32") {
+        origin_flash = "0x20010000";
+        origin_ram = "0x80000000";
+    } else if (arch == "x86_64") {
+        origin_flash = "0x00100000";
+        origin_ram = "0x00200000";
+    }
+
+    var script: string = "MEMORY\n{\n";
+    script = script + "  FLASH (rx)  : ORIGIN = " + origin_flash + ", LENGTH = " + text_from_int(flash_kb) + "K\n";
+    script = script + "  RAM   (rwx) : ORIGIN = " + origin_ram + ", LENGTH = " + text_from_int(ram_kb) + "K\n";
+    script = script + "}\n\n";
+    script = script + "SECTIONS\n{\n";
+    script = script + "  .text : {\n";
+    script = script + "    *(.isr_vector)\n";
+    script = script + "    *(.text*)\n";
+    script = script + "    *(.rodata*)\n";
+    script = script + "    . = ALIGN(4);\n";
+    script = script + "    _etext = .;\n";
+    script = script + "  } > FLASH\n\n";
+    script = script + "  .data : {\n";
+    script = script + "    _sdata = .;\n";
+    script = script + "    *(.data*)\n";
+    script = script + "    . = ALIGN(4);\n";
+    script = script + "    _edata = .;\n";
+    script = script + "  } > RAM AT > FLASH\n\n";
+    script = script + "  .bss : {\n";
+    script = script + "    _sbss = .;\n";
+    script = script + "    *(.bss*)\n";
+    script = script + "    *(COMMON)\n";
+    script = script + "    . = ALIGN(4);\n";
+    script = script + "    _ebss = .;\n";
+    script = script + "  } > RAM\n\n";
+    script = script + "  _stack_top = ORIGIN(RAM) + LENGTH(RAM);\n";
+    script = script + "}\n";
+    return script;
+}

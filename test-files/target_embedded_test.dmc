@@ -1,0 +1,59 @@
+import "target";
+
+#[interrupt]
+fn test_embedded_isr() -> void {
+    var tick: int = 1;
+}
+
+#[test]
+fn test_target_profiles() -> int {
+    var p_rv: TargetProfile = target_profile_riscv32();
+    if (p_rv.arch != "riscv32") {
+        return 1;
+    }
+    if (p_rv.flash_kb != 512) {
+        return 2;
+    }
+
+    var p_arm: TargetProfile = target_profile_arm_cortex_m4();
+    if (p_arm.arch != "arm") {
+        return 3;
+    }
+    if (p_arm.ram_kb != 256) {
+        return 4;
+    }
+
+    var p_wasm: TargetProfile = target_profile_wasm32();
+    if (p_wasm.arch != "wasm32") {
+        return 5;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_target_metadata() -> int {
+    var trip: string = target_triple("riscv32");
+    if (trip != "riscv32-unknown-none-elf") {
+        return 1;
+    }
+
+    if (target_is_bare_metal("riscv32") != 1) {
+        return 2;
+    }
+
+    if (target_page_size("wasm32") != 65536) {
+        return 3;
+    }
+
+    return 0;
+}
+
+#[test]
+fn test_linker_script_generation() -> int {
+    var script: string = target_linker_script("riscv32", 512, 128);
+    if (script == "") {
+        return 1;
+    }
+    return 0;
+}

@@ -1,0 +1,89 @@
+struct CoroHandle {
+    id: int,
+    state: int,
+    done: int,
+    result: int
+}
+
+struct CoroScheduler {
+    task_count: int,
+    completed_count: int
+}
+
+fn coro_create(id: int) -> CoroHandle {
+    let c: CoroHandle = CoroHandle {
+        id: id,
+        state: 0,
+        done: 0,
+        result: 0
+    };
+    return c;
+}
+
+fn coro_is_done(c: *CoroHandle) -> int {
+    return c.done;
+}
+
+fn coro_result(c: *CoroHandle) -> int {
+    return c.result;
+}
+
+fn coro_step(c: *CoroHandle, next_state: int, res: int, is_finished: int) -> int {
+    c.state = next_state;
+    c.result = res;
+    if (is_finished != 0) {
+        c.done = 1;
+        return 1;
+    }
+    return 0;
+}
+
+fn sched_new() -> CoroScheduler {
+    let s: CoroScheduler = CoroScheduler {
+        task_count: 0,
+        completed_count: 0
+    };
+    return s;
+}
+
+fn sched_poll(s: *CoroScheduler, c: *CoroHandle) -> int {
+    if (c.done != 0) {
+        return 1;
+    }
+    s.task_count = s.task_count + 1;
+    if (c.state == 0) {
+        c.state = 1;
+        c.result = c.id * 10;
+        return 0;
+    } else if (c.state == 1) {
+        c.state = 2;
+        c.result = c.result + 5;
+        c.done = 1;
+        s.completed_count = s.completed_count + 1;
+        return 1;
+    }
+    return 1;
+}
+
+fn channel_select_2(c1_len: int, c2_len: int) -> int {
+    if (c1_len > 0) {
+        return 0;
+    }
+    if (c2_len > 0) {
+        return 1;
+    }
+    return -1;
+}
+
+fn channel_select_3(c1_len: int, c2_len: int, c3_len: int) -> int {
+    if (c1_len > 0) {
+        return 0;
+    }
+    if (c2_len > 0) {
+        return 1;
+    }
+    if (c3_len > 0) {
+        return 2;
+    }
+    return -1;
+}

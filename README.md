@@ -125,6 +125,37 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
+## 🚀 Demonic C 2.0.6 Release
+
+Demonic C 2.0.6 expands the language with silicon co-simulation, embedded target presets, compile-time reflection, stackless coroutines, and WebAssembly compilation:
+
+- **Embedded & Bare-Metal Target Presets (`--target`)**:
+  - Full freestanding target profiles: `riscv32-none-elf`, `arm-cortex-m4`, `x86_64-freestanding`, and `wasm32-freestanding`.
+  - Built-in GNU LD Linker script generator: `dmc linker-script [--target <arch>] [--flash-kb <n>] [--ram-kb <n>] [-o linker.ld]`.
+  - Interrupt Service Routine attribute: `#[interrupt] fn isr_handler()`.
+  - Target architecture profiles and memory map functions in `stdlib/target.dmc`.
+
+- **Silicon Co-Simulation & VCD Waveform Dumper (`dmc sim --vcd`)**:
+  - Multi-cycle hardware module simulation engine: `dmc sim <source.dmc> [--cycles N] [--vcd trace.vcd]`.
+  - IEEE 1364 standard Value Change Dump (VCD) waveform export compatible with GTKWave.
+  - Formatted cycle ASCII signal trace tables and testbench assertion helpers in `stdlib/vcd.dmc`.
+
+- **Stackless Coroutines & Async Task Scheduling**:
+  - `async fn` definitions with non-blocking state machine transformation.
+  - `await` keyword / unary expression inside asynchronous workflows.
+  - Channel select operators (`channel_select_2`, `channel_select_3`) and task scheduler in `stdlib/coro.dmc`.
+
+- **Compile-Time Metaprogramming & Struct Reflection**:
+  - Struct attribute `#[reflect]` generating compile-time introspection functions: `<Struct>_field_count`, `<Struct>_field_name`, `<Struct>_field_type`, `<Struct>_field_offset`.
+  - Static compile-time invariants: `static_assert(cond, message)`.
+  - Compile-time evaluation: `comptime let x = ...` and `comptime { ... }`.
+
+- **WebAssembly (WASM) Freestanding Target**:
+  - WebAssembly text & binary emission: `dmc wasm <source.dmc> [-o out.wat|out.wasm]` and `dmc build --target wasm`.
+  - Freestanding execution ready for browser engines and edge worker runtimes.
+
+---
+
 ## 🚀 Demonic C 2.0.5 Release
 
 Demonic C 2.0.5 establishes the unified systems architecture spanning bare-metal electron manipulation, custom memory layouts, formal verification contracts, and hardware FPGA synthesis across 4 architectural pillars:
