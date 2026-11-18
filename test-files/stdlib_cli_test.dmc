@@ -2,7 +2,7 @@ import "cli";
 
 #[test]
 fn test_cli_parsing() -> int {
-    var app: CliApp = cli_new("demonic", "Demonic C Compiler CLI", "2.0.3");
+    var app: CliApp = cli_new("demonic", "Demonic C Compiler CLI", "2.0.4");
     cli_add_arg(&app, "build");
     cli_add_arg(&app, "-v");
     cli_add_arg(&app, "--port");

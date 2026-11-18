@@ -125,6 +125,24 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
+## 🚀 Demonic C 2.0.4 Release
+
+Demonic C 2.0.4 delivers the second major wave of the Standard Library, adding 12 high-performance, zero-dependency modules (24 extended standard library modules total):
+- **`uuid`**: RFC 4122 UUID v4 generator, nil UUID, format validation, 32-character compact hex conversion, and 36-character canonical expansion.
+- **`semver`**: Full Semantic Versioning 2.0.0 parser, comparator (`semver_compare`), and constraint matcher (`semver_satisfies`) supporting `^`, `~`, `>=`, `<=`, `>`, `<`, and `=`.
+- **`bigint`**: Arbitrary-precision large integer arithmetic supporting addition, subtraction, multiplication, exponentiation (`bigint_pow`), and comparisons.
+- **`bitset`**: Cache-friendly dense bitset vectors with bit testing, toggling, popcount (`bitset_popcount`), and bitwise set operations (`union`, `intersect`, `diff`).
+- **`trie`**: Fast prefix tree / trie using Demonic C managed heap handles for autocomplete, dictionary word search, and prefix lookups.
+- **`diff`**: String edit distance and text similarity suite featuring Levenshtein distance, similarity ratio, Hamming distance, Longest Common Subsequence (`diff_lcs`), and candidate matching (`diff_closest`).
+- **`matrix`**: 4x4 transformation matrices (`Mat4_identity`, `Mat4_translation`, `Mat4_scaling`, `Mat4_rotation_z`, `Mat4_transpose`) with `*` operator overloading for matrix-matrix and matrix-vector transforms.
+- **`color`**: RGB, RGBA, and HSLA color models with hexadecimal string parsing (`#ff8000`), hex formatting, relative luminance, WCAG 2.1 contrast ratio calculation, and alpha blending.
+- **`jwt`**: Zero-dependency JSON Web Token implementation with Base64URL encoding/decoding, HMAC-SHA256 signature generation, validation, and token payload/header extraction.
+- **`event`**: Publish/Subscribe EventEmitter supporting persistent event listeners (`emitter_on`), one-shot listeners (`emitter_once`), manual listener removal, and emitter clearing.
+- **`compress`**: Zero-dependency byte Run-Length Encoding (RLE) lossless compressor and decompressor with compression ratio analytics.
+- **`logger`**: Structured multi-level logging (`DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`) supporting both standard human-readable and JSON formatters with configurable minimum severity filtering.
+
+---
+
 ## 🚀 Demonic C 2.0.3 Release
 
 Demonic C 2.0.3 massively expands the Standard Library with 12 new zero-dependency systems modules:
