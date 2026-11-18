@@ -567,10 +567,12 @@ public:
             out << "    for (int i = 1; i < argc; i++) { if (strcmp(argv[i], \"--bench\") == 0) run_bench = 1; }\n";
             out << "    if (run_bench) {\n";
             for (const auto& fn : bench_fns) {
-                out << "        printf(\"" << fn.name << ": \"); fflush(stdout);\n";
-                out << "        double _t = (double)clock() / CLOCKS_PER_SEC;\n";
-                out << "        " << fn.name << "();\n";
-                out << "        printf(\"%.3fs\\n\", (double)clock() / CLOCKS_PER_SEC - _t);\n";
+                out << "        {\n";
+                out << "            printf(\"" << fn.name << ": \"); fflush(stdout);\n";
+                out << "            double _t = (double)clock() / CLOCKS_PER_SEC;\n";
+                out << "            " << fn.name << "();\n";
+                out << "            printf(\"%.3fs\\n\", (double)clock() / CLOCKS_PER_SEC - _t);\n";
+                out << "        }\n";
             }
             out << "    } else {\n";
             for (size_t i = 0; i < test_fns.size(); ++i) {
