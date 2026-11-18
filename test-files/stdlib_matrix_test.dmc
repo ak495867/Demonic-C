@@ -1,0 +1,53 @@
+import "matrix";
+import "geom";
+
+#[test]
+fn test_mat4_transform() -> int {
+    let t: Mat4 = Mat4_translation(10.0, 20.0, 30.0);
+    let p: Vec3 = Vec3_new(1.0, 2.0, 3.0);
+    let p2: Vec3 = Mat4_transform_vec3(t, p);
+    if (p2.x < 10.99 || p2.x > 11.01) {
+        return 1;
+    }
+    if (p2.y < 21.99 || p2.y > 22.01) {
+        return 2;
+    }
+    if (p2.z < 32.99 || p2.z > 33.01) {
+        return 3;
+    }
+
+    let s: Mat4 = Mat4_scaling(2.0, 3.0, 4.0);
+    let p3: Vec3 = Mat4_transform_vec3(s, p);
+    if (p3.x < 1.99 || p3.x > 2.01) {
+        return 4;
+    }
+    if (p3.y < 5.99 || p3.y > 6.01) {
+        return 5;
+    }
+    if (p3.z < 11.99 || p3.z > 12.01) {
+        return 6;
+    }
+    return 0;
+}
+
+#[test]
+fn test_mat4_mul_and_transpose() -> int {
+    let t: Mat4 = Mat4_translation(5.0, 0.0, 0.0);
+    let s: Mat4 = Mat4_scaling(2.0, 2.0, 2.0);
+    let combined: Mat4 = t * s;
+    let p: Vec3 = Vec3_new(1.0, 1.0, 1.0);
+    let p_res: Vec3 = Mat4_transform_vec3(combined, p);
+    if (p_res.x < 6.99 || p_res.x > 7.01) {
+        return 1;
+    }
+
+    let id: Mat4 = Mat4_identity();
+    let trans_id: Mat4 = Mat4_transpose(id);
+    if (trans_id.m00 < 0.99 || trans_id.m00 > 1.01) {
+        return 2;
+    }
+    if (trans_id.m01 < -0.01 || trans_id.m01 > 0.01) {
+        return 3;
+    }
+    return 0;
+}

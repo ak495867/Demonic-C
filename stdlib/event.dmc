@@ -1,0 +1,226 @@
+struct EventEmitter {
+    raw_data: string,
+    count: int
+}
+
+fn _em_sep() -> string {
+    var out: string = "";
+    c_code {
+        static char sep[2] = { 31, 0 };
+        out = sep;
+    }
+    return out;
+}
+
+fn emitter_new() -> EventEmitter {
+    let em: EventEmitter = EventEmitter {
+        raw_data: "",
+        count: 0
+    };
+    return em;
+}
+
+fn emitter_on(em: *EventEmitter, event: string, id: int) -> int {
+    let sep: string = _em_sep();
+    let entry: string = event + ":" + text_from_int(id) + ":0";
+    em.raw_data = em.raw_data + sep + entry;
+    em.count = em.count + 1;
+    return 1;
+}
+
+fn emitter_once(em: *EventEmitter, event: string, id: int) -> int {
+    let sep: string = _em_sep();
+    let entry: string = event + ":" + text_from_int(id) + ":1";
+    em.raw_data = em.raw_data + sep + entry;
+    em.count = em.count + 1;
+    return 1;
+}
+
+fn emitter_listener_count(em: *EventEmitter, event: string) -> int {
+    let raw: string = em.raw_data;
+    let len: int = text_len(raw);
+    if (len == 0) {
+        return 0;
+    }
+    var total: int = 0;
+    var i: int = 0;
+    while (i < len) {
+        if (text_char_at(raw, i) == 31) {
+            i = i + 1;
+        }
+        var next_sep: int = len;
+        var j: int = i;
+        while (j < len) {
+            if (text_char_at(raw, j) == 31) {
+                next_sep = j;
+                break;
+            }
+            j = j + 1;
+        }
+        let item: string = string_slice(raw, i, next_sep - i);
+        let colon1: int = text_find(item, ":");
+        if (colon1 > 0) {
+            let ev_name: string = string_slice(item, 0, colon1);
+            if (ev_name == event) {
+                total = total + 1;
+            }
+        }
+        i = next_sep + 1;
+    }
+    return total;
+}
+
+fn emitter_emit(em: *EventEmitter, event: string) -> int {
+    let raw: string = em.raw_data;
+    let len: int = text_len(raw);
+    if (len == 0) {
+        return 0;
+    }
+    let sep: string = _em_sep();
+    var new_raw: string = "";
+    var new_count: int = 0;
+    var triggered: int = 0;
+
+    var i: int = 0;
+    while (i < len) {
+        if (text_char_at(raw, i) == 31) {
+            i = i + 1;
+        }
+        var next_sep: int = len;
+        var j: int = i;
+        while (j < len) {
+            if (text_char_at(raw, j) == 31) {
+                next_sep = j;
+                break;
+            }
+            j = j + 1;
+        }
+        let item: string = string_slice(raw, i, next_sep - i);
+        let colon1: int = text_find(item, ":");
+        var keep: int = 1;
+        if (colon1 > 0) {
+            let ev_name: string = string_slice(item, 0, colon1);
+            let rem: string = string_slice(item, colon1 + 1, text_len(item) - colon1 - 1);
+            let colon2: int = text_find(rem, ":");
+            var once_flag: int = 0;
+            if (colon2 > 0) {
+                once_flag = text_to_int(string_slice(rem, colon2 + 1, text_len(rem) - colon2 - 1));
+            }
+            if (ev_name == event) {
+                triggered = triggered + 1;
+                if (once_flag == 1) {
+                    keep = 0;
+                }
+            }
+        }
+        if (keep == 1) {
+            new_raw = new_raw + sep + item;
+            new_count = new_count + 1;
+        }
+        i = next_sep + 1;
+    }
+    em.raw_data = new_raw;
+    em.count = new_count;
+    return triggered;
+}
+
+fn emitter_off(em: *EventEmitter, event: string, id: int) -> int {
+    let raw: string = em.raw_data;
+    let len: int = text_len(raw);
+    if (len == 0) {
+        return 0;
+    }
+    let sep: string = _em_sep();
+    var new_raw: string = "";
+    var new_count: int = 0;
+    var removed: int = 0;
+    let target_suffix: string = ":" + text_from_int(id);
+
+    var i: int = 0;
+    while (i < len) {
+        if (text_char_at(raw, i) == 31) {
+            i = i + 1;
+        }
+        var next_sep: int = len;
+        var j: int = i;
+        while (j < len) {
+            if (text_char_at(raw, j) == 31) {
+                next_sep = j;
+                break;
+            }
+            j = j + 1;
+        }
+        let item: string = string_slice(raw, i, next_sep - i);
+        let colon1: int = text_find(item, ":");
+        var keep: int = 1;
+        if (colon1 > 0) {
+            let ev_name: string = string_slice(item, 0, colon1);
+            let rem: string = string_slice(item, colon1 + 1, text_len(item) - colon1 - 1);
+            let colon2: int = text_find(rem, ":");
+            var cb_id: int = -1;
+            if (colon2 > 0) {
+                cb_id = text_to_int(string_slice(rem, 0, colon2));
+            }
+            if (ev_name == event && cb_id == id && removed == 0) {
+                keep = 0;
+                removed = 1;
+            }
+        }
+        if (keep == 1) {
+            new_raw = new_raw + sep + item;
+            new_count = new_count + 1;
+        }
+        i = next_sep + 1;
+    }
+    em.raw_data = new_raw;
+    em.count = new_count;
+    return removed;
+}
+
+fn emitter_clear(em: *EventEmitter, event: string) -> void {
+    let raw: string = em.raw_data;
+    let len: int = text_len(raw);
+    if (len == 0) {
+        return;
+    }
+    let sep: string = _em_sep();
+    var new_raw: string = "";
+    var new_count: int = 0;
+
+    var i: int = 0;
+    while (i < len) {
+        if (text_char_at(raw, i) == 31) {
+            i = i + 1;
+        }
+        var next_sep: int = len;
+        var j: int = i;
+        while (j < len) {
+            if (text_char_at(raw, j) == 31) {
+                next_sep = j;
+                break;
+            }
+            j = j + 1;
+        }
+        let item: string = string_slice(raw, i, next_sep - i);
+        let colon1: int = text_find(item, ":");
+        var keep: int = 1;
+        if (colon1 > 0) {
+            let ev_name: string = string_slice(item, 0, colon1);
+            if (ev_name == event) {
+                keep = 0;
+            }
+        }
+        if (keep == 1) {
+            new_raw = new_raw + sep + item;
+            new_count = new_count + 1;
+        }
+        i = next_sep + 1;
+    }
+    em.raw_data = new_raw;
+    em.count = new_count;
+}
+
+fn emitter_free(em: *EventEmitter) -> void {
+    em.raw_data = "";
+    em.count = 0;
+}

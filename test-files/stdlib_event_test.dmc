@@ -1,0 +1,46 @@
+import "event";
+
+#[test]
+fn test_event_emitter_lifecycle() -> int {
+    var em: EventEmitter = emitter_new();
+    emitter_on(&em, "data", 101);
+    emitter_on(&em, "data", 102);
+    emitter_once(&em, "data", 103);
+    emitter_on(&em, "close", 201);
+
+    if (emitter_listener_count(&em, "data") != 3) {
+        return 1;
+    }
+    if (emitter_listener_count(&em, "close") != 1) {
+        return 2;
+    }
+
+    let trig1: int = emitter_emit(&em, "data");
+    if (trig1 != 3) {
+        return 3;
+    }
+    if (emitter_listener_count(&em, "data") != 2) {
+        return 4;
+    }
+
+    let trig2: int = emitter_emit(&em, "data");
+    if (trig2 != 2) {
+        return 5;
+    }
+
+    emitter_off(&em, "data", 101);
+    if (emitter_listener_count(&em, "data") != 1) {
+        return 6;
+    }
+
+    emitter_clear(&em, "data");
+    if (emitter_listener_count(&em, "data") != 0) {
+        return 7;
+    }
+    if (emitter_listener_count(&em, "close") != 1) {
+        return 8;
+    }
+
+    emitter_free(&em);
+    return 0;
+}

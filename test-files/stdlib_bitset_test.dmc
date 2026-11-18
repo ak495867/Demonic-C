@@ -1,0 +1,83 @@
+import "bitset";
+
+#[test]
+fn test_bitset_basic_ops() -> int {
+    var bs: BitSet = bitset_new(128);
+    if (bitset_count_ones(&bs) != 0) {
+        return 1;
+    }
+    bitset_set(&bs, 0);
+    bitset_set(&bs, 63);
+    bitset_set(&bs, 64);
+    bitset_set(&bs, 127);
+    if (bitset_count_ones(&bs) != 4) {
+        return 2;
+    }
+    if (bitset_test(&bs, 0) != 1) {
+        return 3;
+    }
+    if (bitset_test(&bs, 63) != 1) {
+        return 4;
+    }
+    if (bitset_test(&bs, 64) != 1) {
+        return 5;
+    }
+    if (bitset_test(&bs, 127) != 1) {
+        return 6;
+    }
+    if (bitset_test(&bs, 1) != 0) {
+        return 7;
+    }
+    bitset_clear(&bs, 63);
+    if (bitset_test(&bs, 63) != 0) {
+        return 8;
+    }
+    bitset_toggle(&bs, 10);
+    if (bitset_test(&bs, 10) != 1) {
+        return 9;
+    }
+    bitset_toggle(&bs, 10);
+    if (bitset_test(&bs, 10) != 0) {
+        return 10;
+    }
+    bitset_free(&bs);
+    return 0;
+}
+
+#[test]
+fn test_bitset_set_logic() -> int {
+    var a: BitSet = bitset_new(64);
+    var b: BitSet = bitset_new(64);
+    bitset_set(&a, 1);
+    bitset_set(&a, 2);
+    bitset_set(&b, 2);
+    bitset_set(&b, 3);
+
+    var u: BitSet = bitset_new(64);
+    bitset_set(&u, 1);
+    bitset_set(&u, 2);
+    bitset_union(&u, &b);
+    if (bitset_count_ones(&u) != 3) {
+        return 1;
+    }
+    if (bitset_test(&u, 1) != 1 || bitset_test(&u, 2) != 1 || bitset_test(&u, 3) != 1) {
+        return 2;
+    }
+
+    var inter: BitSet = bitset_new(64);
+    bitset_set(&inter, 1);
+    bitset_set(&inter, 2);
+    bitset_intersect(&inter, &b);
+    if (bitset_count_ones(&inter) != 1) {
+        return 3;
+    }
+    if (bitset_test(&inter, 2) != 1) {
+        return 4;
+    }
+
+    bitset_free(&a);
+    bitset_free(&b);
+    bitset_free(&u);
+    bitset_free(&inter);
+    return 0;
+}

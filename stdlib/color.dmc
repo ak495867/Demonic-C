@@ -1,0 +1,94 @@
+struct Rgba {
+    r: int,
+    g: int,
+    b: int,
+    a: int
+}
+
+struct Hsla {
+    h: float,
+    s: float,
+    l: float,
+    a: float
+}
+
+fn color_rgba(r: int, g: int, b: int, a: int) -> Rgba {
+    let c: Rgba = Rgba { r: r, g: g, b: b, a: a };
+    return c;
+}
+
+fn color_rgb(r: int, g: int, b: int) -> Rgba {
+    return color_rgba(r, g, b, 255);
+}
+
+fn _hex_digit_val(c: int) -> int {
+    if (c >= 48 && c <= 57) { return c - 48; }
+    if (c >= 65 && c <= 70) { return c - 55; }
+    if (c >= 97 && c <= 102) { return c - 87; }
+    return 0;
+}
+
+fn color_from_hex(hex_str: string) -> Rgba {
+    var s: string = hex_str;
+    if (text_len(s) > 0 && text_char_at(s, 0) == 35) {
+        s = string_slice(s, 1, text_len(s) - 1);
+    }
+    let len: int = text_len(s);
+    if (len < 6) {
+        return color_rgb(0, 0, 0);
+    }
+    let r: int = (_hex_digit_val(text_char_at(s, 0)) * 16) + _hex_digit_val(text_char_at(s, 1));
+    let g: int = (_hex_digit_val(text_char_at(s, 2)) * 16) + _hex_digit_val(text_char_at(s, 3));
+    let b: int = (_hex_digit_val(text_char_at(s, 4)) * 16) + _hex_digit_val(text_char_at(s, 5));
+    var a: int = 255;
+    if (len >= 8) {
+        a = (_hex_digit_val(text_char_at(s, 6)) * 16) + _hex_digit_val(text_char_at(s, 7));
+    }
+    return color_rgba(r, g, b, a);
+}
+
+fn color_to_hex(c: Rgba) -> string {
+    var out: string = "";
+    c_code {
+        static const char *hex_digits = "0123456789abcdef";
+        char *buf = (char*)malloc(8);
+        if (buf) {
+            buf[0] = 35;
+            buf[1] = hex_digits[(c.r >> 4) & 15];
+            buf[2] = hex_digits[c.r & 15];
+            buf[3] = hex_digits[(c.g >> 4) & 15];
+            buf[4] = hex_digits[c.g & 15];
+            buf[5] = hex_digits[(c.b >> 4) & 15];
+            buf[6] = hex_digits[c.b & 15];
+            buf[7] = 0;
+            out = buf;
+        }
+    }
+    return out;
+}
+
+fn color_luminance(c: Rgba) -> float {
+    let rf: float = (c.r * 1.0) / 255.0;
+    let gf: float = (c.g * 1.0) / 255.0;
+    let bf: float = (c.b * 1.0) / 255.0;
+    return (0.2126 * rf) + (0.7152 * gf) + (0.0722 * bf);
+}
+
+fn color_contrast_ratio(c1: Rgba, c2: Rgba) -> float {
+    let l1: float = color_luminance(c1);
+    let l2: float = color_luminance(c2);
+    var hi: float = l1;
+    var lo: float = l2;
+    if (l2 > hi) {
+        hi = l2;
+        lo = l1;
+    }
+    return (hi + 0.05) / (lo + 0.05);
+}
+
+fn color_blend(fg: Rgba, bg: Rgba) -> Rgba {
+    let r: int = ((fg.r * fg.a) + (bg.r * (255 - fg.a))) / 255;
+    let g: int = ((fg.g * fg.a) + (bg.g * (255 - fg.a))) / 255;
+    let b: int = ((fg.b * fg.a) + (bg.b * (255 - fg.a))) / 255;
+    return color_rgba(r, g, b, 255);
+}

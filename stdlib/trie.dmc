@@ -1,0 +1,148 @@
+struct Trie {
+    handle: int,
+    node_count: int,
+    node_cap: int,
+    word_count: int
+}
+
+fn trie_new() -> Trie {
+    let init_cap: int = 512;
+    let bytes_per_node: int = 129 * 4;
+    let h: int = mem_alloc(init_cap * bytes_per_node);
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            memset(_dmc_mem[h], 0, (size_t)(init_cap * bytes_per_node));
+        }
+    }
+    let t: Trie = Trie {
+        handle: h,
+        node_count: 1,
+        node_cap: init_cap,
+        word_count: 0
+    };
+    return t;
+}
+
+fn trie_insert(t: *Trie, word: string) -> int {
+    if (t.handle <= 0) {
+        return 0;
+    }
+    let len: int = text_len(word);
+    if (len == 0) {
+        return 0;
+    }
+    var added: int = 0;
+    let h: int = t.handle;
+    var ncount: int = t.node_count;
+    let ncap: int = t.node_cap;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            int *nodes = (int*)_dmc_mem[h];
+            int cur = 0;
+            for (int i = 0; i < len; i = i + 1) {
+                unsigned char c = (unsigned char)word[i];
+                if (c > 127) c = 127;
+                int next_node = nodes[cur * 129 + 1 + c];
+                if (next_node == 0) {
+                    if (ncount < ncap) {
+                        next_node = ncount;
+                        nodes[cur * 129 + 1 + c] = next_node;
+                        ncount = ncount + 1;
+                    } else {
+                        break;
+                    }
+                }
+                cur = next_node;
+            }
+            if (nodes[cur * 129] == 0) {
+                nodes[cur * 129] = 1;
+                added = 1;
+            }
+        }
+    }
+    t.node_count = ncount;
+    if (added != 0) {
+        t.word_count = t.word_count + 1;
+    }
+    return 1;
+}
+
+fn trie_search(t: *Trie, word: string) -> int {
+    if (t.handle <= 0) {
+        return 0;
+    }
+    let len: int = text_len(word);
+    if (len == 0) {
+        return 0;
+    }
+    let h: int = t.handle;
+    var res: int = 0;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            int *nodes = (int*)_dmc_mem[h];
+            int cur = 0;
+            int found = 1;
+            for (int i = 0; i < len; i = i + 1) {
+                unsigned char c = (unsigned char)word[i];
+                if (c > 127) c = 127;
+                int next_node = nodes[cur * 129 + 1 + c];
+                if (next_node == 0) {
+                    found = 0;
+                    break;
+                }
+                cur = next_node;
+            }
+            if (found != 0 && nodes[cur * 129] != 0) {
+                res = 1;
+            }
+        }
+    }
+    return res;
+}
+
+fn trie_starts_with(t: *Trie, prefix: string) -> int {
+    if (t.handle <= 0) {
+        return 0;
+    }
+    let len: int = text_len(prefix);
+    if (len == 0) {
+        return 1;
+    }
+    let h: int = t.handle;
+    var res: int = 0;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            int *nodes = (int*)_dmc_mem[h];
+            int cur = 0;
+            int found = 1;
+            for (int i = 0; i < len; i = i + 1) {
+                unsigned char c = (unsigned char)prefix[i];
+                if (c > 127) c = 127;
+                int next_node = nodes[cur * 129 + 1 + c];
+                if (next_node == 0) {
+                    found = 0;
+                    break;
+                }
+                cur = next_node;
+            }
+            if (found != 0) {
+                res = 1;
+            }
+        }
+    }
+    return res;
+}
+
+fn trie_count(t: *Trie) -> int {
+    return t.word_count;
+}
+
+fn trie_free(t: *Trie) -> void {
+    if (t.handle > 0) {
+        mem_free(t.handle);
+        t.handle = 0;
+        t.node_count = 0;
+        t.node_cap = 0;
+        t.word_count = 0;
+    }
+}

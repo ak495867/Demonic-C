@@ -1,0 +1,93 @@
+fn jwt_b64url_encode(input: string) -> string {
+    let b64: string = base64_encode(input);
+    let len: int = text_len(b64);
+    var out: string = "";
+    var i: int = 0;
+    while (i < len) {
+        let c: int = text_char_at(b64, i);
+        if (c == 43) {
+            out = out + "-";
+        } else if (c == 47) {
+            out = out + "_";
+        } else if (c != 61) {
+            out = out + string_slice(b64, i, 1);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn jwt_b64url_decode(input: string) -> string {
+    var s: string = input;
+    let len: int = text_len(s);
+    var out: string = "";
+    var i: int = 0;
+    while (i < len) {
+        let c: int = text_char_at(s, i);
+        if (c == 45) {
+            out = out + "+";
+        } else if (c == 95) {
+            out = out + "/";
+        } else {
+            out = out + string_slice(s, i, 1);
+        }
+        i = i + 1;
+    }
+    while ((text_len(out) % 4) != 0) {
+        out = out + "=";
+    }
+    return base64_decode(out);
+}
+
+fn jwt_sign(header_json: string, payload_json: string, secret: string) -> string {
+    let h_enc: string = jwt_b64url_encode(header_json);
+    let p_enc: string = jwt_b64url_encode(payload_json);
+    let signing_input: string = h_enc + "." + p_enc;
+    let sig: string = jwt_b64url_encode(sha256(secret + ":" + signing_input));
+    return signing_input + "." + sig;
+}
+
+fn jwt_verify(token: string, secret: string) -> int {
+    let dot1: int = text_find(token, ".");
+    if (dot1 < 0) {
+        return 0;
+    }
+    let rem: string = string_slice(token, dot1 + 1, text_len(token) - dot1 - 1);
+    let dot2: int = text_find(rem, ".");
+    if (dot2 < 0) {
+        return 0;
+    }
+    let h_enc: string = string_slice(token, 0, dot1);
+    let p_enc: string = string_slice(rem, 0, dot2);
+    let sig: string = string_slice(rem, dot2 + 1, text_len(rem) - dot2 - 1);
+
+    let signing_input: string = h_enc + "." + p_enc;
+    let expected_sig: string = jwt_b64url_encode(sha256(secret + ":" + signing_input));
+    if (expected_sig == sig) {
+        return 1;
+    }
+    return 0;
+}
+
+fn jwt_get_payload(token: string) -> string {
+    let dot1: int = text_find(token, ".");
+    if (dot1 < 0) {
+        return "";
+    }
+    let rem: string = string_slice(token, dot1 + 1, text_len(token) - dot1 - 1);
+    let dot2: int = text_find(rem, ".");
+    if (dot2 < 0) {
+        return "";
+    }
+    let p_enc: string = string_slice(rem, 0, dot2);
+    return jwt_b64url_decode(p_enc);
+}
+
+fn jwt_get_header(token: string) -> string {
+    let dot1: int = text_find(token, ".");
+    if (dot1 < 0) {
+        return "";
+    }
+    let h_enc: string = string_slice(token, 0, dot1);
+    return jwt_b64url_decode(h_enc);
+}

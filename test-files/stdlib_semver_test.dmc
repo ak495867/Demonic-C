@@ -1,0 +1,62 @@
+import "semver";
+
+#[test]
+fn test_semver_parsing_and_format() -> int {
+    let v1: SemVer = semver_parse("v2.0.3");
+    if (v1.major != 2 || v1.minor != 0 || v1.patch != 3) {
+        return 1;
+    }
+    if (v1.prerelease != "") {
+        return 2;
+    }
+    if (semver_to_string(v1) != "2.0.3") {
+        return 3;
+    }
+    let v2: SemVer = semver_parse("1.5.0-alpha.2");
+    if (v2.major != 1 || v2.minor != 5 || v2.patch != 0) {
+        return 4;
+    }
+    if (v2.prerelease != "alpha.2") {
+        return 5;
+    }
+    if (semver_to_string(v2) != "1.5.0-alpha.2") {
+        return 6;
+    }
+    return 0;
+}
+
+#[test]
+fn test_semver_comparison_and_satisfies() -> int {
+    let v203: SemVer = semver_parse("2.0.3");
+    let v202: SemVer = semver_parse("2.0.2");
+    let v300: SemVer = semver_parse("3.0.0");
+
+    if (semver_compare(v203, v202) != 1) {
+        return 1;
+    }
+    if (semver_compare(v202, v203) != -1) {
+        return 2;
+    }
+    if (semver_compare(v203, v203) != 0) {
+        return 3;
+    }
+    if (semver_satisfies(v203, "^2.0.0") != 1) {
+        return 4;
+    }
+    if (semver_satisfies(v300, "^2.0.0") != 0) {
+        return 5;
+    }
+    if (semver_satisfies(v203, "~2.0.0") != 1) {
+        return 6;
+    }
+    if (semver_satisfies(v203, "~2.1.0") != 0) {
+        return 7;
+    }
+    if (semver_satisfies(v203, ">=2.0.0") != 1) {
+        return 8;
+    }
+    if (semver_satisfies(v203, "<2.0.0") != 0) {
+        return 9;
+    }
+    return 0;
+}

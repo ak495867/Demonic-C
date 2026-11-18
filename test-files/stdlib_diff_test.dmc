@@ -1,0 +1,41 @@
+import "diff";
+
+#[test]
+fn test_diff_levenshtein_and_similarity() -> int {
+    if (diff_levenshtein("kitten", "sitting") != 3) {
+        return 1;
+    }
+    if (diff_levenshtein("demonic", "demonic") != 0) {
+        return 2;
+    }
+    let sim: float = diff_similarity("demonic", "demonic");
+    if (sim < 0.99) {
+        return 3;
+    }
+    if (diff_hamming("karolin", "kathrin") != 3) {
+        return 4;
+    }
+    if (diff_hamming("short", "longer") != -1) {
+        return 5;
+    }
+    return 0;
+}
+
+#[test]
+fn test_diff_lcs_and_closest() -> int {
+    let lcs_res: string = diff_lcs("ABCDGH", "AEDFHR");
+    if (lcs_res != "ADH") {
+        return 1;
+    }
+    let candidates: Vector<string> = Vector<string>::new();
+    candidates.push("build");
+    candidates.push("clean");
+    candidates.push("run");
+    candidates.push("test");
+    let closest: string = diff_closest("buidl", candidates);
+    candidates.free();
+    if (closest != "build") {
+        return 2;
+    }
+    return 0;
+}

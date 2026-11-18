@@ -1,0 +1,40 @@
+import "bigint";
+
+#[test]
+fn test_bigint_arithmetic() -> int {
+    let a: string = "999999999999999999";
+    let b: string = "1";
+    let sum: string = bigint_add(a, b);
+    if (sum != "1000000000000000000") {
+        return 1;
+    }
+    let diff: string = bigint_sub(sum, b);
+    if (diff != a) {
+        return 2;
+    }
+    let m1: string = "123456789";
+    let m2: string = "987654321";
+    let prod: string = bigint_mul(m1, m2);
+    if (prod != "121932631112635269") {
+        return 3;
+    }
+    return 0;
+}
+
+#[test]
+fn test_bigint_pow_and_cmp() -> int {
+    let p64: string = bigint_pow("2", 64);
+    if (p64 != "18446744073709551616") {
+        return 1;
+    }
+    if (bigint_compare("1000", "999") != 1) {
+        return 2;
+    }
+    if (bigint_compare("999", "1000") != -1) {
+        return 3;
+    }
+    if (bigint_compare("1000", "1000") != 0) {
+        return 4;
+    }
+    return 0;
+}

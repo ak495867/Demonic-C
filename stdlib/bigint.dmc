@@ -1,0 +1,175 @@
+fn _bigint_strip(s: string) -> string {
+    let len: int = text_len(s);
+    if (len == 0) {
+        return "0";
+    }
+    var i: int = 0;
+    while (i < len - 1 && text_char_at(s, i) == 48) {
+        i = i + 1;
+    }
+    return string_slice(s, i, len - i);
+}
+
+fn bigint_from_int(x: int) -> string {
+    return text_from_int(x);
+}
+
+fn bigint_to_int(s: string) -> int {
+    return text_to_int(s);
+}
+
+fn bigint_compare(a_raw: string, b_raw: string) -> int {
+    let a: string = _bigint_strip(a_raw);
+    let b: string = _bigint_strip(b_raw);
+    let la: int = text_len(a);
+    let lb: int = text_len(b);
+    if (la > lb) { return 1; }
+    if (la < lb) { return -1; }
+    let cmp: int = text_cmp(a, b);
+    if (cmp > 0) { return 1; }
+    if (cmp < 0) { return -1; }
+    return 0;
+}
+
+fn bigint_add(a_raw: string, b_raw: string) -> string {
+    let a: string = _bigint_strip(a_raw);
+    let b: string = _bigint_strip(b_raw);
+    var out: string = "";
+    c_code {
+        int la = (int)strlen(a);
+        int lb = (int)strlen(b);
+        int max_len = la > lb ? la : lb;
+        char *buf = (char*)malloc(max_len + 2);
+        if (buf) {
+            int ia = la - 1;
+            int ib = lb - 1;
+            int carry = 0;
+            int pos = 0;
+            while (ia >= 0 || ib >= 0 || carry > 0) {
+                int d1 = ia >= 0 ? (a[ia] - 48) : 0;
+                int d2 = ib >= 0 ? (b[ib] - 48) : 0;
+                int sum = d1 + d2 + carry;
+                buf[pos] = (char)((sum % 10) + 48);
+                carry = sum / 10;
+                pos = pos + 1;
+                ia = ia - 1;
+                ib = ib - 1;
+            }
+            char *res = (char*)malloc(pos + 1);
+            if (res) {
+                for (int i = 0; i < pos; i = i + 1) {
+                    res[i] = buf[pos - 1 - i];
+                }
+                res[pos] = 0;
+                out = res;
+            }
+            free(buf);
+        }
+    }
+    return _bigint_strip(out);
+}
+
+fn bigint_sub(a_raw: string, b_raw: string) -> string {
+    let a: string = _bigint_strip(a_raw);
+    let b: string = _bigint_strip(b_raw);
+    if (bigint_compare(a, b) <= 0) {
+        return "0";
+    }
+    var out: string = "";
+    c_code {
+        int la = (int)strlen(a);
+        int lb = (int)strlen(b);
+        char *buf = (char*)malloc(la + 1);
+        if (buf) {
+            int ia = la - 1;
+            int ib = lb - 1;
+            int borrow = 0;
+            int pos = 0;
+            while (ia >= 0) {
+                int d1 = a[ia] - 48 - borrow;
+                int d2 = ib >= 0 ? (b[ib] - 48) : 0;
+                if (d1 < d2) {
+                    d1 = d1 + 10;
+                    borrow = 1;
+                } else {
+                    borrow = 0;
+                }
+                buf[pos] = (char)((d1 - d2) + 48);
+                pos = pos + 1;
+                ia = ia - 1;
+                ib = ib - 1;
+            }
+            char *res = (char*)malloc(pos + 1);
+            if (res) {
+                for (int i = 0; i < pos; i = i + 1) {
+                    res[i] = buf[pos - 1 - i];
+                }
+                res[pos] = 0;
+                out = res;
+            }
+            free(buf);
+        }
+    }
+    return _bigint_strip(out);
+}
+
+fn bigint_mul(a_raw: string, b_raw: string) -> string {
+    let a: string = _bigint_strip(a_raw);
+    let b: string = _bigint_strip(b_raw);
+    if (a == "0" || b == "0") {
+        return "0";
+    }
+    var out: string = "";
+    c_code {
+        int la = (int)strlen(a);
+        int lb = (int)strlen(b);
+        int total = la + lb;
+        int *digits = (int*)calloc(total, sizeof(int));
+        if (digits) {
+            for (int i = la - 1; i >= 0; i = i - 1) {
+                for (int j = lb - 1; j >= 0; j = j - 1) {
+                    int mul = (a[i] - 48) * (b[j] - 48);
+                    int sum = mul + digits[i + j + 1];
+                    digits[i + j + 1] = sum % 10;
+                    digits[i + j] = digits[i + j] + (sum / 10);
+                }
+            }
+            char *res = (char*)malloc(total + 1);
+            if (res) {
+                int start = 0;
+                while (start < total - 1 && digits[start] == 0) {
+                    start = start + 1;
+                }
+                int pos = 0;
+                for (int i = start; i < total; i = i + 1) {
+                    res[pos] = (char)(digits[i] + 48);
+                    pos = pos + 1;
+                }
+                res[pos] = 0;
+                out = res;
+            }
+            free(digits);
+        }
+    }
+    return _bigint_strip(out);
+}
+
+fn bigint_pow(base: string, exp: int) -> string {
+    if (exp <= 0) {
+        return "1";
+    }
+    if (exp == 1) {
+        return _bigint_strip(base);
+    }
+    var res: string = "1";
+    var cur: string = _bigint_strip(base);
+    var e: int = exp;
+    while (e > 0) {
+        if ((e % 2) != 0) {
+            res = bigint_mul(res, cur);
+        }
+        cur = bigint_mul(cur, cur);
+        e = e / 2;
+    }
+    return res;
+}

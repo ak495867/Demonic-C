@@ -1,0 +1,63 @@
+struct Logger {
+    min_level: int,
+    json_format: int,
+    tag: string
+}
+
+fn logger_level_name(level: int) -> string {
+    if (level <= 10) { return "DEBUG"; }
+    if (level <= 20) { return "INFO"; }
+    if (level <= 30) { return "WARN"; }
+    if (level <= 40) { return "ERROR"; }
+    return "FATAL";
+}
+
+fn logger_level_from_name(name: string) -> int {
+    let u: string = text_upper(name);
+    if (u == "DEBUG") { return 10; }
+    if (u == "INFO") { return 20; }
+    if (u == "WARN" || u == "WARNING") { return 30; }
+    if (u == "ERROR") { return 40; }
+    if (u == "FATAL") { return 50; }
+    return 20;
+}
+
+fn logger_new(tag: string, min_level: int, json_format: int) -> Logger {
+    let l: Logger = Logger {
+        min_level: min_level,
+        json_format: json_format,
+        tag: tag
+    };
+    return l;
+}
+
+fn logger_format(log: *Logger, level: int, msg: string) -> string {
+    if (level < log.min_level) {
+        return "";
+    }
+    let lvl_name: string = logger_level_name(level);
+    if (log.json_format != 0) {
+        return "{\"level\":\"" + lvl_name + "\",\"tag\":\"" + log.tag + "\",\"msg\":\"" + msg + "\"}";
+    }
+    return "[" + lvl_name + "] [" + log.tag + "] " + msg;
+}
+
+fn logger_debug(log: *Logger, msg: string) -> string {
+    return logger_format(log, 10, msg);
+}
+
+fn logger_info(log: *Logger, msg: string) -> string {
+    return logger_format(log, 20, msg);
+}
+
+fn logger_warn(log: *Logger, msg: string) -> string {
+    return logger_format(log, 30, msg);
+}
+
+fn logger_error(log: *Logger, msg: string) -> string {
+    return logger_format(log, 40, msg);
+}
+
+fn logger_fatal(log: *Logger, msg: string) -> string {
+    return logger_format(log, 50, msg);
+}

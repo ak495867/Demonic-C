@@ -1,0 +1,42 @@
+import "jwt";
+
+#[test]
+fn test_jwt_b64url_roundtrip() -> int {
+    let msg: string = "hello world?";
+    let enc: string = jwt_b64url_encode(msg);
+    if (text_find(enc, "+") >= 0 || text_find(enc, "/") >= 0 || text_find(enc, "=") >= 0) {
+        return 1;
+    }
+    let dec: string = jwt_b64url_decode(enc);
+    if (dec != msg) {
+        return 2;
+    }
+    return 0;
+}
+
+#[test]
+fn test_jwt_sign_and_verify() -> int {
+    let header: string = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
+    let payload: string = "{\"sub\":\"demonic_user\",\"role\":\"admin\"}";
+    let secret: string = "super_secret_key_123";
+
+    let token: string = jwt_sign(header, payload, secret);
+    if (text_len(token) < 20) {
+        return 1;
+    }
+    if (jwt_verify(token, secret) != 1) {
+        return 2;
+    }
+    if (jwt_verify(token, "wrong_secret") != 0) {
+        return 3;
+    }
+    let got_payload: string = jwt_get_payload(token);
+    if (got_payload != payload) {
+        return 4;
+    }
+    let got_header: string = jwt_get_header(token);
+    if (got_header != header) {
+        return 5;
+    }
+    return 0;
+}

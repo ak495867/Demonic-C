@@ -1,0 +1,40 @@
+import "uuid";
+
+#[test]
+fn test_uuid_generation_and_validation() -> int {
+    let nil_id: string = uuid_nil();
+    if (nil_id != "00000000-0000-0000-0000-000000000000") {
+        return 1;
+    }
+    if (uuid_is_valid(nil_id) != 1) {
+        return 2;
+    }
+    let u: string = uuid_v4();
+    if (uuid_is_valid(u) != 1) {
+        return 3;
+    }
+    if (text_char_at(u, 14) != 52) {
+        return 4;
+    }
+    if (uuid_is_valid("invalid-uuid-format-length") != 0) {
+        return 5;
+    }
+    if (uuid_is_valid("550e8400-e29b-41d4-a716-44665544000z") != 0) {
+        return 6;
+    }
+    return 0;
+}
+
+#[test]
+fn test_uuid_compact_and_expand() -> int {
+    let canonical: string = "550e8400-e29b-41d4-a716-446655440000";
+    let comp: string = uuid_compact(canonical);
+    if (comp != "550e8400e29b41d4a716446655440000") {
+        return 1;
+    }
+    let reconstructed: string = uuid_expand(comp);
+    if (reconstructed != canonical) {
+        return 2;
+    }
+    return 0;
+}

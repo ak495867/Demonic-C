@@ -1,0 +1,30 @@
+import "compress";
+
+#[test]
+fn test_rle_compression_and_decompression() -> int {
+    let original: string = "AAAAAAAAAABBBCCCCCC";
+    let compressed: string = compress_rle(original);
+    if (text_len(compressed) != 6) {
+        return 1;
+    }
+    let restored: string = decompress_rle(compressed);
+    if (restored != original) {
+        return 2;
+    }
+    let ratio: float = compress_ratio(text_len(original), text_len(compressed));
+    if (ratio > 0.35) {
+        return 3;
+    }
+    return 0;
+}
+
+#[test]
+fn test_rle_general_string() -> int {
+    let msg: string = "Demonic-C Compiler 2026!";
+    let comp: string = compress_rle(msg);
+    let decomp: string = decompress_rle(comp);
+    if (decomp != msg) {
+        return 1;
+    }
+    return 0;
+}

@@ -1,0 +1,40 @@
+import "trie";
+
+#[test]
+fn test_trie_words_and_prefixes() -> int {
+    var t: Trie = trie_new();
+    trie_insert(&t, "apple");
+    trie_insert(&t, "app");
+    trie_insert(&t, "application");
+    trie_insert(&t, "demonic");
+
+    if (trie_count(&t) != 4) {
+        return 1;
+    }
+    if (trie_search(&t, "app") != 1) {
+        return 2;
+    }
+    if (trie_search(&t, "apple") != 1) {
+        return 3;
+    }
+    if (trie_search(&t, "appl") != 0) {
+        return 4;
+    }
+    if (trie_search(&t, "demonic") != 1) {
+        return 5;
+    }
+    if (trie_search(&t, "demon") != 0) {
+        return 6;
+    }
+    if (trie_starts_with(&t, "appl") != 1) {
+        return 7;
+    }
+    if (trie_starts_with(&t, "demon") != 1) {
+        return 8;
+    }
+    if (trie_starts_with(&t, "xyz") != 0) {
+        return 9;
+    }
+    trie_free(&t);
+    return 0;
+}

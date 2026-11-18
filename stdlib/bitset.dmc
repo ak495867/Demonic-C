@@ -1,0 +1,196 @@
+struct BitSet {
+    handle: int,
+    num_bits: int,
+    num_words: int
+}
+
+fn bitset_new(num_bits: int) -> BitSet {
+    var nb: int = num_bits;
+    if (nb <= 0) { nb = 64; }
+    let nw: int = (nb + 63) / 64;
+    let h: int = mem_alloc(nw * 8);
+    let bs: BitSet = BitSet {
+        handle: h,
+        num_bits: nb,
+        num_words: nw
+    };
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            memset(_dmc_mem[h], 0, (size_t)(nw * 8));
+        }
+    }
+    return bs;
+}
+
+fn bitset_set(bs: *BitSet, bit_idx: int) -> int {
+    if (bit_idx < 0 || bit_idx >= bs.num_bits) {
+        return 0;
+    }
+    let h: int = bs.handle;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            unsigned long long *words = (unsigned long long*)_dmc_mem[h];
+            int widx = (int)(bit_idx / 64);
+            int boff = (int)(bit_idx % 64);
+            unsigned long long mask = 1;
+            words[widx] = words[widx] | (mask << boff);
+        }
+    }
+    return 1;
+}
+
+fn bitset_clear(bs: *BitSet, bit_idx: int) -> int {
+    if (bit_idx < 0 || bit_idx >= bs.num_bits) {
+        return 0;
+    }
+    let h: int = bs.handle;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            unsigned long long *words = (unsigned long long*)_dmc_mem[h];
+            int widx = (int)(bit_idx / 64);
+            int boff = (int)(bit_idx % 64);
+            unsigned long long mask = 1;
+            words[widx] = words[widx] & ~(mask << boff);
+        }
+    }
+    return 1;
+}
+
+fn bitset_toggle(bs: *BitSet, bit_idx: int) -> int {
+    if (bit_idx < 0 || bit_idx >= bs.num_bits) {
+        return 0;
+    }
+    let h: int = bs.handle;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            unsigned long long *words = (unsigned long long*)_dmc_mem[h];
+            int widx = (int)(bit_idx / 64);
+            int boff = (int)(bit_idx % 64);
+            unsigned long long mask = 1;
+            words[widx] = words[widx] ^ (mask << boff);
+        }
+    }
+    return 1;
+}
+
+fn bitset_test(bs: *BitSet, bit_idx: int) -> int {
+    if (bit_idx < 0 || bit_idx >= bs.num_bits) {
+        return 0;
+    }
+    let h: int = bs.handle;
+    var res: int = 0;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            unsigned long long *words = (unsigned long long*)_dmc_mem[h];
+            int widx = (int)(bit_idx / 64);
+            int boff = (int)(bit_idx % 64);
+            unsigned long long mask = 1;
+            if ((words[widx] & (mask << boff)) != 0) {
+                res = 1;
+            } else {
+                res = 0;
+            }
+        }
+    }
+    return res;
+}
+
+fn bitset_set_all(bs: *BitSet) -> void {
+    let h: int = bs.handle;
+    let nw: int = bs.num_words;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            memset(_dmc_mem[h], 255, (size_t)(nw * 8));
+        }
+    }
+}
+
+fn bitset_clear_all(bs: *BitSet) -> void {
+    let h: int = bs.handle;
+    let nw: int = bs.num_words;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            memset(_dmc_mem[h], 0, (size_t)(nw * 8));
+        }
+    }
+}
+
+fn bitset_count_ones(bs: *BitSet) -> int {
+    let h: int = bs.handle;
+    let nw: int = bs.num_words;
+    var total: int = 0;
+    c_code {
+        if (h >= 0 && h < _dmc_mem_cap && _dmc_mem[h]) {
+            unsigned long long *words = (unsigned long long*)_dmc_mem[h];
+            int count = 0;
+            for (int i = 0; i < nw; i = i + 1) {
+                count = count + __builtin_popcountll(words[i]);
+            }
+            total = count;
+        }
+    }
+    return total;
+}
+
+fn bitset_union(dst: *BitSet, src: *BitSet) -> void {
+    let hd: int = dst.handle;
+    let hs: int = src.handle;
+    var nw: int = dst.num_words;
+    if (src.num_words < nw) {
+        nw = src.num_words;
+    }
+    c_code {
+        if (hd >= 0 && hd < _dmc_mem_cap && _dmc_mem[hd] && hs >= 0 && hs < _dmc_mem_cap && _dmc_mem[hs]) {
+            unsigned long long *wd = (unsigned long long*)_dmc_mem[hd];
+            unsigned long long *ws = (unsigned long long*)_dmc_mem[hs];
+            for (int i = 0; i < nw; i = i + 1) {
+                wd[i] = wd[i] | ws[i];
+            }
+        }
+    }
+}
+
+fn bitset_intersect(dst: *BitSet, src: *BitSet) -> void {
+    let hd: int = dst.handle;
+    let hs: int = src.handle;
+    var nw: int = dst.num_words;
+    if (src.num_words < nw) {
+        nw = src.num_words;
+    }
+    c_code {
+        if (hd >= 0 && hd < _dmc_mem_cap && _dmc_mem[hd] && hs >= 0 && hs < _dmc_mem_cap && _dmc_mem[hs]) {
+            unsigned long long *wd = (unsigned long long*)_dmc_mem[hd];
+            unsigned long long *ws = (unsigned long long*)_dmc_mem[hs];
+            for (int i = 0; i < nw; i = i + 1) {
+                wd[i] = wd[i] & ws[i];
+            }
+        }
+    }
+}
+
+fn bitset_diff(dst: *BitSet, src: *BitSet) -> void {
+    let hd: int = dst.handle;
+    let hs: int = src.handle;
+    var nw: int = dst.num_words;
+    if (src.num_words < nw) {
+        nw = src.num_words;
+    }
+    c_code {
+        if (hd >= 0 && hd < _dmc_mem_cap && _dmc_mem[hd] && hs >= 0 && hs < _dmc_mem_cap && _dmc_mem[hs]) {
+            unsigned long long *wd = (unsigned long long*)_dmc_mem[hd];
+            unsigned long long *ws = (unsigned long long*)_dmc_mem[hs];
+            for (int i = 0; i < nw; i = i + 1) {
+                wd[i] = wd[i] & ~ws[i];
+            }
+        }
+    }
+}
+
+fn bitset_free(bs: *BitSet) -> void {
+    if (bs.handle > 0) {
+        mem_free(bs.handle);
+        bs.handle = 0;
+        bs.num_bits = 0;
+        bs.num_words = 0;
+    }
+}

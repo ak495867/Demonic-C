@@ -1,0 +1,44 @@
+import "color";
+
+#[test]
+fn test_color_hex_conversions() -> int {
+    let c: Rgba = color_from_hex("#ff8000");
+    if (c.r != 255 || c.g != 128 || c.b != 0) {
+        return 1;
+    }
+    let h: string = color_to_hex(c);
+    if (h != "#ff8000") {
+        return 2;
+    }
+    let c2: Rgba = color_from_hex("00ff00");
+    if (c2.r != 0 || c2.g != 255 || c2.b != 0) {
+        return 3;
+    }
+    return 0;
+}
+
+#[test]
+fn test_color_luminance_and_blend() -> int {
+    let white: Rgba = color_rgb(255, 255, 255);
+    let black: Rgba = color_rgb(0, 0, 0);
+
+    let l_white: float = color_luminance(white);
+    if (l_white < 0.99 || l_white > 1.01) {
+        return 1;
+    }
+    let l_black: float = color_luminance(black);
+    if (l_black < -0.01 || l_black > 0.01) {
+        return 2;
+    }
+    let ratio: float = color_contrast_ratio(white, black);
+    if (ratio < 20.9 || ratio > 21.1) {
+        return 3;
+    }
+
+    let semi_white: Rgba = color_rgba(255, 255, 255, 128);
+    let blended: Rgba = color_blend(semi_white, black);
+    if (blended.r < 126 || blended.r > 130) {
+        return 4;
+    }
+    return 0;
+}

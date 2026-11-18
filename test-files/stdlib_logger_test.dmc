@@ -1,0 +1,46 @@
+import "logger";
+
+#[test]
+fn test_logger_text_formatting() -> int {
+    let log: Logger = logger_new("SYS", 20, 0);
+    let dbg: string = logger_debug(&log, "dbg message");
+    if (dbg != "") {
+        return 1;
+    }
+    let inf: string = logger_info(&log, "system ready");
+    if (inf != "[INFO] [SYS] system ready") {
+        return 2;
+    }
+    let wrn: string = logger_warn(&log, "high memory");
+    if (wrn != "[WARN] [SYS] high memory") {
+        return 3;
+    }
+    let err: string = logger_error(&log, "disk full");
+    if (err != "[ERROR] [SYS] disk full") {
+        return 4;
+    }
+    return 0;
+}
+
+#[test]
+fn test_logger_json_and_levels() -> int {
+    let log: Logger = logger_new("NET", 10, 1);
+    let dbg: string = logger_debug(&log, "connected");
+    if (dbg != "{\"level\":\"DEBUG\",\"tag\":\"NET\",\"msg\":\"connected\"}") {
+        return 1;
+    }
+    let fat: string = logger_fatal(&log, "connection dropped");
+    if (fat != "{\"level\":\"FATAL\",\"tag\":\"NET\",\"msg\":\"connection dropped\"}") {
+        return 2;
+    }
+    if (logger_level_from_name("DEBUG") != 10) {
+        return 3;
+    }
+    if (logger_level_from_name("WARN") != 30) {
+        return 4;
+    }
+    if (logger_level_name(50) != "FATAL") {
+        return 5;
+    }
+    return 0;
+}

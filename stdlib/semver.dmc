@@ -1,0 +1,159 @@
+struct SemVer {
+    major: int,
+    minor: int,
+    patch: int,
+    prerelease: string
+}
+
+fn semver_new(maj: int, min: int, pat: int, pre: string) -> SemVer {
+    let sv: SemVer = SemVer {
+        major: maj,
+        minor: min,
+        patch: pat,
+        prerelease: pre
+    };
+    return sv;
+}
+
+fn semver_parse(v_str: string) -> SemVer {
+    var s: string = v_str;
+    if (text_len(s) > 0) {
+        let c0: int = text_char_at(s, 0);
+        if (c0 == 118 || c0 == 86) {
+            s = string_slice(s, 1, text_len(s) - 1);
+        }
+    }
+    var pre: string = "";
+    let dash_pos: int = text_find(s, "-");
+    if (dash_pos >= 0) {
+        pre = string_slice(s, dash_pos + 1, text_len(s) - dash_pos - 1);
+        s = string_slice(s, 0, dash_pos);
+    }
+    var maj: int = 0;
+    var min: int = 0;
+    var pat: int = 0;
+    let dot1: int = text_find(s, ".");
+    if (dot1 >= 0) {
+        maj = text_to_int(string_slice(s, 0, dot1));
+        let rem: string = string_slice(s, dot1 + 1, text_len(s) - dot1 - 1);
+        let dot2: int = text_find(rem, ".");
+        if (dot2 >= 0) {
+            min = text_to_int(string_slice(rem, 0, dot2));
+            pat = text_to_int(string_slice(rem, dot2 + 1, text_len(rem) - dot2 - 1));
+        } else {
+            min = text_to_int(rem);
+            pat = 0;
+        }
+    } else {
+        maj = text_to_int(s);
+        min = 0;
+        pat = 0;
+    }
+    return semver_new(maj, min, pat, pre);
+}
+
+fn semver_compare(a: SemVer, b: SemVer) -> int {
+    if (a.major > b.major) { return 1; }
+    if (a.major < b.major) { return -1; }
+    if (a.minor > b.minor) { return 1; }
+    if (a.minor < b.minor) { return -1; }
+    if (a.patch > b.patch) { return 1; }
+    if (a.patch < b.patch) { return -1; }
+    var a_has_pre: int = 0;
+    if (text_len(a.prerelease) > 0) {
+        a_has_pre = 1;
+    }
+    var b_has_pre: int = 0;
+    if (text_len(b.prerelease) > 0) {
+        b_has_pre = 1;
+    }
+    if (a_has_pre == 0 && b_has_pre == 0) {
+        return 0;
+    }
+    if (a_has_pre == 0 && b_has_pre == 1) {
+        return 1;
+    }
+    if (a_has_pre == 1 && b_has_pre == 0) {
+        return -1;
+    }
+    let cmp: int = text_cmp(a.prerelease, b.prerelease);
+    if (cmp > 0) { return 1; }
+    if (cmp < 0) { return -1; }
+    return 0;
+}
+
+fn semver_satisfies(v: SemVer, constraint: string) -> int {
+    let clen: int = text_len(constraint);
+    if (clen == 0) {
+        return 1;
+    }
+    let c0: int = text_char_at(constraint, 0);
+    if (c0 == 94) {
+        let target: SemVer = semver_parse(string_slice(constraint, 1, clen - 1));
+        if (v.major != target.major) {
+            return 0;
+        }
+        if (semver_compare(v, target) < 0) {
+            return 0;
+        }
+        return 1;
+    }
+    if (c0 == 126) {
+        let target: SemVer = semver_parse(string_slice(constraint, 1, clen - 1));
+        if (v.major != target.major || v.minor != target.minor) {
+            return 0;
+        }
+        if (semver_compare(v, target) < 0) {
+            return 0;
+        }
+        return 1;
+    }
+    if (clen >= 2 && c0 == 62 && text_char_at(constraint, 1) == 61) {
+        let target: SemVer = semver_parse(string_slice(constraint, 2, clen - 2));
+        if (semver_compare(v, target) >= 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (clen >= 2 && c0 == 60 && text_char_at(constraint, 1) == 61) {
+        let target: SemVer = semver_parse(string_slice(constraint, 2, clen - 2));
+        if (semver_compare(v, target) <= 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (c0 == 62) {
+        let target: SemVer = semver_parse(string_slice(constraint, 1, clen - 1));
+        if (semver_compare(v, target) > 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (c0 == 60) {
+        let target: SemVer = semver_parse(string_slice(constraint, 1, clen - 1));
+        if (semver_compare(v, target) < 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (c0 == 61) {
+        let target: SemVer = semver_parse(string_slice(constraint, 1, clen - 1));
+        if (semver_compare(v, target) == 0) {
+            return 1;
+        }
+        return 0;
+    }
+    let target: SemVer = semver_parse(constraint);
+    if (semver_compare(v, target) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+fn semver_to_string(v: SemVer) -> string {
+    var out: string = text_from_int(v.major) + "." + text_from_int(v.minor) + "." + text_from_int(v.patch);
+    if (text_len(v.prerelease) > 0) {
+        out = out + "-" + v.prerelease;
+    }
+    return out;
+}

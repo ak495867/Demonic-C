@@ -1,0 +1,66 @@
+fn compress_rle(input: string) -> string {
+    let len: int = text_len(input);
+    if (len == 0) {
+        return "";
+    }
+    var out: string = "";
+    c_code {
+        char *buf = (char*)malloc((size_t)len * 2 + 1);
+        if (buf) {
+            int pos = 0;
+            int i = 0;
+            while (i < len) {
+                unsigned char ch = (unsigned char)input[i];
+                int run = 1;
+                while (i + run < len && (unsigned char)input[i + run] == ch && run < 255) {
+                    run = run + 1;
+                }
+                buf[pos] = (char)run;
+                pos = pos + 1;
+                buf[pos] = (char)ch;
+                pos = pos + 1;
+                i = i + run;
+            }
+            buf[pos] = 0;
+            out = buf;
+        }
+    }
+    return out;
+}
+
+fn decompress_rle(encoded: string) -> string {
+    let elen: int = text_len(encoded);
+    if (elen == 0) {
+        return "";
+    }
+    var out: string = "";
+    c_code {
+        size_t total = 0;
+        for (int i = 0; i < elen; i = i + 2) {
+            unsigned char count = (unsigned char)encoded[i];
+            total = total + count;
+        }
+        char *buf = (char*)malloc(total + 1);
+        if (buf) {
+            size_t pos = 0;
+            for (int i = 0; i < elen; i = i + 2) {
+                unsigned char count = (unsigned char)encoded[i];
+                char ch = encoded[i + 1];
+                for (int k = 0; k < count; k = k + 1) {
+                    buf[pos] = ch;
+                    pos = pos + 1;
+                }
+            }
+            buf[pos] = 0;
+            out = buf;
+        }
+    }
+    return out;
+}
+
+fn compress_ratio(orig_len: int, comp_len: int) -> float {
+    if (orig_len <= 0) {
+        return 1.0;
+    }
+    return (comp_len * 1.0) / (orig_len * 1.0);
+}

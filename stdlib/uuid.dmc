@@ -1,0 +1,85 @@
+fn uuid_nil() -> string {
+    return "00000000-0000-0000-0000-000000000000";
+}
+
+fn uuid_v4() -> string {
+    var out: string = "";
+    c_code {
+        static const char *hex_digits = "0123456789abcdef";
+        unsigned char b[16];
+        for (int i = 0; i < 16; i = i + 1) {
+            b[i] = (unsigned char)(rand() & 255);
+        }
+        b[6] = (unsigned char)((b[6] & 15) | 64);
+        b[8] = (unsigned char)((b[8] & 63) | 128);
+        char *buf = (char*)malloc(37);
+        if (buf) {
+            int pos = 0;
+            for (int i = 0; i < 16; i = i + 1) {
+                if (i == 4 || i == 6 || i == 8 || i == 10) {
+                    buf[pos] = 45;
+                    pos = pos + 1;
+                }
+                buf[pos] = hex_digits[(b[i] >> 4) & 15];
+                pos = pos + 1;
+                buf[pos] = hex_digits[b[i] & 15];
+                pos = pos + 1;
+            }
+            buf[36] = 0;
+            out = buf;
+        }
+    }
+    return out;
+}
+
+fn uuid_is_valid(s: string) -> int {
+    if (text_len(s) != 36) {
+        return 0;
+    }
+    var i: int = 0;
+    while (i < 36) {
+        let c = text_char_at(s, i);
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (c != 45) {
+                return 0;
+            }
+        } else {
+            let is_digit = (c >= 48 && c <= 57);
+            let is_lower = (c >= 97 && c <= 102);
+            let is_upper = (c >= 65 && c <= 70);
+            if (is_digit == 0 && is_lower == 0 && is_upper == 0) {
+                return 0;
+            }
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+fn uuid_compact(s: string) -> string {
+    if (uuid_is_valid(s) == 0) {
+        return "";
+    }
+    var out: string = "";
+    var i: int = 0;
+    while (i < 36) {
+        let c = text_char_at(s, i);
+        if (c != 45) {
+            out = out + string_slice(s, i, 1);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn uuid_expand(compact: string) -> string {
+    if (text_len(compact) != 32) {
+        return uuid_nil();
+    }
+    let p1 = string_slice(compact, 0, 8);
+    let p2 = string_slice(compact, 8, 4);
+    let p3 = string_slice(compact, 12, 4);
+    let p4 = string_slice(compact, 16, 4);
+    let p5 = string_slice(compact, 20, 12);
+    return p1 + "-" + p2 + "-" + p3 + "-" + p4 + "-" + p5;
+}
