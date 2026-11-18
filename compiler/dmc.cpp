@@ -987,8 +987,8 @@ private:
         out << "long long text_cmp(const char *a, const char *b) { if (!a && !b) return 0; if (!a) return -1; if (!b) return 1; return strcmp(a, b); }\n";
         out << "long long text_find(const char *s, const char *sub) { if (!s || !sub) return -1; const char *p = strstr(s, sub); return p ? (long long)(p - s) : -1; }\n";
         out << "long long text_contains(const char *s, const char *sub) { return text_find(s, sub) >= 0 ? 1 : 0; }\n";
-        out << "const char *text_from_int(long long x) { static char buf[32]; snprintf(buf, sizeof(buf), \"%lld\", x); return buf; }\n";
-        out << "const char *text_from_float(double x) { static char buf[64]; snprintf(buf, sizeof(buf), \"%g\", x); return buf; }\n";
+        out << "const char *text_from_int(long long x) { char *b = (char*)malloc(32); if (!b) return \"\"; snprintf(b, 32, \"%lld\", x); return b; }\n";
+        out << "const char *text_from_float(double x) { char *b = (char*)malloc(64); if (!b) return \"\"; snprintf(b, 64, \"%g\", x); return b; }\n";
         out << "long long text_to_int(const char *s) { return atoll(s); }\n";
         out << "const char *text_upper(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = (char*)malloc(n + 1); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)toupper((unsigned char)s[i]); res[n] = 0; return res; }\n";
         out << "const char *text_lower(const char *s) { if (!s) return \"\"; size_t n = strlen(s); char *res = (char*)malloc(n + 1); if (!res) return \"\"; for (size_t i = 0; i < n; i++) res[i] = (char)tolower((unsigned char)s[i]); res[n] = 0; return res; }\n";

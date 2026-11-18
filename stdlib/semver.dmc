@@ -151,7 +151,11 @@ fn semver_satisfies(v: SemVer, constraint: string) -> int {
 }
 
 fn semver_to_string(v: SemVer) -> string {
-    var out: string = text_from_int(v.major) + "." + text_from_int(v.minor) + "." + text_from_int(v.patch);
+    var out: string = text_from_int(v.major);
+    out = out + ".";
+    out = out + text_from_int(v.minor);
+    out = out + ".";
+    out = out + text_from_int(v.patch);
     if (text_len(v.prerelease) > 0) {
         out = out + "-" + v.prerelease;
     }
