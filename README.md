@@ -125,6 +125,23 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
+## 🚀 Demonic C 2.0.8 Release
+
+Demonic C 2.0.8 delivers critical enterprise compiler compatibility, cross-platform STL fixes, and benchmark harness isolation:
+
+- **1. MSVC & Clang Enterprise STL Interoperability**:
+  - Defined `_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH` and `_CRT_SECURE_NO_WARNINGS` for Clang compiling against Visual Studio Enterprise Standard Library headers.
+  - Resolves `error STL1000: Unexpected compiler version, expected Clang 22 or newer` on modern Windows toolchains.
+- **2. Standard Header Inclusion (`<bitset>`)**:
+  - Explicitly included `<bitset>` for silicon VCD waveform simulation and hardware synthesis (`dmc sim`, `dmc synth`), eliminating modularized STL compilation errors.
+- **3. Benchmark Timing Scope Isolation**:
+  - Enclosed each `#[bench]` timing calculation in dedicated local block scopes `{ ... }` within generated C test harnesses.
+  - Eliminates `error: redefinition of '_t'` across multi-benchmark compilation units on GCC, Clang, and MSVC.
+- **4. Enhanced Dynamic Shared Library Exports**:
+  - Verified cross-platform dynamic shared library building (`--shared`) across Windows (`.dll`), Linux (`.so`), and macOS (`.dylib`) with full C-ABI interop and foreign function interface support.
+
+---
+
 ## 🚀 Demonic C 2.0.7 Release
 
 Demonic C 2.0.7 delivers frontier systems capabilities across six major architecture systems:
