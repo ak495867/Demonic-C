@@ -125,6 +125,27 @@ DMC is **self-hosting**: its own compiler is written in DMC and compiles itself 
 
 ---
 
+## 🚀 Demonic C 2.0.9 Release
+
+Demonic C 2.0.9 introduces hardened runtime and network security, robust fuzz testing, AddressSanitizer/UBSan validation, and cross-platform launcher reliability:
+
+- **1. HTTP URL Security & Command Injection Hardening**:
+  - Validated HTTP URLs with strict RFC/scheme verification (`_dmc_http_url_ok`), restricting requests to `http://` and `https://` protocols (`--proto =http,https`).
+  - Added quotation and escape checks against shell metacharacters (`$`, `&`, `;`, `|`, `` ` ``, `\`, `^`, `<`, `>`, `%`, `!`) to block command substitution and argument injection in `http_get` and `http_status`.
+- **2. Package Manager Git Argument Defense**:
+  - Enforced strict token validation in `dmc pkg add`, rejecting dangerous repository specifiers, path traversal (`..`), and CLI option injection by explicitly passing `--` argument separators to `git clone`.
+- **3. Native Runtime Socket & Handle Safety**:
+  - Enhanced runtime socket portability, handle reuse, and error isolation across Windows Winsock and POSIX systems in `dmc_core.c` and `dmc_net.c`.
+- **4. Parser Fuzzing & Regression Harness**:
+  - Integrated an automated token and AST mutational fuzz engine (`tools/fuzz/fuzz_parser.py`) and malformed syntax regression suite (`tools/fuzz/regression.sh`).
+- **5. Sanitizer CI Integration & Exception Resilience**:
+  - Added continuous integration pipelines for AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan).
+  - Wrapped compiler main entrypoint in top-level exception handlers (`dmc_main` with `try / catch`) for clean user diagnostic reporting.
+- **6. Launcher & Script Portability**:
+  - Hardened execution permissions and fallback discovery across `dmc`, `build/dmc.sh`, `build/dmc.bat`, `build/run_tests.sh`, and `install.sh`.
+
+---
+
 ## 🚀 Demonic C 2.0.8 Release
 
 Demonic C 2.0.8 delivers critical enterprise compiler compatibility, cross-platform STL fixes, and benchmark harness isolation:
