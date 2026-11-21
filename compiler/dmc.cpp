@@ -9834,7 +9834,7 @@ static void print_usage() {
               << "  crypto = \"^0.9\"\n";
 }
 
-int main(int argc, char** argv) {
+static int dmc_main(int argc, char** argv) {
     enable_ansi_console();
     std::vector<std::string> args(argv + 1, argv + argc);
     
@@ -10078,3 +10078,14 @@ int main(int argc, char** argv) {
     }
 }
 
+int main(int argc, char** argv) {
+    try {
+        return dmc_main(argc, argv);
+    } catch (const std::exception& e) {
+        std::cerr << "dmc: error: " << e.what() << "\n";
+        return 1;
+    } catch (...) {
+        std::cerr << "dmc: error: unexpected internal failure\n";
+        return 1;
+    }
+}

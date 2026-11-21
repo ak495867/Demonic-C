@@ -138,3 +138,28 @@ jobs:
             echo "Unexpected exit code $status (expected 37)"
             exit 1
           fi
+
+  sanitizers:
+    name: Sanitizers and Fuzz Smoke (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build compiler with AddressSanitizer and UBSan
+        run: g++ -std=c++20 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer compiler/dmc.cpp -o dmc-asan
+
+      - name: Run test suite under sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ./dmc-asan test test-files
+
+      - name: Run malformed-input regression checks
+        run: sh tools/fuzz/regression.sh ./dmc-asan
+
+      - name: Fuzz smoke (byte mutations)
+        run: python3 tools/fuzz/fuzz_parser.py --compiler ./dmc-asan --iterations 300 --seed 1 --mode bytes
+
+      - name: Fuzz smoke (token mutations)
+        run: python3 tools/fuzz/fuzz_parser.py --compiler ./dmc-asan --iterations 300 --seed 2 --mode tokens
