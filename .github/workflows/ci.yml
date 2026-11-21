@@ -47,14 +47,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           rm -f bin/dmc bin/dmc-native
-          g++ -std=c++20 -O2 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror compiler/dmc.cpp -o bin/dmc-native
           cp bin/dmc-native bin/dmc
           chmod +x bin/dmc bin/dmc-native ./dmc
 
       - name: Build DMC Compiler (Windows)
         if: runner.os == 'Windows'
         run: |
-          g++ -std=c++20 -O2 -Wall -Wextra compiler/dmc.cpp -o bin/dmc-native.exe
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror compiler/dmc.cpp -o bin/dmc-native.exe
           Copy-Item bin/dmc-native.exe bin/dmc.exe -Force
 
       - name: Verify CLI Version & Usage
@@ -66,7 +66,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           rm -f runtime/dmc_runtime.o bin/libdmc_runtime.a
-          gcc -std=c11 -O2 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
           ar cr bin/libdmc_runtime.a runtime/dmc_runtime.o
           ranlib bin/libdmc_runtime.a
 
@@ -74,7 +74,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           Remove-Item runtime/dmc_runtime.o, bin/libdmc_runtime.a -Force -ErrorAction SilentlyContinue
-          gcc -std=c11 -O2 -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
+          gcc -std=c11 -O2 -Wall -Wextra -Werror -Iruntime -c runtime/dmc_runtime.c -o runtime/dmc_runtime.o
           ar rcs bin/libdmc_runtime.a runtime/dmc_runtime.o
 
       - name: Run Runtime Smoke Test (Unix)
@@ -88,6 +88,12 @@ jobs:
         run: |
           gcc -std=c11 -w -Iruntime runtime/smoke/dmc_runtime_smoke.c bin/libdmc_runtime.a -o bin/runtime_smoke.exe -lws2_32
           .\bin\runtime_smoke.exe
+
+      - name: Verify Launcher Resolves Native Binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ./dmc --version
+          ./build/dmc.sh --version
 
       - name: Run Test Suite (Unix)
         if: runner.os != 'Windows'

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bitset>
 #include <cctype>
+#include <cstring>
 #include <fstream>
 #include <filesystem>
 #include <iostream>
@@ -1248,14 +1249,30 @@ const char *json_get(const char *json, const char *key) { _dmc_json_value[0] = 0
 
         out << R"DMC_HTTP(
 static char _dmc_http_buffer[1048576];
-static int _dmc_http_url_ok(const char *url) { if (!url || !*url || strstr(url, "\"") || strstr(url, "'") || strstr(url, "&&") || strstr(url, ";") || strstr(url, "|") || strstr(url, "`")) return 0; return 1; }
+static int _dmc_http_url_ok(const char *url) {
+    if (!url || !*url) return 0;
+    if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) return 0;
+    size_t n = strlen(url);
+    if (n > 1500) return 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)url[i];
+        if (c <= 32 || c >= 127) return 0;
+        if (c == '"' || c == '\'' || c == '`' || c == '\\' || c == '^' || c == '<' || c == '>' || c == '|' || c == '%' || c == '!' || c == '$') return 0;
+    }
+    return 1;
+}
+#ifdef _WIN32
+#define _DMC_URL_QUOTE "\""
+#else
+#define _DMC_URL_QUOTE "'"
+#endif
 #ifdef _WIN32
 #define _DMC_DEVNULL "nul"
 #else
 #define _DMC_DEVNULL "/dev/null"
 #endif
-const char *http_get(const char *url) { _dmc_http_buffer[0] = 0; if (!_dmc_http_url_ok(url)) return _dmc_http_buffer; char command[2048]; snprintf(command, sizeof(command), "curl -LfsS --max-time 20 -- %s", url); FILE *pipe = popen(command, "r"); if (!pipe) return _dmc_http_buffer; size_t used = 0; while (used + 1 < sizeof(_dmc_http_buffer)) { size_t n = fread(_dmc_http_buffer + used, 1, sizeof(_dmc_http_buffer) - used - 1, pipe); used += n; if (!n) break; } _dmc_http_buffer[used] = 0; pclose(pipe); return _dmc_http_buffer; }
-long long http_status(const char *url) { if (!_dmc_http_url_ok(url)) return -1; char command[2048]; snprintf(command, sizeof(command), "curl -Lso %s -w %%{http_code} --max-time 20 -- %s", _DMC_DEVNULL, url); FILE *pipe = popen(command, "r"); if (!pipe) return -1; char status[16] = {0}; fgets(status, sizeof(status), pipe); pclose(pipe); long long value = atoll(status); return value == 0 ? -1 : value; }
+const char *http_get(const char *url) { _dmc_http_buffer[0] = 0; if (!_dmc_http_url_ok(url)) return _dmc_http_buffer; char command[2048]; snprintf(command, sizeof(command), "curl -LfsS --proto =http,https --max-time 20 -- " _DMC_URL_QUOTE "%s" _DMC_URL_QUOTE, url); FILE *pipe = popen(command, "r"); if (!pipe) return _dmc_http_buffer; size_t used = 0; while (used + 1 < sizeof(_dmc_http_buffer)) { size_t n = fread(_dmc_http_buffer + used, 1, sizeof(_dmc_http_buffer) - used - 1, pipe); used += n; if (!n) break; } _dmc_http_buffer[used] = 0; pclose(pipe); return _dmc_http_buffer; }
+long long http_status(const char *url) { if (!_dmc_http_url_ok(url)) return -1; char command[2048]; snprintf(command, sizeof(command), "curl -Lso %s -w %%{http_code} --proto =http,https --max-time 20 -- " _DMC_URL_QUOTE "%s" _DMC_URL_QUOTE, _DMC_DEVNULL, url); FILE *pipe = popen(command, "r"); if (!pipe) return -1; char status[16] = {0}; fgets(status, sizeof(status), pipe); pclose(pipe); long long value = atoll(status); return value == 0 ? -1 : value; }
 )DMC_HTTP";
 
         out << "long long datetime_now(void) { return (long long)time(NULL); }\n";
@@ -2709,7 +2726,7 @@ long long task_pool_free(long long h) {
             }
             subst_fields.push_back({f.name, ftype});
         }
-        structs_.push_back({mangled, subst_fields});
+        structs_.push_back(Struct{mangled, subst_fields, {}});
     }
 
     Enum parse_enum() {
@@ -4906,7 +4923,7 @@ long long task_pool_free(long long h) {
                                   const std::set<std::string>& reg_names,
                                   const std::set<std::string>& wire_names,
                                   const std::set<std::string>& out_port_names,
-                                  const std::set<std::string>& in_port_names,
+                                  const std::set<std::string>&,
                                   bool is_sync,
                                   std::vector<std::string>& body) {
         size_t i = 0;
@@ -5040,7 +5057,7 @@ long long task_pool_free(long long h) {
         }
     }
 
-    void parse_module(const std::vector<std::string>& attrs = {}) {
+    void parse_module(const std::vector<std::string>& = {}) {
         expect("module");
         HdlModule mod;
         mod.name = take();
@@ -7267,8 +7284,13 @@ static int cmd_build(int argc, char** argv, const char* argv0) {
     }
 
     if (target_wasm) {
+#ifdef _WIN32
         bool has_emcc = (std::system("emcc --version > nul 2>&1") == 0);
         bool has_clang = (std::system("clang --version > nul 2>&1") == 0);
+#else
+        bool has_emcc = (std::system("emcc --version > /dev/null 2>&1") == 0);
+        bool has_clang = (std::system("clang --version > /dev/null 2>&1") == 0);
+#endif
         std::string sources_cmd = " \"" + gen_c + "\"";
         for (const auto& s : extra_sources) sources_cmd += " \"" + s + "\"";
         std::string wasm_cmd;
@@ -8284,8 +8306,25 @@ static int cmd_pkg(int argc, char** argv) {
             }
             
             std::filesystem::create_directories("packages");
+            auto pkg_token_ok = [](const std::string& v) {
+                if (v.empty() || v[0] == '-') return false;
+                for (unsigned char c : v) {
+                    if (std::isalnum(c)) continue;
+                    if (std::strchr("-._~:/@+=%", c)) continue;
+                    return false;
+                }
+                return true;
+            };
+            if (!pkg_token_ok(target) || !pkg_token_ok(repo_name) || repo_name == "." || repo_name == ".." || repo_name.find("..") != std::string::npos) {
+                std::cerr << "dmc pkg add: refusing repository specifier with unsafe characters\n";
+                return 1;
+            }
             std::string dest = "packages/" + repo_name;
-            std::string clone_cmd = "git clone --depth 1 " + target + " " + dest;
+#ifdef _WIN32
+            std::string clone_cmd = "git clone --depth 1 -- \"" + target + "\" \"" + dest + "\"";
+#else
+            std::string clone_cmd = "git clone --depth 1 -- '" + target + "' '" + dest + "'";
+#endif
             std::cout << "Cloning " << target << " into " << dest << "...\n";
             int ret = system(clone_cmd.c_str());
             if (ret != 0) {

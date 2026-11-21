@@ -19,6 +19,7 @@ void wsa_init(void) {
 #else
 #include <sys/socket.h>
 #include <netdb.h>
+#include <sys/types.h>
 #include <unistd.h>
 #define DMC_CLOSE close
 #endif
@@ -26,7 +27,12 @@ void wsa_init(void) {
 dmc_slot *dmc_slots = NULL;
 size_t dmc_slots_cap = 0;
 size_t dmc_slots_used = 0;
+static size_t dmc_slots_free_hint = 0;
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+_Thread_local char dmc_error_text[256];
+#else
 char dmc_error_text[256];
+#endif
 
 #ifdef DMC_RUNTIME_THREADS
 #include <pthread.h>
@@ -78,41 +84,65 @@ dmc_handle dmc_reserve(dmc_kind kind, void *value, size_t size) {
         return (dmc_handle)-1;
     }
     DMC_LOCK();
-    if (dmc_ensure_capacity(dmc_slots_used + 1) != 0) {
-        DMC_UNLOCK();
-        return (dmc_handle)-1;
+    size_t slot = dmc_slots_used;
+    int reused = 0;
+    for (size_t i = dmc_slots_free_hint; i < dmc_slots_used; ++i) {
+        if (dmc_slots[i].kind == DMC_NONE) {
+            slot = i;
+            reused = 1;
+            break;
+        }
     }
-    size_t slot = dmc_slots_used++;
+    if (!reused) {
+        if (dmc_ensure_capacity(dmc_slots_used + 1) != 0) {
+            DMC_UNLOCK();
+            return (dmc_handle)-1;
+        }
+        dmc_slots_used++;
+    }
     dmc_slots[slot].kind = kind;
     dmc_slots[slot].value = value;
     dmc_slots[slot].size = size;
+    dmc_slots_free_hint = slot + 1;
     DMC_UNLOCK();
     return (dmc_handle)slot;
 }
 
 dmc_slot *dmc_get(dmc_handle handle, dmc_kind kind) {
-    if (handle < 0 || (size_t)handle >= dmc_slots_cap || dmc_slots[handle].kind != kind) {
+    DMC_LOCK();
+    if ((size_t)handle >= dmc_slots_used || dmc_slots[handle].kind != kind) {
+        DMC_UNLOCK();
         dmc_set_error("invalid runtime handle");
         return NULL;
     }
-    return &dmc_slots[handle];
+    dmc_slot *slot = &dmc_slots[handle];
+    DMC_UNLOCK();
+    return slot;
 }
 
 int dmc_release(dmc_handle handle) {
-    if (handle < 0 || (size_t)handle >= dmc_slots_cap || dmc_slots[handle].kind == DMC_NONE) {
+    DMC_LOCK();
+    if ((size_t)handle >= dmc_slots_used || dmc_slots[handle].kind == DMC_NONE) {
+        DMC_UNLOCK();
         dmc_set_error("invalid runtime handle");
         return -1;
     }
-    DMC_LOCK();
     dmc_slots[handle].kind = DMC_NONE;
     dmc_slots[handle].value = NULL;
     dmc_slots[handle].size = 0;
+    if ((size_t)handle < dmc_slots_free_hint) dmc_slots_free_hint = (size_t)handle;
     DMC_UNLOCK();
     return 0;
 }
 
 size_t dmc_handle_count(void) {
-    return dmc_slots_used;
+    size_t live = 0;
+    DMC_LOCK();
+    for (size_t i = 0; i < dmc_slots_used; ++i) {
+        if (dmc_slots[i].kind != DMC_NONE) live++;
+    }
+    DMC_UNLOCK();
+    return live;
 }
 
 size_t dmc_handle_capacity(void) {

@@ -1,3 +1,7 @@
 @echo off
 set ROOT=%~dp0..
-"%ROOT%\bin\dmc-native.exe" %*
+if exist "%ROOT%\bin\dmc-native.exe" (
+  "%ROOT%\bin\dmc-native.exe" %*
+) else (
+  "%ROOT%\bin\dmc.exe" %*
+)

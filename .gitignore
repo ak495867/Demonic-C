@@ -14,3 +14,16 @@ dist/
 Thumbs.db
 desktop.ini
 *.vsix
+
+# Build and test outputs
+bin/dmc
+bin/dmc-native
+bin/runtime_smoke*
+runtime/*.o
+_dmc_test_file_io.txt
+_build_tmp_*
+_test_tmp_*
+test_assign.*
+packages/*
+!packages/registry
+!packages/local-registry

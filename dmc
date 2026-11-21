@@ -1,14 +1,24 @@
 #!/usr/bin/env sh
 set -e
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-BIN="$ROOT/bin/dmc-native"
-[ -x "$BIN" ] || BIN="$ROOT/bin/dmc"
-[ -x "$BIN" ] || BIN="$ROOT/bin/dmc.exe"
-if [ -x "$BIN" ]; then
+OS="$(uname -s 2>/dev/null || echo unknown)"
+BIN=""
+case "$OS" in
+  MINGW*|MSYS*|CYGWIN*) CANDIDATES="$ROOT/bin/dmc-native.exe $ROOT/bin/dmc.exe" ;;
+  Linux) CANDIDATES="$ROOT/bin/dmc-native $ROOT/bin/dmc $ROOT/bin/dmc-native-linux" ;;
+  *) CANDIDATES="$ROOT/bin/dmc-native $ROOT/bin/dmc" ;;
+esac
+for candidate in $CANDIDATES; do
+  if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+    BIN="$candidate"
+    break
+  fi
+done
+if [ -n "$BIN" ]; then
   exec "$BIN" "$@"
 elif [ -f "$ROOT/tools/dmc_host.py" ] && command -v python3 >/dev/null 2>&1; then
   exec python3 "$ROOT/tools/dmc_host.py" "$@"
 else
-  echo "dmc: binary not found in $ROOT/bin" >&2
+  echo "dmc: no compatible binary found in $ROOT/bin; build one with: g++ -std=c++20 -O2 compiler/dmc.cpp -o bin/dmc-native" >&2
   exit 1
 fi

@@ -1,0 +1,24 @@
+#[test]
+fn test_http_rejects_command_substitution() -> int {
+    if (http_status("https://example.com/$(touch _dmc_http_injection_marker)") < 0) { return 0; }
+    return 1;
+}
+
+#[test]
+fn test_http_rejects_non_http_scheme() -> int {
+    if (http_status("file:///etc/hostname") < 0) { return 0; }
+    return 1;
+}
+
+#[test]
+fn test_http_rejects_shell_separators() -> int {
+    if (http_status("http://127.0.0.1:1/a&touch _dmc_http_injection_marker") < 0) { return 0; }
+    if (http_status("http://127.0.0.1:1/a\ntouch _dmc_http_injection_marker") < 0) { return 0; }
+    return 1;
+}
+
+#[test]
+fn test_http_get_rejects_scheme() -> int {
+    if (text_len(http_get("file:///etc/hostname")) == 0) { return 0; }
+    return 1;
+}

@@ -33,10 +33,10 @@ smoke: $(BIN)/libdmc_runtime.a $(RUNTIME)/smoke/dmc_runtime_smoke.c
 
 stage2: $(BIN)/dmc-native
 	$(BIN)/dmc-native $(TEST_DIR)/emit.dmc -o $(TEST_DIR)/_stage_emit.c
-	$(CC) -std=c11 -w $(TEST_DIR)/_stage_emit.c -o $(TEST_DIR)/_stage_emit $(LDFLAGS)
+	$(CC) -std=c11 -w $(TEST_DIR)/_stage_emit.c -o $(TEST_DIR)/_stage_emit -lm $(LDFLAGS)
 	cd $(TEST_DIR) && ./_stage_emit selflex.dmc selflex_stage_out.c
-	$(CC) -std=c11 -w $(TEST_DIR)/selflex_stage_out.c -o $(TEST_DIR)/selflex_stage $(LDFLAGS)
-	cd $(TEST_DIR) && ./selflex_stage
+	$(CC) -std=c11 -w $(TEST_DIR)/selflex_stage_out.c -o $(TEST_DIR)/selflex_stage -lm $(LDFLAGS)
+	cd $(TEST_DIR) && ./selflex_stage; status=$$?; if [ $$status -ne 37 ]; then echo "stage2: unexpected exit code $$status (expected 37)"; exit 1; fi
 
 clean:
 	rm -f $(BIN)/dmc-native $(BIN)/libdmc_runtime.a $(RUNTIME)/dmc_runtime.o $(BIN)/runtime_smoke
