@@ -1,6 +1,11 @@
 #!/usr/bin/env sh
 set -u
 COMPILER="${1:?usage: regression.sh <compiler>}"
+case "$COMPILER" in
+  /*) ;;
+  *) COMPILER="$(pwd)/$COMPILER" ;;
+esac
+export DMC_STDLIB="${DMC_STDLIB:-$(pwd)/stdlib}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 FAILED=0

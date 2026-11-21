@@ -5,6 +5,7 @@ import hashlib
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -57,11 +58,24 @@ def main():
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
-    files = [f for f in glob.glob(os.path.join(args.corpus, '*.dmc')) if os.path.getsize(f) < 8000]
+    compiler = shutil.which(args.compiler) or args.compiler
+    compiler = os.path.abspath(compiler)
+    if not os.path.exists(compiler):
+        print(f'compiler not found: {args.compiler} (resolved to {compiler})', file=sys.stderr)
+        return 2
+
+    corpus_dir = os.path.abspath(args.corpus)
+    files = [f for f in glob.glob(os.path.join(corpus_dir, '*.dmc')) if os.path.getsize(f) < 8000]
     if not files:
         print('no corpus files found', file=sys.stderr)
         return 2
+
+    stdlib_dir = os.path.abspath('stdlib')
     env = dict(os.environ, ASAN_OPTIONS='detect_leaks=0', UBSAN_OPTIONS='print_stacktrace=1:halt_on_error=1')
+    if os.path.isdir(stdlib_dir):
+        env['DMC_STDLIB'] = stdlib_dir
+
+    keep_dir = os.path.abspath(args.keep) if args.keep else ''
     mutate = mutate_bytes if args.mode == 'bytes' else mutate_tokens
     found = {}
     with tempfile.TemporaryDirectory() as work:
@@ -75,7 +89,7 @@ def main():
             kind = None
             err = ''
             try:
-                run = subprocess.run([args.compiler, 'build', src_path, '--emit-c', '-o', out_path],
+                run = subprocess.run([compiler, 'build', src_path, '--emit-c', '-o', out_path],
                                      capture_output=True, timeout=args.timeout, env=env, cwd=work)
                 err = run.stderr.decode('latin1')
                 if run.returncode < 0 or run.returncode >= 128 or 'Sanitizer' in err or 'runtime error' in err:
@@ -87,9 +101,9 @@ def main():
                 sig = kind + '_' + hashlib.md5('\n'.join(frames)[:600].encode() or kind.encode()).hexdigest()[:8]
                 if sig not in found:
                     found[sig] = err.splitlines()[0][:160] if err else kind
-                    if args.keep:
-                        os.makedirs(args.keep, exist_ok=True)
-                        with open(os.path.join(args.keep, sig + '.dmc'), 'wb') as handle:
+                    if keep_dir:
+                        os.makedirs(keep_dir, exist_ok=True)
+                        with open(os.path.join(keep_dir, sig + '.dmc'), 'wb') as handle:
                             handle.write(data)
                     print(sig, found[sig])
     print('iterations=%d unique_failures=%d' % (args.iterations, len(found)))
